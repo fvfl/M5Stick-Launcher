@@ -78,6 +78,11 @@ Things that needs to be done in next updates
 
 <details>
   <summary><h2>Changelog</h2></summary>
+
+* 2.5.1:
+     * [x] Fixed Cardputer ADV Keyboard compatobility
+     * [x] Fixed issue where firmware list wasn't being fully downloaded.
+
 * 2.5.0:
      * [x] Moving to pioarduino 3.3 based framework (ESP-IDF 5.5)
           * [x] Enable USB Mass Storage to SD_MMC devices (T-Display-S3 and touch and T-Dongle S3 tft)

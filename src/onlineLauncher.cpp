@@ -30,17 +30,17 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         EEPROM.begin(EEPROMSIZE);
         pwd = EEPROM.readString(20);
         EEPROM.end();
-        log_i("sdcardMounted: %d", sdcardMounted);
+        Serial.printf("sdcardMounted: %d\n", sdcardMounted);
 
         if (sdcardMounted) {
             for (JsonObject wifiEntry : WifiList) {
                 String name = wifiEntry["ssid"].as<String>();
                 String pass = wifiEntry["pwd"].as<String>();
-                log_i("SSID: %s, Pass: %s", name, pass);
+                Serial.printf("SSID: %s, Pass: %s\n", name, pass);
                 if (name == ssid) {
                     pwd = pass;
                     found = true;
-                    log_i("Found SSID: %s", name);
+                    Serial.printf("Found SSID: %s\n", name);
                     break;
                 }
             }
@@ -67,7 +67,7 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
                 for (JsonObject wifiEntry : WifiList) {
                     if (wifiEntry["ssid"].as<String>() == ssid) {
                         wifiEntry["pwd"] = pwd;
-                        log_i("Mudou pwd de SSID: %s", ssid);
+                        Serial.printf("Mudou pwd de SSID: %s\n", ssid);
                         break;
                     }
                 }
@@ -84,7 +84,7 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         // Simulação da função de desenho no display TFT
         int count = 0;
         while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
             tftprint(".", 10);
             count++;
             if (count > 20) {
@@ -181,8 +181,10 @@ bool GetJsonFromM5() {
     const char *serverUrl = JSON_SOURCE_PATH;
 
     if (WiFi.status() == WL_CONNECTED) {
+        vTaskSuspend(xHandle);
+        WiFiClientSecure client;
+        client.setInsecure();
         HTTPClient http;
-        int httpResponseCode = -1;
         resetTftDisplay(tftWidth / 2 - 6 * String("Getting info from").length(), 32);
         tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
@@ -190,27 +192,44 @@ bool GetJsonFromM5() {
         tft->drawCentreString("repository", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
 
         tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
-        while (httpResponseCode < 0) {
-            http.begin(serverUrl);
-            http.useHTTP10(true);
-            httpResponseCode = http.GET();
-            if (httpResponseCode > 0) {
-                DeserializationError error;
-                deserializeJson(doc, http.getStream());
-                delay(100);
-                return true;
+        const uint8_t maxAttempts = 5;
+        for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {
+            if (!http.begin(client, serverUrl)) {
+                Serial.printf("GetJsonFromM5> Unable to reach %s\n", serverUrl);
                 break;
-            } else {
-                tftprint(".", 10);
-                http.end();
-                delay(1000);
             }
+            http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+            http.useHTTP10(true);
+            int httpResponseCode = http.GET();
+            if (httpResponseCode == HTTP_CODE_OK) {
+                String payload = http.getString();
+                http.end();
+                doc.clear();
+                DeserializationError error = deserializeJson(doc, payload);
+                if (error) {
+                    Serial.printf("GetJsonFromM5> Failed to parse JSON: %s\n", error.c_str());
+                    displayRedStripe("JSON Parse Failed");
+                    vTaskDelay(1500 / portTICK_PERIOD_MS);
+                    doc.clear();
+                    vTaskResume(xHandle);
+                    return false;
+                }
+                Serial.printf("GetJsonFromM5> Loaded %d firmwares\n", doc.size());
+                vTaskResume(xHandle);
+                return true;
+            }
+
+            Serial.printf("GetJsonFromM5> HTTP error: %d\n", httpResponseCode);
+            tftprint(".", 10);
+            http.end();
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
-        http.end();
+        displayRedStripe("Download Failed");
+        vTaskDelay(1500 / portTICK_PERIOD_MS);
     }
+    vTaskResume(xHandle);
     return false;
 }
-
 /***************************************************************************************
 ** Function name: downloadFirmware
 ** Description:   Downloads the firmware and save into the SDCard
@@ -248,7 +267,7 @@ retry:
                 size_t size = http.getSize();
                 displayRedStripe("Downloading FW");
                 if (file) {
-
+                    // vTaskSuspend(xHandle);
                     int downloaded = 0;
                     WiFiClient *stream = http.getStreamPtr();
                     int len = size;
@@ -267,16 +286,18 @@ retry:
                             if (len > 0) { len -= c; }
 
                             downloaded += c;
-                            progressHandler(downloaded, size); // Chama a função de progresso
+                            tft->drawPixel(0, 0, 0);
                             progressHandler(downloaded, size); // Chama a função de progresso
                         }
                     }
                     file.close();
+                    // vTaskResume(xHandle);
                 } else {
-                    log_i("Download> Couldn't create file %s", String(folder + fileName + ".bin"));
+                    Serial.printf("Download> Couldn't create file %s\n", String(folder + fileName + ".bin"));
                     displayRedStripe("Fail creating file.");
                 }
                 // Checks if the file was preatically not downloaded and try one more time (size <= bufSize)
+                delay(50);
                 file = SDM.open(folder + fileName + ".bin");
                 if (file.size() <= bufSize & tries < 1) {
                     tries++;
@@ -284,13 +305,13 @@ retry:
                     goto retry;
                 }
                 // Checks if the file was completely downloaded
-                log_i("File size in get() = %d\nFile size in SD    = %d", size, file.size());
+                Serial.printf("File size in get() = %d\nFile size in SD    = %d\n", size, file.size());
                 if (file.size() != size) {
                     SDM.remove(file.path());
                     displayRedStripe("Download FAILED");
                     while (!check(SelPress)) yield();
                 } else {
-                    log_i("File successfully downloaded.");
+                    Serial.printf("File successfully downloaded.\n");
                     displayRedStripe(" Downloaded ");
                     while (!check(SelPress)) yield();
                 }
@@ -352,14 +373,14 @@ void installFirmware(
     progressHandler(0, 500);
     httpUpdate.onProgress(progressHandler);
     httpUpdate.setLedPin(LED, LED_ON);
-
+    vTaskSuspend(xHandle);
     if (nb) app_offset = 0;
     if (!httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size)) {
         displayRedStripe("Instalation Failed");
         goto SAIR;
     }
     if (!client) {
-        displayRedStripe("Couldn't Connect *.m5stack.com");
+        displayRedStripe("Couldn't Connect to server");
         goto SAIR;
     }
 
@@ -418,6 +439,7 @@ Sucesso:
 
 // Só chega aqui se der errado
 SAIR:
+    vTaskResume(xHandle);
     delay(2000);
 }
 
@@ -442,7 +464,7 @@ bool installFAT_OTA(
 
         while (httpResponseCode < 0) {
             httpResponseCode = http.GET();
-            delay(500);
+            vTaskDelay(500 / portTICK_PERIOD_MS);
         }
         if (httpResponseCode > 0) {
             int size = http.getSize();

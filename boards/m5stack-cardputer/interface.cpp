@@ -103,11 +103,21 @@ int handleSpecialKeys(uint8_t row, uint8_t col, bool pressed) {
     char keyVal = _key_value_map[row][col].value_first;
     switch (keyVal) {
         case 0xFF:
-            if (pressed) fn_key_pressed = !fn_key_pressed;
+            fn_key_pressed = pressed;
+            if (fn_key_pressed) Serial.println("FN Pressed");
+            else Serial.println("FN Released");
             return 1;
         case 0x81:
             shift_key_pressed = pressed;
-            if (pressed && fn_key_pressed) caps_lock = !caps_lock;
+            if (shift_key_pressed) Serial.println("Shift Pressed");
+            else Serial.println("Shift Released");
+            if (shift_key_pressed && fn_key_pressed) {
+                caps_lock = !caps_lock;
+                if (caps_lock) Serial.println("CAPS Lock activated");
+                else Serial.println("CAPS Lock DEactivated");
+                shift_key_pressed = false;
+                fn_key_pressed = false;
+            }
             return 1;
         default: break;
     }
@@ -146,7 +156,8 @@ void _setup_gpio() {
     // Set GPIO5 HIGH for SD card compatibility (thx for the tip @bmorcelli & 7h30th3r0n3)
     digitalWrite(5, HIGH);
 }
-
+bool kb_interrupt = false;
+void IRAM_ATTR gpio_isr_handler(void *arg) { kb_interrupt = true; }
 void _post_setup_gpio() {
     // Initialize TCA8418 I2C keyboard controller
     Serial.println("DEBUG: Cardputer ADV - Initializing TCA8418 keyboard");
@@ -180,40 +191,11 @@ void _post_setup_gpio() {
         return;
     }
 
-    Serial.println("DEBUG: TCA8418 found and initialized successfully!");
-
-    // Configure the matrix (7 rows x 8 columns)
-    Serial.println("DEBUG: Configuring TCA8418 matrix (7x8)");
-    // Reset the device to ensure clean state
-    tca.writeRegister(TCA8418_REG_CFG, 0x00);
-    delay(10);
-
-    // Configure for 4 rows and 14 columns
-    // Rows 0-3 as outputs, columns  4-17 as inputs
-    tca.writeRegister(TCA8418_REG_GPIO_DIR_1, 0x0F); // GPIO0-3: outputs, GPIO4-7: inputs
-    tca.writeRegister(TCA8418_REG_GPIO_DIR_2, 0xFF); // GPIO8-15: inputs
-    tca.writeRegister(TCA8418_REG_GPIO_DIR_3, 0x03); // GPIO16-17: inputs
-
-    // Set all used pins as keypad
-    tca.writeRegister(TCA8418_REG_KP_GPIO_1, 0xFF); // GPIO0-7 as keypad
-    tca.writeRegister(TCA8418_REG_KP_GPIO_2, 0xFF); // GPIO8-15 as keypad
-    tca.writeRegister(TCA8418_REG_KP_GPIO_3, 0x03); // GPIO16-17 as keypad
-
-    // Enable pull-ups on all inputs
-    tca.writeRegister(TCA8418_REG_GPIO_PULL_1, 0xF0); // Pull-ups on GPIO4-7
-    tca.writeRegister(TCA8418_REG_GPIO_PULL_2, 0xFF); // Pull-ups on GPIO8-15
-    tca.writeRegister(TCA8418_REG_GPIO_PULL_3, 0x03); // Pull-ups on GPIO16-17
-
-    // Configure interrupts
-    tca.writeRegister(
-        TCA8418_REG_CFG,
-        TCA8418_REG_CFG_KE_IEN | // Enable key event interrupt
-            TCA8418_REG_CFG_AI   // Auto-increment
-    );
-
-    // Clear interrupts
-    tca.writeRegister(TCA8418_REG_INT_STAT, 0xFF);
-    Serial.println("DEBUG: TCA8418 configured for polling mode (interrupts disabled)");
+    tca.matrix(7, 8);
+    tca.flush();
+    pinMode(11, INPUT);
+    attachInterruptArg(digitalPinToInterrupt(11), gpio_isr_handler, &kb_interrupt, CHANGE);
+    tca.enableInterrupts();
 }
 /***************************************************************************************
 ** Function name: getBattery()
@@ -265,23 +247,23 @@ void InputHandler(void) {
         AnyKeyPress = true;
     }
     if (UseTCA8418) {
-        if (millis() - lastCheck < 100) return; // Poll TCA8418 every 100ms for key events
-        lastCheck = millis();
+        if (!kb_interrupt) return;
+        //  try to clear the IRQ flag
+        //  if there are pending events it is not cleared
+        tca.writeRegister(TCA8418_REG_INT_STAT, 1);
+        int intstat = tca.readRegister(TCA8418_REG_INT_STAT);
+        if ((intstat & 0x01) == 0) { kb_interrupt = false; }
+
         if (tca.available() <= 0) return;
         int keyEvent = tca.getEvent();
-        bool pressed = !(keyEvent & 0x80); // Bit 7: 0=pressed, 1=released
-        uint8_t value = keyEvent & 0x7F;   // Bits 0-6: key value
-
-        // // Debounce check
-        // if (millis() - lastKeyTime < 50 && value == lastKeyValue) { return; }
-        // lastKeyTime = millis();
-        // lastKeyValue = value;
+        bool pressed = (keyEvent & 0x80); // Bit 7: 1 Pressed, 0 Released
+        uint8_t value = keyEvent & 0x7F;  // Bits 0-6: key value
 
         // Map raw value to physical position
         uint8_t row, col;
         mapRawKeyToPhysical(value, row, col);
 
-        Serial.printf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed, row, col);
+        // Serial.printf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed, row, col);
 
         if (row >= 4 || col >= 14) return;
 
@@ -300,7 +282,7 @@ void InputHandler(void) {
         keyStroke key;
         char keyVal = getKeyChar(row, col);
 
-        Serial.printf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
+        // Serial.printf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
 
         if (keyVal == 0x08) {
             key.del = true;
