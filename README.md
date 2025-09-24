@@ -6,7 +6,7 @@ Application Launcher for M5Stack, Lilygo, CYDs, Marauder and ESP32 devices.
     <img src="https://github.com/bmorcelli/Launcher/blob/main/M5Launcher.png?raw=true"> <img src="https://github.com/bmorcelli/Launcher/blob/main/New Launcher.jpg?raw=true" width="240" height="135"> <img src="https://github.com/bmorcelli/Launcher/blob/main/Launcher_anim.webp?raw=true" width="auto" height="135">
 </p>
 
-Join our [Discord community](https://discord.gg/eacBuVV3Ap)
+Join our [Discord community](https://discord.gg/BE9by2a2FF)
 
 ## How to Install
 * Use the Flasher: [Launcher Flasher](https://bmorcelli.github.io/Launcher/).
