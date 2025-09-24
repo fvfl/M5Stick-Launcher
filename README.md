@@ -6,6 +6,8 @@ Application Launcher for M5Stack, Lilygo, CYDs, Marauder and ESP32 devices.
     <img src="https://github.com/bmorcelli/Launcher/blob/main/M5Launcher.png?raw=true"> <img src="https://github.com/bmorcelli/Launcher/blob/main/New Launcher.jpg?raw=true" width="240" height="135"> <img src="https://github.com/bmorcelli/Launcher/blob/main/Launcher_anim.webp?raw=true" width="auto" height="135">
 </p>
 
+Join our [Discord community](https://discord.gg/eacBuVV3Ap)
+
 ## How to Install
 * Use the Flasher: [Launcher Flasher](https://bmorcelli.github.io/Launcher/).
 * Use M5Burner, or
@@ -80,8 +82,8 @@ Things that needs to be done in next updates
   <summary><h2>Changelog</h2></summary>
 
 * 2.5.1:
-     * [x] Fixed Cardputer ADV Keyboard compatobility
-     * [x] Fixed issue where firmware list wasn't being fully downloaded.
+     * [x] Fixed Cardputer ADV Keyboard compatibility
+     * [x] Fixed issue where OTA firmware list wasn't being fully downloaded.
 
 * 2.5.0:
      * [x] Moving to pioarduino 3.3 based framework (ESP-IDF 5.5)

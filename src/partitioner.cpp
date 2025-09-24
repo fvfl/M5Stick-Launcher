@@ -253,7 +253,7 @@ void dumpPartition(const char *partitionLabel, const char *outputPath) {
     setupSdCard();
     if (!SDM.exists("/bkp")) SDM.mkdir("/bkp");
 
-    File outputFile = SDM.open(outputPath, FILE_WRITE);
+    File outputFile = SDM.open(outputPath, FILE_WRITE, true);
     if (!outputFile) {
         Serial.printf("Falha ao abrir o arquivo %s no cartão SD\n", outputPath);
         return;

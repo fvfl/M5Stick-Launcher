@@ -1,6 +1,7 @@
 #include "display.h"
 #include "mykeyboard.h"
 #include "onlineLauncher.h"
+#include "powerSave.h"
 #include "sd_functions.h"
 #include "settings.h"
 #include <globals.h>
@@ -255,11 +256,11 @@ void initDisplayLoop() {
 ** Function name: displayCurrentItem
 ** Description:   Display Item on Screen before instalation
 ***************************************************************************************/
-void displayCurrentItem(JsonDocument doc, int currentIndex) {
+void displayCurrentItem(const JsonDocument &doc, int currentIndex) {
 #ifdef E_PAPER_DISPLAY
     tft->stopCallback();
 #endif
-    JsonObject item = doc[currentIndex];
+    JsonObjectConst item = doc[currentIndex];
 
     const char *name = item["name"];
     const char *author = item["author"];
@@ -462,6 +463,7 @@ void progressHandler(int progress, size_t total) {
         lastUpdate = millis();
     }
 #endif
+    wakeUpScreen();
 }
 
 /***************************************************************************************

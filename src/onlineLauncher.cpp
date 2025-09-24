@@ -27,6 +27,7 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         getConfigs();
         JsonObject setting = settings[0];
         JsonArray WifiList = setting["wifi"].as<JsonArray>();
+        if (WifiList.isNull()) { WifiList = setting.createNestedArray("wifi"); }
         EEPROM.begin(EEPROMSIZE);
         pwd = EEPROM.readString(20);
         EEPROM.end();
@@ -57,12 +58,19 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
             }
             EEPROM.end(); // Free EEPROM memory
             if (sdcardMounted && !found) {
-                // Cria um novo objeto JSON para adicionar ao array "wifi"
                 JsonObject newWifi = WifiList.add<JsonObject>();
-                newWifi["ssid"] = ssid;
-                newWifi["pwd"] = pwd;
-                found = true;
-                saveConfigs();
+                if (newWifi.isNull()) {
+                    settings.garbageCollect();
+                    newWifi = WifiList.add<JsonObject>();
+                }
+                if (!newWifi.isNull()) {
+                    newWifi["ssid"] = ssid;
+                    newWifi["pwd"] = pwd;
+                    found = true;
+                    saveConfigs();
+                } else {
+                    log_e("wifiConnect: failed to store new WiFi entry");
+                }
             } else if (sdcardMounted && found && wrongPass) {
                 for (JsonObject wifiEntry : WifiList) {
                     if (wifiEntry["ssid"].as<String>() == ssid) {
@@ -263,11 +271,11 @@ retry:
                 setupSdCard();
                 if (!SDM.exists("/downloads")) SDM.mkdir("/downloads");
 
-                File file = SDM.open(folder + fileName + ".bin", FILE_WRITE);
+                File file = SDM.open(folder + fileName + ".bin", FILE_WRITE, true);
                 size_t size = http.getSize();
                 displayRedStripe("Downloading FW");
                 if (file) {
-                    // vTaskSuspend(xHandle);
+                    vTaskSuspend(xHandle);
                     int downloaded = 0;
                     WiFiClient *stream = http.getStreamPtr();
                     int len = size;
@@ -281,7 +289,12 @@ retry:
                         int size_av = stream->available();
                         if (size_av) {
                             int c = stream->readBytes(buff, std::min(size_av, bufSize));
-                            file.write(buff, c);
+                            if (c <= 0) continue;
+                            size_t wrote = file.write(buff, c);
+                            if (wrote != static_cast<size_t>(c)) {
+                                log_i("Download> write failed after %d bytes", downloaded);
+                                break;
+                            }
 
                             if (len > 0) { len -= c; }
 
@@ -290,8 +303,9 @@ retry:
                             progressHandler(downloaded, size); // Chama a função de progresso
                         }
                     }
+                    file.flush();
                     file.close();
-                    // vTaskResume(xHandle);
+                    vTaskResume(xHandle);
                 } else {
                     Serial.printf("Download> Couldn't create file %s\n", String(folder + fileName + ".bin"));
                     displayRedStripe("Fail creating file.");
@@ -352,7 +366,6 @@ void installFirmware(
     if (app_size > MAX_APP) app_size = MAX_APP;
     if (app_size > MAX_APP) app_size = MAX_APP;
 
-    // precisa revisar!!!
     if (fat && fat_size[0] > MAX_FAT_vfs && fat_size[1] == 0) fat_size[0] = MAX_FAT_vfs;
     else if (fat && fat_size[0] > MAX_FAT_sys) fat_size[0] = MAX_FAT_sys;
     if (fat && fat_size[1] > MAX_FAT_vfs) fat_size[1] = MAX_FAT_vfs;

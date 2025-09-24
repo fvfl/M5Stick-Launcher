@@ -416,7 +416,7 @@ void chargeMode() {
 
 bool config_exists() {
     if (!SDM.exists(CONFIG_FILE)) {
-        File conf = SDM.open(CONFIG_FILE, FILE_WRITE);
+        File conf = SDM.open(CONFIG_FILE, FILE_WRITE, true);
         if (conf) {
 #if ROTATION > 1
             conf.print(
@@ -598,16 +598,61 @@ void getConfigs() {
 **  save configs into JSON config.conf file
 **********************************************************************/
 void saveConfigs() {
-    // Delete existing file, otherwise the configuration is appended to the file
     bool retry = true;
-Retry:
-    if (setupSdCard()) {
+
+    while (true) {
+        if (!setupSdCard()) break;
+
         if (SDM.remove(CONFIG_FILE)) log_i("config.conf deleted");
         else log_i("fail deleting config.conf");
 
-        JsonObject setting = settings[0];
+        JsonArray settingsArray = settings.as<JsonArray>();
+        if (settingsArray.isNull()) {
+            settings.clear();
+            settingsArray = settings.to<JsonArray>();
+        }
+        if (settingsArray.isNull()) {
+            log_e("saveConfigs: failed to prepare settings array");
+            break;
+        }
 
-        // Atribuindo as configurações ao objeto JSON
+        JsonObject setting;
+        if (settingsArray.size() > 0 && settingsArray[0].is<JsonObject>()) {
+            setting = settingsArray[0];
+        } else {
+            settingsArray.clear();
+            setting = settingsArray.add<JsonObject>();
+        }
+        if (setting.isNull()) {
+            settings.garbageCollect();
+            setting = settingsArray.add<JsonObject>();
+        }
+        if (setting.isNull()) {
+            log_e("saveConfigs: failed to create root object");
+            break;
+        }
+
+        JsonArray wifiList = setting["wifi"].as<JsonArray>();
+        if (wifiList.isNull()) { wifiList = setting.createNestedArray("wifi"); }
+        if (wifiList.isNull()) {
+            log_e("saveConfigs: failed to create wifi array");
+            break;
+        }
+        if (wifiList.size() == 0) {
+            JsonObject wifiObj = wifiList.add<JsonObject>();
+            if (wifiObj.isNull()) {
+                settings.garbageCollect();
+                wifiObj = wifiList.add<JsonObject>();
+            }
+            if (!wifiObj.isNull()) {
+                wifiObj["ssid"] = ssid.length() == 0 ? "myNetSSID" : ssid;
+                wifiObj["pwd"] = pwd.length() == 0 ? "myNetPassword" : pwd;
+            } else {
+                log_e("saveConfigs: failed to allocate default wifi entry");
+            }
+        }
+
+        // Update JSON document with current configuration
         setting["onlyBins"] = onlyBins;
         setting["askSpiffs"] = askSpiffs;
         setting["bright"] = bright;
@@ -622,41 +667,46 @@ Retry:
         setting["wui_usr"] = wui_usr;
         setting["wui_pwd"] = wui_pwd;
         setting["dwn_path"] = dwn_path;
-        if (!setting["wifi"].is<JsonArray>()) {
-            JsonArray WifiList = setting["wifi"].to<JsonArray>();
-            if (WifiList.size() < 1) {
-                JsonObject WifiObj = WifiList.add<JsonObject>();
-                WifiObj["ssid"] = "myNetSSID";
-                WifiObj["pwd"] = "myNetPassword";
-            }
-        }
-        // Open file for writing
-        File file = SDM.open(CONFIG_FILE, FILE_WRITE);
+
+        File file = SDM.open(CONFIG_FILE, FILE_WRITE, true);
         if (!file) {
             log_i("Failed to create file");
-            file.close();
-            return;
-        } else log_i("config.conf created");
-        // Serialize JSON to file
-        if (serializeJsonPretty(settings, file) < 5 && retry) {
-            log_i("Failed to write to file");
-            file.close();
-            log_i("Deleting file");
-            SDM.remove(CONFIG_FILE);
-            log_i("Creating default file");
-            // check if config file exists, otherwise create it with default values
-            config_exists();
-            // Try to rewrite the configs
-            file = SDM.open(CONFIG_FILE, FILE_READ);
-            deserializeJson(settings, file);
-            retry = false;
-            goto Retry;
-        } else if (!retry) log_i("Create new file and Rewriting didn't work");
-        else log_i("config.conf written successfully");
+            break;
+        }
+        log_i("config.conf created");
 
-        // Close the file
+        size_t written = serializeJsonPretty(settings, file);
+        file.flush();
         file.close();
+
+        if (written < 5) {
+            if (retry) {
+                log_i("Failed to write to file");
+                SDM.remove(CONFIG_FILE);
+                log_i("Creating default file");
+                config_exists();
+                File defaultFile = SDM.open(CONFIG_FILE, FILE_READ);
+                if (defaultFile) {
+                    DeserializationError err = deserializeJson(settings, defaultFile);
+                    if (err) {
+                        log_i("Failed to deserialize default config: %s", err.c_str());
+                        settings.clear();
+                    }
+                    defaultFile.close();
+                } else {
+                    log_i("Failed to reopen config.conf for recovery");
+                }
+                retry = false;
+                continue;
+            }
+            log_i("Create new file and Rewriting didn't work");
+        } else {
+            log_i("config.conf written successfully");
+        }
+
+        break;
     }
+
     EEPROM.begin(EEPROMSIZE + 32);
     EEPROM.writeString(20, pwd);
     EEPROM.writeString(EEPROMSIZE, ssid);

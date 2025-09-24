@@ -36,7 +36,7 @@ void setTftDisplay(
     uint16_t bg = tft->getTextbgcolor()
 );
 
-void displayCurrentItem(JsonDocument doc, int currentIndex);
+void displayCurrentItem(const JsonDocument &doc, int currentIndex);
 void displayCurrentVersion(
     String name, String author, String version, String published_at, int versionIndex, JsonArray versions
 );

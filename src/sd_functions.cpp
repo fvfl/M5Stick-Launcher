@@ -200,7 +200,8 @@ bool pasteFile(String path) {
     }
 
     // Criar o arquivo de destino
-    File destFile = SDM.open(path + "/" + fileToCopy.substring(fileToCopy.lastIndexOf('/') + 1), FILE_WRITE);
+    File destFile =
+        SDM.open(path + "/" + fileToCopy.substring(fileToCopy.lastIndexOf('/') + 1), FILE_WRITE, true);
     if (!destFile) {
         // Serial.println("Falha ao criar o arquivo de destino");
         sourceFile.close();
@@ -593,6 +594,7 @@ void performUpdate(Stream &updateSource, size_t updateSize, int command) {
     tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
     progressHandler(0, 500);
 
+    vTaskSuspend(xHandle);
     if (Update.begin(updateSize, command)) {
         int written = 0;
         uint8_t buf[1024];
@@ -618,6 +620,7 @@ void performUpdate(Stream &updateSource, size_t updateSize, int command) {
         displayRedStripe("E:" + String(error) + "-Wrong Partition Scheme");
         delay(2500);
     }
+    vTaskResume(xHandle);
 }
 
 /***************************************************************************************
