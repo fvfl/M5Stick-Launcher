@@ -21,7 +21,7 @@ void _setup_gpio() {
 void _post_setup_gpio() {
     pinMode(TFT_BL, OUTPUT);
     ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
-    ledcWrite(TFT_BRIGHT_CHANNEL, 255);
+    ledcWrite(TFT_BL, 255);
 }
 /*********************************************************************
 ** Function: setBrightness
@@ -37,7 +37,7 @@ void _setBrightness(uint8_t brightval) {
     else if (brightval == 0) dutyCycle = 0;
     else dutyCycle = ((brightval * 250) / 100);
 
-    log_i("dutyCycle for bright 0-255: %d", dutyCycle);
+    Serial.printf("dutyCycle for bright 0-255: %d\n", dutyCycle);
     if (!ledcWrite(TFT_BL, dutyCycle)) {
         Serial.println("Failed to set brightness");
         ledcDetach(TFT_BL);
