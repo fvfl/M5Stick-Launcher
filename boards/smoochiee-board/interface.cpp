@@ -80,8 +80,8 @@ void InputHandler(void) {
     // read all inputs only once, instead of 4
     bool l = digitalRead(L_BTN);
     bool r = digitalRead(R_BTN);
-    bool d = digitalRead(UP_BTN);
-    bool u = digitalRead(DW_BTN);
+    bool u = digitalRead(UP_BTN);
+    bool d = digitalRead(DW_BTN);
     bool s = digitalRead(SEL_BTN);
 
     if (s == BTN_ACT || u == BTN_ACT || d == BTN_ACT || r == BTN_ACT || l == BTN_ACT) {

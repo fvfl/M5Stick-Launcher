@@ -243,6 +243,7 @@ bool createFolder(String path) {
         // Serial.println("Fail to start SDCard");
         return false;
     }
+    if (path != "/") path += "/";
     if (!SDM.mkdir(path + foldername)) {
         displayRedStripe("Couldn't create folder");
         return false;

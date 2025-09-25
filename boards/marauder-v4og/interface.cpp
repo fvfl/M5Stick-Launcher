@@ -22,6 +22,10 @@ void _post_setup_gpio() {
         Serial.println("Touch IC not Started");
         log_i("Touch IC not Started");
     } else Serial.println("Touch IC Started");
+
+    pinMode(TFT_BL, OUTPUT);
+    ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
+    ledcWrite(TFT_BRIGHT_CHANNEL, 255);
 }
 
 /*********************************************************************
@@ -30,8 +34,24 @@ void _post_setup_gpio() {
 ** set brightness value
 **********************************************************************/
 void _setBrightness(uint8_t brightval) {
-    if (brightval > 5) digitalWrite(TFT_BL, HIGH);
-    else digitalWrite(TFT_BL, LOW);
+    // if (brightval > 5) digitalWrite(TFT_BL, HIGH);
+    // else digitalWrite(TFT_BL, LOW);
+
+    int dutyCycle;
+    if (brightval == 100) dutyCycle = 250;
+    else if (brightval == 75) dutyCycle = 130;
+    else if (brightval == 50) dutyCycle = 70;
+    else if (brightval == 25) dutyCycle = 20;
+    else if (brightval == 0) dutyCycle = 0;
+    else dutyCycle = ((brightval * 250) / 100);
+
+    log_i("dutyCycle for bright 0-255: %d", dutyCycle);
+    if (!ledcWrite(TFT_BL, dutyCycle)) {
+        Serial.println("Failed to set brightness");
+        ledcDetach(TFT_BL);
+        ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
+        ledcWrite(TFT_BL, dutyCycle);
+    }
 }
 
 /*********************************************************************
