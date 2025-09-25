@@ -13,7 +13,38 @@ void _setup_gpio() {
     pinMode(R_BTN, INPUT);
     pinMode(L_BTN, INPUT);
 }
+/***************************************************************************************
+** Function name: _post_setup_gpio()
+** Location: main.cpp
+** Description:   second stage gpio setup to make a few functions work
+***************************************************************************************/
+void _post_setup_gpio() {
+    pinMode(TFT_BL, OUTPUT);
+    ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
+    ledcWrite(TFT_BRIGHT_CHANNEL, 255);
+}
+/*********************************************************************
+** Function: setBrightness
+** location: settings.cpp
+** set brightness value
+**********************************************************************/
+void _setBrightness(uint8_t brightval) {
+    int dutyCycle;
+    if (brightval == 100) dutyCycle = 250;
+    else if (brightval == 75) dutyCycle = 130;
+    else if (brightval == 50) dutyCycle = 70;
+    else if (brightval == 25) dutyCycle = 20;
+    else if (brightval == 0) dutyCycle = 0;
+    else dutyCycle = ((brightval * 250) / 100);
 
+    log_i("dutyCycle for bright 0-255: %d", dutyCycle);
+    if (!ledcWrite(TFT_BL, dutyCycle)) {
+        Serial.println("Failed to set brightness");
+        ledcDetach(TFT_BL);
+        ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
+        ledcWrite(TFT_BL, dutyCycle);
+    }
+}
 /***************************************************************************************
 ** Function name: getBattery()
 ** location: display.cpp
@@ -46,13 +77,6 @@ void InputHandler(void) {
     if (d == BTN_ACT) DownPress = true;
     if (s == BTN_ACT) SelPress = true;
 }
-
-/*********************************************************************
-** Function: setBrightness
-** location: settings.cpp
-** set brightness value
-**********************************************************************/
-void _setBrightness(uint8_t brightval) {}
 
 /*********************************************************************
 ** Function: powerOff

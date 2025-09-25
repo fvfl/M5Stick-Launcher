@@ -82,7 +82,8 @@ Things that needs to be done in next updates
   <summary><h2>Changelog</h2></summary>
 
 * 2.5.2:
-     * [x] Fixed Marauder V6 touchscreen and CYDs touchscreen unresponsive [issue](https://github.com/bmorcelli/Launcher/issues/210)
+     * [x] Fixed Marauder V6 touchscreen and CYDs touchscreen unresponsive [issue](https://github.com/bmorcelli/Launcher/issues/210) and fixed Dim screen
+     * [x] Fixed Marauder Mini and V7 screen dimming.
      * [x] Fixed Smoochiee board inputs and SDCard [issue](https://github.com/bmorcelli/Launcher/issues/209)
      * [x] Fixed Longpress on Cardputer ADV
      * [x] Fixed folder creation on subfolders
