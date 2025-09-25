@@ -1,8 +1,8 @@
 #ifndef Pins_Arduino_h
 #define Pins_Arduino_h
 
-#include <stdint.h>
 #include "soc/soc_caps.h"
+#include <stdint.h>
 
 #define USB_VID 0x303a
 #define USB_PID 0x1001
@@ -46,37 +46,38 @@ static const uint8_t G46 = 46;
 static const uint8_t ADC1 = 7;
 static const uint8_t ADC2 = 8;
 
-#define BTN_ALIAS	'"OK"'
+#define BTN_ALIAS '"OK"'
 #define HAS_5_BUTTONS
-#define SEL_BTN     0
-#define UP_BTN      40
-#define DW_BTN      41 
-#define R_BTN       38
-#define L_BTN       39
-#define BTN_ACT     LOW
-	
-#define LED     5
-#define LED_ON	HIGH
-#define LED_OFF	LOW
+#define HAS_BTN
+#define SEL_BTN 0
+#define UP_BTN 40
+#define DW_BTN 41
+#define R_BTN 38
+#define L_BTN 39
+#define BTN_ACT LOW
 
+#define LED 5
+#define LED_ON HIGH
+#define LED_OFF LOW
 
-#define FP	1
-#define FM	2
-#define FG	3
+#define FP 1
+#define FM 2
+#define FG 3
 
-#define HAS_SCREEN	1
-#define ROTATION	1
-#define MINBRIGHT	160
+#define HAS_SCREEN 1
+#define ROTATION 1
+#define MINBRIGHT 160
 
-#define ST7789_DRIVER	    1
-#define TFT_WIDTH	        170
-#define TFT_HEIGHT	        320
-#define TFT_BL	            6
-#define TFT_RST	            16
-#define TFT_DC	            15
-#define TFT_MOSI	        17
-#define TFT_SCLK	        18
-#define TFT_CS	            7
+#define ST7789_DRIVER 1
+#define TFT_WIDTH 170
+#define TFT_HEIGHT 320
+#define TFT_BL 6
+#define TFT_RST 16
+#define TFT_DC 15
+#define TFT_MOSI 17
+#define TFT_MISO 8
+#define TFT_SCLK 18
+#define TFT_CS 7
 
 #define GFX_BL 21
 #define TFT_IPS 1
@@ -85,20 +86,20 @@ static const uint8_t ADC2 = 8;
 #define TFT_COL_OFS2 35
 #define TFT_ROW_OFS2 0
 
-#define CC1101_SS_PIN	46
-#define NRF24_SS_PIN	14 
+#define CC1101_SS_PIN 46
+#define NRF24_SS_PIN 14
 
-#define SDCARD_CS	3
-#define SDCARD_SCK	18
-#define SDCARD_MISO	8
-#define SDCARD_MOSI	17
+#define SDCARD_CS 3
+#define SDCARD_SCK 18
+#define SDCARD_MISO 8
+#define SDCARD_MOSI 17
 
-#define GROVE_SDA	47
-#define GROVE_SCL	48
+#define GROVE_SDA 47
+#define GROVE_SCL 48
 
-#define SPI_SCK_PIN	    13
-#define SPI_MOSI_PIN	12
-#define SPI_MISO_PIN	11
-#define SPI_SS_PIN	    43
-
-#endif /* Pins_Arduino_h */
+#define SPI_SCK_PIN 13
+#define SPI_MOSI_PIN 12
+#define SPI_MISO_PIN 11
+#define SPI_SS_PIN 43
+/* Pins_Arduino_h */
+#endif

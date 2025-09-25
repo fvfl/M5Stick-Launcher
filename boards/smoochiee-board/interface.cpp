@@ -75,24 +75,31 @@ void _setBrightness(uint8_t brightval) {
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
+    static unsigned long tm = 0;
+    if (millis() - tm < 200 && !LongPress) return;
+    // read all inputs only once, instead of 4
+    bool l = digitalRead(L_BTN);
+    bool r = digitalRead(R_BTN);
+    bool d = digitalRead(UP_BTN);
+    bool u = digitalRead(DW_BTN);
+    bool s = digitalRead(SEL_BTN);
 
-    if (digitalRead(SEL_BTN) == BTN_ACT || digitalRead(UP_BTN) == BTN_ACT || digitalRead(DW_BTN) == BTN_ACT ||
-        digitalRead(R_BTN) == BTN_ACT || digitalRead(L_BTN) == BTN_ACT) {
+    if (s == BTN_ACT || u == BTN_ACT || d == BTN_ACT || r == BTN_ACT || l == BTN_ACT) {
         if (!wakeUpScreen()) AnyKeyPress = true;
-        else goto END;
+        else return;
+    } else return;
+    if (l == BTN_ACT) { PrevPress = true; }
+    if (r == BTN_ACT) { NextPress = true; }
+    if (u == BTN_ACT) { UpPress = true; }
+    if (d == BTN_ACT) { DownPress = true; }
+    if (s == BTN_ACT) { SelPress = true; }
+    // Press Left and Right trigger EscPress
+    if (PrevPress && NextPress) {
+        PrevPress = false;
+        NextPress = false;
+        EscPress = true;
     }
-    if (digitalRead(L_BTN) == BTN_ACT) { PrevPress = true; }
-    if (digitalRead(R_BTN) == BTN_ACT) { NextPress = true; }
-    if (digitalRead(UP_BTN) == BTN_ACT) { UpPress = true; }
-    if (digitalRead(DW_BTN) == BTN_ACT) { DownPress = true; }
-    if (digitalRead(SEL_BTN) == BTN_ACT) { SelPress = true; }
-END:
-    if (AnyKeyPress) {
-        long tmp = millis();
-        while ((millis() - tmp) < 200 && (digitalRead(SEL_BTN) == BTN_ACT || digitalRead(UP_BTN) == BTN_ACT ||
-                                          digitalRead(DW_BTN) == BTN_ACT || digitalRead(R_BTN) == BTN_ACT ||
-                                          digitalRead(L_BTN) == BTN_ACT));
-    }
+    tm = millis();
 }
 
 /*********************************************************************

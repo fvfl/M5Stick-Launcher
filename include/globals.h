@@ -3,6 +3,7 @@
 // further refference
 #ifndef GLOBALS_H
 #define GLOBALS_H
+#include "pins_arduino.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h> // to make M5GFX compile in Core, Core2 and CoreS3 devices
@@ -122,10 +123,8 @@ extern TaskHandle_t xHandle;
 extern inline bool check(volatile bool &btn) {
 #ifndef DONT_USE_INPUT_TASK
     if (!btn) return false;
-    // vTaskSuspend(xHandle);
     btn = false;
     AnyKeyPress = false;
-    // vTaskResume(xHandle);
     return true;
 #else
     static uint8_t count = 0;

@@ -81,6 +81,10 @@ Things that needs to be done in next updates
 <details>
   <summary><h2>Changelog</h2></summary>
 
+* 2.5.2:
+     * [x] Fixed Marauder V6 touchscreen and CYDs touchscreen unresponsive [issue](https://github.com/bmorcelli/Launcher/issues/210)
+     * [x] Fixed Smoochiee board inputs and SDCard [issue](https://github.com/bmorcelli/Launcher/issues/209)
+
 * 2.5.1:
      * [x] Fixed Cardputer ADV Keyboard compatibility
      * [x] Fixed issue where OTA firmware list wasn't being fully downloaded.
