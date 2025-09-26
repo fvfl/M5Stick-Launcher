@@ -111,7 +111,7 @@ def _merge_bins_callback(target, source, env):
     cmd_parts = [
         "pio pkg exec -p \"tool-esptoolpy\" -- esptool",
         "--chip", chip_arg,
-        "merge-bin",
+        "merge_bin",
         "--output", q(out_bin),
         hex(boot_offset), q(boot_bin),
         hex(PART_TABLE_OFFSET), q(part_bin),
@@ -135,6 +135,7 @@ def _merge_bins_callback(target, source, env):
     print("[merge_bin] Merging binaries...")
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     rc = result.returncode
+    # rc = env.Execute(cmd) # debug purposes
 
     if rc != 0:
         print(f"[merge_bin] Failed with exit code {rc}")

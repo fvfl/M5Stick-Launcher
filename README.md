@@ -81,6 +81,10 @@ Things that needs to be done in next updates
 <details>
   <summary><h2>Changelog</h2></summary>
 
+* 2.5.3:
+     * [x] Restored T-Deck OTA
+     * [x] Refined T-Deck Touchscreen inputs
+
 * 2.5.2:
      * [x] Fixed Marauder V6 touchscreen and CYDs touchscreen unresponsive [issue](https://github.com/bmorcelli/Launcher/issues/210) and fixed Dim screen
      * [x] Fixed Marauder Mini and V7 screen dimming.
