@@ -106,10 +106,20 @@ void settings_menu() {
         options.push_back({"Restore FAT Sys", [=]() { restorePartition("sys"); }}); // Test only
     if (MAX_FAT_vfs > 0) options.push_back({"Restore FAT Vfs", [=]() { restorePartition("vfs"); }});
     if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
+    if (dev_mode)
+        options.push_back({"Direct Link install", [=]() {
+                               if (WiFi.status() != WL_CONNECTED) {
+                                   connectWifi();
+                                   if (WiFi.status() == WL_CONNECTED) {
+                                       installFirmware(direct_link, MAX_APP, 0, 0, 0, 1, 0, 0, 0);
+                                   }
+                               }
+                           }});
     options.push_back({"Restart", [=]() { FREE_TFT ESP.restart(); }});
 #if defined(STICK_C_PLUS2) || defined(T_EMBED) || defined(STICK_C_PLUS) || defined(T_LORA_PAGER)
     options.push_back({"Turn-off", [=]() { powerOff(); }});
 #endif
+
     options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
     loopOptions(options);
     tft->drawPixel(0, 0, 0);
@@ -423,14 +433,14 @@ bool config_exists() {
                 "[{\"rot\":3,\"dimmerSet\":10,\"onlyBins\":1,\"bright\":100,\"askSpiffs\":1,\"wui_usr\":"
                 "\"admin\",\"wui_pwd\":\"launcher\",\"dwn_path\":\"/downloads/"
                 "\",\"FGCOLOR\":2016,\"BGCOLOR\":0,\"ALCOLOR\":63488,\"even\":13029,\"odd\":12485,\",\"dev\":"
-                "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\"}]}]"
+                "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\",\"direct_link\":\"\"}]}]"
             );
 #else
             conf.print(
                 "[{\"rot\":1,\"dimmerSet\":10,\"onlyBins\":1,\"bright\":100,\"askSpiffs\":1,\"wui_usr\":"
                 "\"admin\",\"wui_pwd\":\"launcher\",\"dwn_path\":\"/downloads/"
                 "\",\"FGCOLOR\":2016,\"BGCOLOR\":0,\"ALCOLOR\":63488,\"even\":13029,\"odd\":12485,\",\"dev\":"
-                "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\"}]}]"
+                "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\",\"direct_link\":\"\"}]}]"
             );
 #endif
         }
@@ -544,6 +554,12 @@ void getConfigs() {
             }
             if (setting["dwn_path"].is<String>()) {
                 dwn_path = setting["dwn_path"].as<String>();
+            } else {
+                count++;
+                log_i("Fail");
+            }
+            if (setting["direct_link"].is<String>()) {
+                direct_link = setting["direct_link"].as<String>();
             } else {
                 count++;
                 log_i("Fail");
@@ -667,6 +683,7 @@ void saveConfigs() {
         setting["wui_usr"] = wui_usr;
         setting["wui_pwd"] = wui_pwd;
         setting["dwn_path"] = dwn_path;
+        setting["direct_link"] = direct_link;
 
         File file = SDM.open(CONFIG_FILE, FILE_WRITE, true);
         if (!file) {

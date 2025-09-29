@@ -101,6 +101,7 @@ String pwd;
 String wui_usr = "admin";
 String wui_pwd = "launcher";
 String dwn_path = "/downloads/";
+String direct_link = "";
 DynamicJsonDocument doc(DOC_JSON_CAPACITY);
 DynamicJsonDocument settings(SETTINGS_JSON_CAPACITY);
 std::vector<std::pair<String, std::function<void()>>> options;

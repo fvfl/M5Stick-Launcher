@@ -81,6 +81,9 @@ Things that needs to be done in next updates
 <details>
   <summary><h2>Changelog</h2></summary>
 
+* 2.5.4:
+     * [x] Add support to direct link install (edit config.conf, enable dev_mode, put your firmware bin [without partitions and bootloader] and install from CFG>Direct Link install ). Made to use Github Codespaces open port to test firmware
+
 * 2.5.3:
      * [x] Restored T-Deck OTA
      * [x] Refined T-Deck Touchscreen inputs

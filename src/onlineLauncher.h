@@ -14,6 +14,8 @@ void installFirmware(
     bool fat, uint32_t fat_offset[2], uint32_t fat_size[2]
 );
 
+void connectWifi();
+
 void ota_function();
 
 void downloadFirmware(String fileAddr, String fileName, String folder = "/downloads/");

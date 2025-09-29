@@ -180,6 +180,8 @@ extern String wui_pwd;
 
 extern String dwn_path;
 
+extern String direct_link;
+
 extern int currentIndex;
 
 extern DynamicJsonDocument doc;
