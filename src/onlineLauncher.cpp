@@ -372,13 +372,13 @@ void installFirmware(
     else if (fat && fat_size[0] > MAX_FAT_sys) fat_size[0] = MAX_FAT_sys;
     if (fat && fat_size[1] > MAX_FAT_vfs) fat_size[1] = MAX_FAT_vfs;
 
-    String fileAddr;
+    String fileAddr = file;
 
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FW");
 
     WiFiClientSecure *client = new WiFiClientSecure;
-    fileAddr = SERVER_PATH + file;
+    if (!file.startsWith("https://")) fileAddr = SERVER_PATH + file;
     client->setInsecure();
     httpUpdate.rebootOnUpdate(false);
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
