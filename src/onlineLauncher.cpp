@@ -389,10 +389,16 @@ void installFirmware(
     httpUpdate.onProgress(progressHandler);
     httpUpdate.setLedPin(LED, LED_ON);
     vTaskSuspend(xHandle);
-    if (nb) app_offset = 0;
-    if (!httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size)) {
-        displayRedStripe("Instalation Failed");
-        goto SAIR;
+    if (nb) {
+        if (!httpUpdate.update(*client, fileAddr)) {
+            displayRedStripe("Instalation Failed");
+            goto SAIR;
+        }
+    } else {
+        if (!httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size)) {
+            displayRedStripe("Instalation Failed");
+            goto SAIR;
+        }
     }
     if (!client) {
         displayRedStripe("Couldn't Connect to server");
