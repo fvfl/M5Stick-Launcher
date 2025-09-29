@@ -106,6 +106,7 @@ void settings_menu() {
         options.push_back({"Restore FAT Sys", [=]() { restorePartition("sys"); }}); // Test only
     if (MAX_FAT_vfs > 0) options.push_back({"Restore FAT Vfs", [=]() { restorePartition("vfs"); }});
     if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
+#ifndef DISABLE_OTA
     if (dev_mode)
         options.push_back({"Direct Link install", [=]() {
                                if (WiFi.status() != WL_CONNECTED) {
@@ -115,6 +116,7 @@ void settings_menu() {
                                    }
                                }
                            }});
+#endif
     options.push_back({"Restart", [=]() { FREE_TFT ESP.restart(); }});
 #if defined(STICK_C_PLUS2) || defined(T_EMBED) || defined(STICK_C_PLUS) || defined(T_LORA_PAGER)
     options.push_back({"Turn-off", [=]() { powerOff(); }});

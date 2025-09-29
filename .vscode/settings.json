@@ -72,7 +72,8 @@
         "mutex": "cpp",
         "thread": "cpp",
         "numbers": "cpp",
-        "compare": "cpp"
+        "compare": "cpp",
+        "print": "cpp"
     },
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
