@@ -244,8 +244,8 @@ bool GetJsonFromM5() {
 ** Function name: downloadFirmware
 ** Description:   Downloads the firmware and save into the SDCard
 ***************************************************************************************/
-void downloadFirmware(String file_str, String fileName, String folder) {
-    String fileAddr = SERVER_PATH + file_str;
+void downloadFirmware(String file, String fileName, String folder) {
+    if (!file.startsWith("https://")) file = SERVER_PATH + file;
     int tries = 0;
     fileName = replaceChars(fileName);
     prog_handler = 2;
@@ -265,7 +265,7 @@ retry:
         int httpResponseCode = -1;
 
         while (httpResponseCode < 0) {
-            http.begin(*client, fileAddr);
+            http.begin(*client, file);
             http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
             http.useHTTP10(true);
             httpResponseCode = http.GET();
@@ -372,13 +372,11 @@ void installFirmware(
     else if (fat && fat_size[0] > MAX_FAT_sys) fat_size[0] = MAX_FAT_sys;
     if (fat && fat_size[1] > MAX_FAT_vfs) fat_size[1] = MAX_FAT_vfs;
 
-    String fileAddr = file;
-
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FW");
 
     WiFiClientSecure *client = new WiFiClientSecure;
-    if (!file.startsWith("https://")) fileAddr = SERVER_PATH + file;
+    if (!file.startsWith("https://")) file = SERVER_PATH + file;
     client->setInsecure();
     httpUpdate.rebootOnUpdate(false);
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
@@ -390,12 +388,12 @@ void installFirmware(
     httpUpdate.setLedPin(LED, LED_ON);
     vTaskSuspend(xHandle);
     if (nb) {
-        if (!httpUpdate.update(*client, fileAddr)) {
+        if (!httpUpdate.update(*client, file)) {
             displayRedStripe("Instalation Failed");
             goto SAIR;
         }
     } else {
-        if (!httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size)) {
+        if (!httpUpdate.updateFromOffset(*client, file, app_offset, app_size)) {
             displayRedStripe("Instalation Failed");
             goto SAIR;
         }
@@ -426,7 +424,7 @@ void installFirmware(
         progressHandler(0, 500);
         httpUpdate.onProgress(progressHandler);
 
-        if (!httpUpdate.updateSpiffsFromOffset(*client, fileAddr, spiffs_offset, spiffs_size)) {
+        if (!httpUpdate.updateSpiffsFromOffset(*client, file, spiffs_offset, spiffs_size)) {
             displayRedStripe("SPIFFS Failed");
             delay(2500);
         }
@@ -440,12 +438,12 @@ void installFirmware(
         for (int i = 0; i < 2; i++) {
             if (fat_size[i] > 0) {
                 if ((FAT - i * 100) == 400) {
-                    if (!installFAT_OTA(client, fileAddr, fat_offset[i], fat_size[i], "sys")) {
+                    if (!installFAT_OTA(client, file, fat_offset[i], fat_size[i], "sys")) {
                         displayRedStripe("FAT Failed");
                         delay(2500);
                     }
                 } else {
-                    if (!installFAT_OTA(client, fileAddr, fat_offset[i], fat_size[i], "vfs")) {
+                    if (!installFAT_OTA(client, file, fat_offset[i], fat_size[i], "vfs")) {
                         displayRedStripe("FAT Failed");
                         delay(2500);
                     }
@@ -469,7 +467,7 @@ SAIR:
 ** Description:   install FAT partition OverTheAir
 ***************************************************************************************/
 bool installFAT_OTA(
-    WiFiClientSecure *client, String fileAddr, uint32_t offset, uint32_t size, const char *label
+    WiFiClientSecure *client, String file, uint32_t offset, uint32_t size, const char *label
 ) {
     prog_handler = 1; // review
 
@@ -479,7 +477,7 @@ bool installFAT_OTA(
     if (client) {
         HTTPClient http;
         int httpResponseCode = -1;
-        http.begin(*client, fileAddr);
+        http.begin(*client, file);
         http.addHeader("Range", "bytes=" + String(offset) + "-" + String(offset + size - 1));
         http.useHTTP10(true);
 
