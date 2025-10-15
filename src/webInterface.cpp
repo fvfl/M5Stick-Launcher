@@ -1,13 +1,13 @@
 
 #include "webInterface.h"
 #include "display.h"
+#include "esp_ota_ops.h"
 #include "esp_task_wdt.h"
 #include "mykeyboard.h"
 #include "onlineLauncher.h"
 #include "sd_functions.h"
 #include "settings.h"
 #include <globals.h>
-
 struct Config {
     String httpuser;
     String httppassword;   // password to access web admin
@@ -39,23 +39,7 @@ String uploadFolder = "";
 **********************************************************************/
 void webUIMyNet() {
     if (WiFi.status() != WL_CONNECTED) {
-        int nets;
-        WiFi.mode(WIFI_MODE_STA);
-        displayRedStripe("Scanning...");
-        nets = WiFi.scanNetworks();
-        options = {};
-        for (int i = 0; i < nets; i++) {
-            options.push_back({WiFi.SSID(i).c_str(), [=]() {
-                                   startWebUi(WiFi.SSID(i).c_str(), int(WiFi.encryptionType(i)));
-                               }});
-        }
-        options.push_back({"Hidden SSID", [=]() {
-                               String __ssid = keyboard("", 32, "Your SSID");
-                               wifiConnect(__ssid.c_str(), 8);
-                           }});
-        options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
-        loopOptions(options);
-
+        connectWifi();
     } else {
         // If it is already connected, just start the network
         startWebUi("", 0, false);
@@ -69,7 +53,7 @@ void webUIMyNet() {
 **********************************************************************/
 void loopOptionsWebUi() {
     // Definição da matriz "Options"
-    std::vector<std::pair<String, std::function<void()>>> options = {
+    options = {
         {"my Network", [=]() { webUIMyNet(); }                   },
         {"AP mode",    [=]() { startWebUi("Launcher", 0, true); }},
         {"Main Menu",  [=]() { returnToMenu = true; }            },
@@ -480,7 +464,7 @@ void configureWebServer() {
                 setupSdCard();
                 request->send(200, "text/plain", "Pins configured.");
             error:
-                delay(1);
+                vTaskDelay(pdTICKS_TO_MS(1));
 #else
         request->send(200, "text/plain", "Functionality exclusive for Headless environment (devices with no screen)");
 #endif
@@ -555,7 +539,7 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
 
     // startup web server
     server->begin();
-    delay(500);
+    vTaskDelay(pdTICKS_TO_MS(500));
 
     tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, ALCOLOR);
     tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
@@ -590,6 +574,12 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
     while (!check(SelPress)) {
         if (shouldReboot) {
             FREE_TFT
+#if CONFIG_IDF_TARGET_ESP32P4
+            const esp_partition_t *partition =
+                esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+            esp_ota_set_boot_partition(partition);
+            ESP.deepSleep(100);
+#endif
             ESP.restart();
         }
         // Perform installation from SD Card
@@ -605,12 +595,11 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
     // log_i("Closing Server and turning off WiFi");
     server->reset();
     server->end();
-    delay(100);
+    vTaskDelay(pdTICKS_TO_MS(100));
     delete server;
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
-    stopOta = true; // used to verify if webUI was opened before to stop OTA and request restart
 
     tft->fillScreen(BGCOLOR);
 }
@@ -637,7 +626,7 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
 
     // startup web server
     server->begin();
-    delay(500);
+    vTaskDelay(pdTICKS_TO_MS(500));
 
     String txt;
     if (!mode_ap) txt = WiFi.localIP().toString();
@@ -667,11 +656,10 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
     log_i("Closing Server and turning off WiFi, something went wrong?");
     server->reset();
     server->end();
-    delay(100);
+    vTaskDelay(pdTICKS_TO_MS(100));
     delete server;
     WiFi.softAPdisconnect(true);
     WiFi.disconnect(true, true);
-    WiFi.mode(WIFI_OFF);
 }
 
 #endif

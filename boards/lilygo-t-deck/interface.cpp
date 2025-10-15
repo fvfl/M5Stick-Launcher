@@ -196,7 +196,10 @@ void InputHandler(void) {
         KeyStroke.Clear();
         KeyStroke.hid_keys.push_back(keyValue);
         if (keyValue == ' ') KeyStroke.exit_key = true; // key pressed to try to exit
-        if (keyValue == (char)0x08) KeyStroke.del = true;
+        if (keyValue == (char)0x08) {
+            KeyStroke.exit_key = true;
+            KeyStroke.del = true;
+        }
         if (keyValue == (char)0x0D) KeyStroke.enter = true;
         if (digitalRead(SEL_BTN) == BTN_ACT) KeyStroke.fn = true;
         KeyStroke.word.push_back(keyValue);

@@ -6,16 +6,8 @@
 #include "settings.h"
 #include <globals.h>
 
-#if defined(M5STACK)
-#define SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
-#else
-#define SERVER_PATH ""
-#endif
+#define M5_SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
 
-#ifndef JSON_SOURCE_PATH
-#define JSON_SOURCE_PATH                                                                                     \
-    "https://raw.githubusercontent.com/bmorcelli/M5Stack-json-fw/main/v2/third_party.json"
-#endif
 /***************************************************************************************
 ** Function name: wifiConnect
 ** Description:   Connects to wifiNetwork
@@ -49,7 +41,13 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
 
     Retry:
         if (!found || wrongPass) {
-            if (encryptation > 0) pwd = keyboard(pwd, 63, "Network Password:");
+            if (encryptation > 0) {
+                pwd = keyboard(pwd, 63, "Network Password:");
+                if (pwd == String(KEY_ESCAPE)) {
+                    returnToMenu = true;
+                    goto END;
+                }
+            }
 
             EEPROM.begin(EEPROMSIZE);
             if (pwd != EEPROM.readString(20)) {
@@ -59,10 +57,7 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
             EEPROM.end(); // Free EEPROM memory
             if (sdcardMounted && !found) {
                 JsonObject newWifi = WifiList.add<JsonObject>();
-                if (newWifi.isNull()) {
-                    settings.garbageCollect();
-                    newWifi = WifiList.add<JsonObject>();
-                }
+                if (newWifi.isNull()) { newWifi = WifiList.add<JsonObject>(); }
                 if (!newWifi.isNull()) {
                     newWifi["ssid"] = ssid;
                     newWifi["pwd"] = pwd;
@@ -109,6 +104,9 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
     } else { // Running in Access point mode
         IPAddress AP_GATEWAY(172, 0, 0, 1);
         WiFi.mode(WIFI_AP);
+#if CONFIG_ESP_HOSTED_ENABLED
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+#endif
         WiFi.softAPConfig(AP_GATEWAY, AP_GATEWAY, IPAddress(255, 255, 255, 0));
         WiFi.softAP("Launcher", "", 6, 0, 1, false);
         Serial.print("IP: ");
@@ -119,9 +117,12 @@ END:
 }
 void connectWifi() {
     int nets;
-    WiFi.disconnect(true);
+    // WiFi.disconnect(true);
     WiFi.mode(WIFI_MODE_STA);
     displayRedStripe("Scanning...");
+#if CONFIG_ESP_HOSTED_ENABLED
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+#endif
     nets = WiFi.scanNetworks();
     options = {};
     for (int i = 0; i < nets; i++) {
@@ -131,7 +132,7 @@ void connectWifi() {
     }
     options.push_back({"Hidden SSID", [=]() {
                            String __ssid = keyboard("", 32, "Your SSID");
-                           wifiConnect(__ssid.c_str(), 8);
+                           if (__ssid != String(KEY_ESCAPE)) wifiConnect(__ssid.c_str(), 8);
                        }});
     options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
     loopOptions(options);
@@ -142,26 +143,45 @@ void connectWifi() {
 ***************************************************************************************/
 void ota_function() {
 #ifndef DISABLE_OTA
-    if (!stopOta) {
-        if (WiFi.status() != WL_CONNECTED) {
-            connectWifi();
-            if (WiFi.status() == WL_CONNECTED) {
-                if (GetJsonFromM5()) loopFirmware();
-            }
-        } else {
-            // If it is already connected, download the JSON again... it loses the information once you step
-            // out of loopFirmware(), dkw
-            closeSdCard();
-            if (GetJsonFromM5()) loopFirmware();
+    bool fav = false;
+    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    if (WiFi.status() == WL_CONNECTED) {
+        // Debug
+        // Serial.printf("Favorite size: %d\n", favorite.size());
+        // serializeJsonPretty(favorite, Serial);
+        // Debug
+        if (favorite.size() > 0) {
+            options = {
+                {"OTA List",      [&]() { fav = false; }        },
+                {"Favorite List", [&]() { fav = true; }         },
+                {"Main Menu",     [=]() { returnToMenu = true; }}
+            };
+            loopOptions(options);
         }
-        tft->fillScreen(BGCOLOR);
-    } else {
-        displayRedStripe("Restart to open OTA");
-        delay(3000);
+        if (returnToMenu) return;
+        if (fav) {
+            int idx = 0;
+        RELOAD:
+            options.clear();
+            for (JsonObject item : favorite) {
+                if (item["fid"].as<String>().length() > 0) {
+                    options.push_back({item["name"].as<String>(), [=]() {
+                                           loopVersions(item["fid"].as<String>());
+                                       }});
+                } else {
+                    options.push_back({item["name"].as<String>(), [=]() {
+                                           installExtFirmware(item["link"].as<String>());
+                                       }});
+                }
+            }
+            options.push_back({"Main Menu", [=]() { returnToMenu = true; }, ALCOLOR});
+            idx = loopOptions(options, false, FGCOLOR, BGCOLOR, false, idx);
+            if (!returnToMenu) goto RELOAD;
+        } else {
+            if (GetJsonFromLauncherHub()) loopFirmware();
+        }
     }
-#else
-    displayRedStripe("Not M5 Device");
-    delay(3000);
+    tft->fillScreen(BGCOLOR);
 #endif
 }
 
@@ -183,29 +203,23 @@ String replaceChars(String input) {
     }
     return input;
 }
-/***************************************************************************************
-** Function name: GetJsonFromM5
-** Description:   Gets JSON from github server
-***************************************************************************************/
-bool GetJsonFromM5() {
-    const char *serverUrl = JSON_SOURCE_PATH;
 
+bool getInfo(String serverUrl, JsonDocument &_doc) {
     if (WiFi.status() == WL_CONNECTED) {
         vTaskSuspend(xHandle);
-        WiFiClientSecure client;
-        client.setInsecure();
+        WiFiClientSecure *client = new WiFiClientSecure();
+        client->setInsecure();
         HTTPClient http;
-        resetTftDisplay(tftWidth / 2 - 6 * String("Getting info from").length(), 32);
-        tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
+        resetTftDisplay();
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
         tft->drawCentreString("Getting info from", tftWidth / 2, tftHeight / 3, 1);
-        tft->drawCentreString("repository", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
+        tft->drawCentreString("LauncherHub", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
 
         tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
         const uint8_t maxAttempts = 5;
         for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {
-            if (!http.begin(client, serverUrl)) {
-                Serial.printf("GetJsonFromM5> Unable to reach %s\n", serverUrl);
+            if (!http.begin(*client, serverUrl)) {
+                Serial.printf("[GetInfo] Unable to reach %s\n", serverUrl);
                 break;
             }
             http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
@@ -214,38 +228,69 @@ bool GetJsonFromM5() {
             if (httpResponseCode == HTTP_CODE_OK) {
                 String payload = http.getString();
                 http.end();
-                doc.clear();
-                DeserializationError error = deserializeJson(doc, payload);
+                _doc.clear();
+                DeserializationError error = deserializeJson(_doc, payload);
                 if (error) {
-                    Serial.printf("GetJsonFromM5> Failed to parse JSON: %s\n", error.c_str());
+                    Serial.printf("[GetInfo] Failed to parse JSON: %s\n", error.c_str());
                     displayRedStripe("JSON Parse Failed");
                     vTaskDelay(1500 / portTICK_PERIOD_MS);
-                    doc.clear();
+                    _doc.clear();
                     vTaskResume(xHandle);
                     return false;
                 }
-                Serial.printf("GetJsonFromM5> Loaded %d firmwares\n", doc.size());
+                Serial.printf("[GetInfo] Downloaded and parsed json with size: %d\n", _doc.size());
                 vTaskResume(xHandle);
                 return true;
             }
 
-            Serial.printf("GetJsonFromM5> HTTP error: %d\n", httpResponseCode);
+            Serial.printf("[GetInfo] HTTP error: %d\n", httpResponseCode);
             tftprint(".", 10);
             http.end();
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
-        displayRedStripe("Download Failed");
-        vTaskDelay(1500 / portTICK_PERIOD_MS);
     }
     vTaskResume(xHandle);
     return false;
+}
+
+/***************************************************************************************
+** Function name: GetJsonFromLauncherHub
+** Description:   Gets JSON from github server
+***************************************************************************************/
+bool GetJsonFromLauncherHub(uint8_t page, String order, bool star, String query) {
+    String q = "&order_by=" + order;
+    q += page > 1 ? "&page=" + String(page) : "";
+    q += query.length() > 0 ? "&q=" + String(query) : "";
+    q += star ? "&star=1" : "";
+    String serverUrl = "https://api.launcherhub.net/firmwares?category=" + String(OTA_TAG) + q;
+
+    if (getInfo(serverUrl, doc)) {
+        total_firmware = doc["total"].as<int>();
+        num_pages = doc["total"].as<int>() / doc["page_size"].as<int>();
+        current_page = page;
+        Serial.printf("GetJsonFromLauncherHub> Loaded %d firmwares\n", total_firmware);
+        return true;
+    }
+    displayRedStripe("Firmware list fetch Failed");
+    vTaskDelay(1500 / portTICK_PERIOD_MS);
+    return false;
+}
+JsonDocument getVersionInfo(String fid) {
+    JsonDocument versions;
+    String serverUrl = "https://api.launcherhub.net/firmwares?fid=" + fid;
+    if (!getInfo(serverUrl, versions)) {
+        displayRedStripe("Version fetch Failed");
+        vTaskDelay(1500 / portTICK_PERIOD_MS);
+    }
+    return versions;
 }
 /***************************************************************************************
 ** Function name: downloadFirmware
 ** Description:   Downloads the firmware and save into the SDCard
 ***************************************************************************************/
-void downloadFirmware(String file, String fileName, String folder) {
-    if (!file.startsWith("https://")) file = SERVER_PATH + file;
+void downloadFirmware(String fid, String file, String fileName, String folder) { // Adicionar "fid"
+    if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
+    String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
+    if (fid == "") fileAddr = file;
     int tries = 0;
     fileName = replaceChars(fileName);
     prog_handler = 2;
@@ -265,7 +310,8 @@ retry:
         int httpResponseCode = -1;
 
         while (httpResponseCode < 0) {
-            http.begin(*client, file);
+            http.begin(*client, fileAddr);
+            http.addHeader("HWID", WiFi.macAddress());
             http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
             http.useHTTP10(true);
             httpResponseCode = http.GET();
@@ -290,7 +336,7 @@ retry:
                         // Ler dados em partes
                         int size_av = stream->available();
                         if (size_av) {
-                            int c = stream->readBytes(buff, std::min(size_av, bufSize));
+                            int c = stream->readBytes(buff, size_av < bufSize ? size_av : bufSize);
                             if (c <= 0) continue;
                             size_t wrote = file.write(buff, c);
                             if (wrote != static_cast<size_t>(c)) {
@@ -312,8 +358,9 @@ retry:
                     Serial.printf("Download> Couldn't create file %s\n", String(folder + fileName + ".bin"));
                     displayRedStripe("Fail creating file.");
                 }
-                // Checks if the file was preatically not downloaded and try one more time (size <= bufSize)
-                delay(50);
+                // Checks if the file was preatically not downloaded and try one more time (size <=
+                // bufSize)
+                vTaskDelay(pdTICKS_TO_MS(50));
                 file = SDM.open(folder + fileName + ".bin");
                 if (file.size() <= bufSize & tries < 1) {
                     tries++;
@@ -335,7 +382,7 @@ retry:
                 break;
             } else {
                 http.end();
-                delay(500);
+                vTaskDelay(pdTICKS_TO_MS(500));
             }
         }
         http.end();
@@ -344,16 +391,157 @@ retry:
     }
     wakeUpScreen();
 }
+/***************************************************************************************
+** Function name: installExtFirmware
+** Description:   installs External Firmware using OTA grabbing file information from url
+***************************************************************************************/
+bool installExtFirmware(String url) {
+    size_t file_size;
+    bool spiffs = 0;
+    uint32_t spiffs_offset = 0;
+    uint32_t spiffs_size = 0;
+    bool nb = 1; // File without bootloader an partitions
+    bool fat = 0;
+    uint32_t fat_offset[2] = {0};
+    uint32_t fat_size[2] = {0};
+    uint8_t bytes[16];
+    if (!url.startsWith("https://")) {
+        displayRedStripe("Invalid link");
+        return false;
+    }
+    displayRedStripe("Getting file info");
+    WiFiClientSecure *client = new WiFiClientSecure;
+    client->setInsecure();
+    if (!client) return false;
 
+    HTTPClient http;
+    http.begin(*client, url);
+    http.addHeader("Range", "bytes=32768-33183");          // Get the partition table
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
+    http.useHTTP10(true);
+    const char *headerKeys[] = {"Content-Range"};
+    const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
+    http.collectHeaders(headerKeys, headerKeysCount);
+    if (http.GET() != 206) {
+        displayRedStripe("File not found");
+        http.end();
+        return false;
+    }
+    String _fileSize = http.header("Content-Range");
+    _fileSize = _fileSize.substring(_fileSize.lastIndexOf("/") + 1);
+    file_size = _fileSize.toInt();
+
+    WiFiClient *stream = http.getStreamPtr();
+    int size_av = stream->available();
+    stream->readBytes(buff, size_av < bufSize ? size_av : bufSize);
+    http.end();
+    // Check if it is a valid partition table
+    size_t PartitionSize = 0;
+    if (buff[0] == 0xAA) {
+        nb = 0;                                    // File with bootloader an partitions
+        for (int i = 0x0; i <= 0x1A0; i += 0x20) { // Partition
+            memcpy(bytes, &buff[i], 16);
+
+            // https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/partition-tables.html ->
+            // spiffs (0x82) is for SPIFFS Filesystem.
+
+            // if (bytes[3] == 0xFF) Serial.println(": ------- END of Table ------- |");
+            if (bytes[3] == 0x00 || (bytes[3] >= 0x10 && bytes[3] <= 0x1F)) {
+                Serial.println(": Ota or Factory partition |");
+                if (bytes[0x0A] > 0 && PartitionSize == 0) {
+                    PartitionSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) |
+                                    bytes[0x0C]; // Write the size of app0 partition
+                }
+            }
+            // if (bytes[3] == 0x01) Serial.println(": PHY inicialization partition |");
+            //  if (bytes[3] == 0x02) Serial.println(": NVS partition                |");
+            //  if (bytes[3] == 0x03) Serial.println(": Coredump partition           |");
+            //  if (bytes[3] == 0x04) Serial.println(": NVSkeys partition            |");
+            //  if (bytes[3] == 0x05) Serial.println(": Efuse partition              |");
+            //  if (bytes[3] == 0x06) Serial.println(": Undefined partition          |");
+            // if (bytes[3] >= 0x10 && bytes[3] <= 0x1F)
+            //     Serial.println(": OTA partition                |");
+            // if (bytes[3] == 0x20) Serial.println(": TEST partition               |");
+            if (bytes[3] == 0x81) {
+                Serial.println(": FAT partition                |");
+                int a = 0;
+                if (fat_offset[0] != 0) a = 1;
+                fat_offset[a] = (bytes[0x06] << 16) | (bytes[0x07] << 8) |
+                                bytes[0x08]; // Write the offset of FAT partition
+                bytes[0x0C] = 0;
+                fat_size[a] =
+                    (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C]; // Write the size of FAT partition
+            }
+            if (bytes[3] == 0x82 || bytes[3] == 0x83) {
+                Serial.println(": Spiffs/LittleFs partition    |");
+                spiffs_offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) |
+                                bytes[0x08]; // Write the offset of spiffs partition
+                bytes[0x0C] = 0;
+                spiffs_size = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) |
+                              bytes[0x0C]; // Write the size of spiffs partition
+            }
+        }
+        size_t temp_size = 0;
+        if (file_size < MAX_APP || PartitionSize <= MAX_APP) {
+            temp_size = PartitionSize;
+            temp_size += 0x10000;
+            if (file_size <= temp_size) {  // Check if the file is smaller than the app0 partition
+                PartitionSize = file_size; // gets file size
+                PartitionSize -= 0x10000;  // subtracts bootloader, partitions and other junks
+            } else {
+                PartitionSize = PartitionSize; // if file is greater then app0 partition+junk, it will
+                                               // limit to app0 partition size
+            }
+        }
+        // Check if there is room for spiffs in the file
+        if (file_size < spiffs_offset) {
+            Serial.printf(
+                "\nError: file doesn't reach spiffs offset %d, to read spiffs.", spiffs_offset, HEX
+            );
+        } else {
+            Serial.println("Preparing to copy spiffs...");
+            // check size of the Spiffs Partition, if it fits in the launcher
+            // If it is larger the the Launcher Spiffs Partition, cut it to the limit
+            if (spiffs_size > MAX_SPIFFS) {
+                spiffs_size = MAX_SPIFFS;
+                temp_size = spiffs_offset + spiffs_size;
+                if (file_size <= temp_size) { spiffs_size = file_size - spiffs_offset; }
+                Serial.print("\nTotal spiffs size after crop: ");
+                Serial.println(spiffs_size, HEX);
+            }
+        }
+    }
+    Serial.printf(
+        "url: %s\nPartitionSize: %d, spiffs: %d, spiffs_offset: %d, spiffs_size: %d, nb: %d, fat: %d, "
+        "fat_offset: "
+        "%d, fat_size: %d",
+        url.c_str(),
+        PartitionSize,
+        spiffs,
+        spiffs_offset,
+        spiffs_size,
+        nb,
+        fat,
+        fat_offset,
+        fat_size
+    );
+    installFirmware(
+        "", url, PartitionSize, spiffs, spiffs_offset, spiffs_size, nb, fat, fat_offset, fat_size
+    );
+    return true;
+}
 /***************************************************************************************
 ** Function name: installFirmware
 ** Description:   installs Firmware using OTA
 ***************************************************************************************/
-void installFirmware(
-    String file, uint32_t app_size, bool spiffs, uint32_t spiffs_offset, uint32_t spiffs_size, bool nb,
+void installFirmware( // adicionar "fid"
+    String fid, String file, uint32_t app_size, bool spiffs, uint32_t spiffs_offset, uint32_t spiffs_size, bool nb,
     bool fat, uint32_t fat_offset[2], uint32_t fat_size[2]
 ) {
     uint32_t app_offset = 0x10000;
+    if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
+    String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
+    if (fid == "") fileAddr = file;
 
     // Release RAM Memory from Json Objects
     if (spiffs && askSpiffs) {
@@ -376,7 +564,7 @@ void installFirmware(
     displayRedStripe("Connecting FW");
 
     WiFiClientSecure *client = new WiFiClientSecure;
-    if (!file.startsWith("https://")) file = SERVER_PATH + file;
+
     client->setInsecure();
     httpUpdate.rebootOnUpdate(false);
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
@@ -387,22 +575,20 @@ void installFirmware(
     httpUpdate.onProgress(progressHandler);
     httpUpdate.setLedPin(LED, LED_ON);
     vTaskSuspend(xHandle);
-    if (nb) {
-        if (!httpUpdate.update(*client, file)) {
-            displayRedStripe("Instalation Failed");
-            goto SAIR;
-        }
-    } else {
-        if (!httpUpdate.updateFromOffset(*client, file, app_offset, app_size)) {
-            displayRedStripe("Instalation Failed");
-            goto SAIR;
-        }
-    }
+    bool success = false;
+    if (nb) success = httpUpdate.update(*client, fileAddr);
+    else success = httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size);
     if (!client) {
         displayRedStripe("Couldn't Connect to server");
         goto SAIR;
     }
+    if (!success) {
+        displayRedStripe("Instalation Failed");
+        goto SAIR;
+    }
 
+    // Do not request to api.launcherhub.net a second time, go straight to the file
+    // Requests must be done to "file" link directly
     if (spiffs) {
         prog_handler = 1;
         tft->fillRect(5, 60, tftWidth - 10, 16, ALCOLOR);
@@ -493,7 +679,7 @@ bool installFAT_OTA(
             performFATUpdate(*stream, size, label);
         }
         http.end();
-        delay(1000);
+        vTaskDelay(pdTICKS_TO_MS(500));
         return true;
     } else {
         displayRedStripe("Couldn't Connect");

@@ -230,7 +230,10 @@ void InputHandler(void) {
         if (pressed && !wakeUpScreen() && keyVal != '\0') {
             KeyStroke.Clear();
             KeyStroke.hid_keys.push_back(keyVal);
-            if (keyValue == KEY_BACKSPACE) KeyStroke.del = true;
+            if (keyValue == KEY_BACKSPACE) {
+                KeyStroke.del = true;
+                KeyStroke.exit_key = true;
+            }
             if (keyValue == KEY_ENTER) KeyStroke.enter = true;
             if (digitalRead(SEL_BTN) == BTN_ACT) KeyStroke.fn = true;
             KeyStroke.word.push_back(keyVal);

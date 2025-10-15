@@ -193,7 +193,7 @@ void InputHandler(void) {
             PrevPress = prev;
             UpPress = up;
             DownPress = down;
-            SelPress = sel;
+            SelPress = sel | SelPress; // in case G0 is pressed
             EscPress = esc;
             if (del) {
                 KeyStroke.del = del;
@@ -291,6 +291,7 @@ void InputHandler(void) {
         tm = millis();
         if (!wakeUpScreen()) yield();
         else return;
+        AnyKeyPress = true;
 
         keyStroke key;
         Keyboard_Class::KeysState status = Keyboard.keysState();

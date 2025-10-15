@@ -2,14 +2,14 @@
 #include "display.h"
 #include "esp_log.h"
 #include "mykeyboard.h"
+#include <algorithm> // for std::sort
 #include <esp_flash.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <globals.h>
 SPIClass sdcardSPI;
 String fileToCopy;
-// Protected global variables
-String fileList[MAXFILES][3];
+String fileToUse;
 
 #ifndef PART_04MB
 /***************************************************************************************
@@ -64,7 +64,7 @@ bool setupSdCard() {
     }
 
     sdcardSPI.begin(_sck, _miso, _mosi, _cs); // start SPI communications
-    delay(10);
+    vTaskDelay(pdTICKS_TO_MS(10));
     if (!SDM.begin(_cs, sdcardSPI))
 #elif defined(DONT_USE_INPUT_TASK)
 #if (TFT_MOSI != SDCARD_MOSI)
@@ -76,7 +76,7 @@ bool setupSdCard() {
 
 #else
     sdcardSPI.begin(SDCARD_SCK, SDCARD_MISO, SDCARD_MOSI, SDCARD_CS); // start SPI communications
-    delay(10);
+    vTaskDelay(pdTICKS_TO_MS(10));
     if (!SDM.begin(SDCARD_CS, sdcardSPI))
 #endif
     {
@@ -100,20 +100,6 @@ void closeSdCard() {
     sdcardMounted = false;
 }
 
-/***************************************************************************************
-** Function name: ToggleSDCard
-** Description:   Turn Off or On the SDCard, return sdcardMounted state
-***************************************************************************************/
-bool ToggleSDCard() {
-    if (sdcardMounted == true) {
-        closeSdCard();
-        sdcardMounted = false;
-        return false;
-    } else {
-        sdcardMounted = setupSdCard();
-        return sdcardMounted;
-    }
-}
 /***************************************************************************************
 ** Function name: deleteFromSd
 ** Description:   delete file or folder
@@ -147,6 +133,7 @@ bool deleteFromSd(String path) {
 ***************************************************************************************/
 bool renameFile(String path, String filename) {
     String newName = keyboard(filename, 76, "Type the new Name:");
+    if (newName == "" || newName == String(KEY_ESCAPE) || newName == filename) { return false; }
     if (!setupSdCard()) {
         // Serial.println("Falha ao inicializar o cartão SD");
         return false;
@@ -239,6 +226,7 @@ bool pasteFile(String path) {
 ***************************************************************************************/
 bool createFolder(String path) {
     String foldername = keyboard("", 76, "Folder Name: ");
+    if (foldername == "" || foldername == String(KEY_ESCAPE)) { return false; }
     if (!setupSdCard()) {
         // Serial.println("Fail to start SDCard");
         return false;
@@ -255,333 +243,183 @@ bool createFolder(String path) {
 ** Function name: sortList
 ** Description:   sort files for name
 ***************************************************************************************/
-void sortList(String fileList[][3], int fileListCount) {
-    bool swapped;
-    String temp[3];
-    String name1, name2;
-
-    do {
-        swapped = false;
-        for (int i = 0; i < fileListCount - 1; i++) {
-            name1 = fileList[i][0];
-            name1.toUpperCase();
-            name2 = fileList[i + 1][0];
-            name2.toUpperCase();
-
-            // Verificar se ambos são pastas ou arquivos
-            bool isFolder1 = fileList[i][2] == "folder";
-            bool isFolder2 = fileList[i + 1][2] == "folder";
-
-            // Primeiro, ordenar pastas
-            if (isFolder1 && !isFolder2) {
-                continue; // Se o primeiro for uma pasta e o segundo não, não troque
-            } else if (!isFolder1 && isFolder2) {
-                // Se o primeiro for um arquivo e o segundo uma pasta, troque
-                for (int j = 0; j < 3; j++) {
-                    temp[j] = fileList[i][j];
-                    fileList[i][j] = fileList[i + 1][j];
-                    fileList[i + 1][j] = temp[j];
-                }
-                swapped = true;
-            } else {
-                // Ambos são pastas ou arquivos, então ordenar alfabeticamente
-                if (name1.compareTo(name2) > 0) {
-                    for (int j = 0; j < 2; j++) {
-                        temp[j] = fileList[i][j];
-                        fileList[i][j] = fileList[i + 1][j];
-                        fileList[i + 1][j] = temp[j];
-                    }
-                    swapped = true;
-                }
-            }
-        }
-    } while (swapped);
+bool sortList(const Option &a, const Option &b) {
+    if (a.color != b.color) {
+        return a.color > b.color; // true if a is a folder and b is not
+    }
+    // Order items alfabetically
+    String fa = a.label;
+    fa.toUpperCase();
+    String fb = b.label;
+    fb.toUpperCase();
+    return fa < fb;
 }
 
 /***************************************************************************************
 ** Function name: sortList
 ** Description:   sort files for name
 ***************************************************************************************/
-void readFs(String folder, String result[][3]) {
-    int allFilesCount = 0;
-    while (allFilesCount < MAXFILES) {
-        result[allFilesCount][0] = "";
-        result[allFilesCount][1] = "";
-        result[allFilesCount][2] = "";
-        allFilesCount++;
-    }
-    allFilesCount = 0;
-
+void readFs(String &folder, std::vector<Option> &opt) {
+    // function using loopOptions
+    opt.clear();
     if (!setupSdCard()) {
         // Serial.println("Falha ao iniciar o cartão SD");
         displayRedStripe("SD not found or not formatted in FAT32");
-        delay(2500);
+        vTaskDelay(2500 / portTICK_PERIOD_MS);
         return; // Retornar imediatamente em caso de falha
     }
-
     File root = SDM.open(folder);
     if (!root || !root.isDirectory()) {
         displayRedStripe("Fail open root");
-        delay(2500);
+        vTaskDelay(2500 / portTICK_PERIOD_MS);
         return; // Retornar imediatamente se não for possível abrir o diretório
     }
+    while (true) {
+        File file = root.openNextFile();
+        if (!file) { break; }
 
-    File file2;
-    file2 = root.openNextFile();
-    while (file2 && allFilesCount < (MAXFILES - 1)) {
-        String fileName = file2.name();
-        if (!file2.isDirectory()) {
-            String ext = fileName.substring(fileName.lastIndexOf(".") + 1);
-            ext.toUpperCase();
-            if (onlyBins) {
-                if (ext.equals("BIN")) {
-                    result[allFilesCount][0] = fileName.substring(fileName.lastIndexOf("/") + 1);
-                    result[allFilesCount][1] = file2.path();
-                    result[allFilesCount][2] = "file";
-                    allFilesCount++;
-                }
-            } else {
-                result[allFilesCount][0] = fileName.substring(fileName.lastIndexOf("/") + 1);
-                result[allFilesCount][1] = file2.path();
-                result[allFilesCount][2] = "file";
-                allFilesCount++;
-            }
-        }
-
-        file2 = root.openNextFile();
-    }
-    file2.close();
-    root.close();
-
-    root = SDM.open(folder);
-    File file = root.openNextFile();
-    while (file && allFilesCount < (MAXFILES - 1)) {
         String fileName = file.name();
-        if (file.isDirectory()) {
-            result[allFilesCount][0] = fileName.substring(fileName.lastIndexOf("/") + 1);
-            result[allFilesCount][1] = file.path();
-            result[allFilesCount][2] = "folder";
-            allFilesCount++;
-        }
-        file = root.openNextFile();
-    }
-    file.close();
-    root.close();
+        const bool isDir = file.isDirectory();
+        uint16_t color = FGCOLOR - 0x1111;
 
-    // Ordenar os arquivos e pastas
-    sortList(result, allFilesCount);
-    // allFilesCount++;
-    result[allFilesCount][0] = "> Back";
-    folder = folder.substring(0, folder.lastIndexOf('/'));
-    if (folder == "") folder = "/";
-    result[allFilesCount][1] = folder;
-    result[allFilesCount][2] = "operator";
+        if (!isDir) {
+            int dotIndex = fileName.lastIndexOf(".");
+            String ext = dotIndex >= 0 ? fileName.substring(dotIndex + 1) : "";
+            ext.toUpperCase();
+            if (onlyBins && !ext.equals("BIN")) {
+                file.close();
+                continue;
+            }
+            color = FGCOLOR;
+        }
+
+        String label = fileName.substring(fileName.lastIndexOf("/") + 1);
+        String path = file.path();
+        opt.push_back({label, [path]() { fileToUse = path; }, color});
+
+        file.close();
+    }
+    root.close();
+    std::sort(opt.begin(), opt.end(), sortList);
+    opt.push_back({"> Back", [&]() { fileToUse = ""; }, ALCOLOR});
 }
 /*********************************************************************
 **  Function: loopSD
 **  Where you choose what to do wuth your SD Files
 **********************************************************************/
 String loopSD(bool filePicker) {
-    Opt_Coord coord;
-    std::vector<MenuOptions> list;
-    int max_idx = 0;
-    int min_idx = 255;
-
-    prog_handler = 0;
-    String result = "";
-    bool reload = false;
-    bool redraw = true;
+    // Function using loopOptions to store and handle files
+    returnToMenu = false;
+    fileToUse = ""; // resets global variable
     int index = 0;
-    int maxFiles = 0;
+    int Menuindex = 0;
     String Folder = "/";
+    String _Folder = ""; // Check if Folder changed
     String PreFolder = "/";
-    tft->fillScreen(BGCOLOR);
-    tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
+    bool isFolder = false;
+    bool isOperator = false;
+    bool LongPressDetected = false;
+    bool read_fs = true;
+    bool bkf = false;
+RESTART:
+    if (_Folder != Folder || read_fs) {
+        readFs(Folder, options);
+        if (options.size() == 0) return ""; // Failed reading SD card.
+        _Folder = Folder;
+        index = 0;
+        bkf = false;
+        read_fs = false;
+    }
+    index = loopOptions(options, false, FGCOLOR, BGCOLOR, false, index);
+    // First Exit
+    if (index < 0) goto BACK_FOLDER;
+    // Check if it is Folder or operator (> Back)
+    if (options[index].color == uint16_t(FGCOLOR - 0x1111)) isFolder = true;
+    else isFolder = false;
+    if (options[index].color == uint16_t(ALCOLOR)) isOperator = true;
+    else isOperator = false;
+    if (filePicker && !isFolder && !isOperator) return fileToUse;
 
-    readFs(Folder, fileList);
-    coord = listFiles(0, fileList, list);
-
-    for (int i = 0; i < MAXFILES; i++)
-        if (fileList[i][2] != "") maxFiles++;
-        else break;
-    LongPressTmp = millis();
-    while (1) {
-        if (returnToMenu) break; // stop this loop and retur to the previous loop
-
-        if (redraw) {
-            if (strcmp(PreFolder.c_str(), Folder.c_str()) != 0 || reload) {
-                index = 0;
-                readFs(Folder, fileList);
-                PreFolder = Folder;
-                maxFiles = 0;
-                for (int i = 0; i < MAXFILES; i++)
-                    if (fileList[i][2] != "") maxFiles++;
-                    else break;
-                reload = false;
-                tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
-                tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
-            }
-            coord = listFiles(index, fileList, list);
-
-            // Serial.println("\nContent of list object:");
-            max_idx = 0;
-            min_idx = MAXFILES;
-            int tmp = 0;
-            for (auto item : list) {
-                if (item.name != "") {
-                    tmp = item.name.toInt();
-                    // Serial.print(tmp); Serial.print(" ");
-                    if (tmp > max_idx) max_idx = tmp;
-                    if (tmp < min_idx) min_idx = tmp;
-                }
-            }
-            // Serial.printf("\nmax_idx: %d min_idx: %d\n", max_idx, min_idx);
-
-            redraw = false;
-        }
-
-        displayScrollingText(fileList[index][0], coord);
-
-#ifdef HAS_TOUCH
-        if (touchPoint.pressed) {
-            for (auto item : list) {
-                if (item.contain(touchPoint.x, touchPoint.y)) {
-                    SelPress = false;
-                    PrevPress = false;
-                    NextPress = false;
-                    UpPress = false;
-                    DownPress = false;
-                    EscPress = false;
-                    if (item.name == "") {
-                        if (item.text == "+") index = max_idx + 1;
-                        if (item.text == "-") index = min_idx - 1;
-                        if (index < 0) index = 0;
-                        // Serial.printf("\nPressed [%s], next index: %d\n",item.text,index);
-                        redraw = true;
-                        break;
-                    } else {
-                        if (index == item.name.toInt()) SelPress = true;
-                        else redraw = true;
-                        index = item.name.toInt();
-                        break;
-                    }
-                }
-            }
-        }
-#endif
-        if (check(PrevPress) || check(UpPress)) {
-            if (index == 0) index = maxFiles - 1;
-            else if (index > 0) index--;
-            redraw = true;
-        }
-        /* DW Btn to next item */
-        if (check(NextPress) || check(DownPress)) {
-            index++;
-            if (index == maxFiles) index = 0;
-            redraw = true;
-        }
-
-/* Select to install */
+    // Long Press Detection
+    LongPressDetected = false;
 #ifndef E_PAPER_DISPLAY
-        if (LongPress || SelPress) {
-            if (!LongPress) {
-                LongPress = true;
-                LongPressTmp = millis();
-            }
-            if (LongPress && millis() - LongPressTmp < 200) goto WAITING;
-            LongPress = false;
-
-            if (check(SelPress)) {
-                while (check(SelPress)) yield();
+    LongPress = true;
+    SelPress = true; // it was just pressed
+    LongPressTmp = millis();
+    while (millis() - LongPressTmp < 300 && SelPress) {
+        check(AnyKeyPress);
+        vTaskDelay(20 / portTICK_PERIOD_MS);
+    }
+    if (check(SelPress)) LongPressDetected = true;
+    LongPress = false;
+    SelPress = false;
 #else
-        if (check(SelPress)) {
-            if (true) {
+    // Always behave as if it was long pressed
+    // But shows Option to enter on folders
+    LongPressDetected = true;
 #endif
-                // Definição da matriz "Options"
-                if (fileList[index][2] == "folder") {
-                    options = {
-#ifdef E_PAPER_DISPLAY
-                        {"Open Folder", [&]() { Folder = fileList[index][1]; }                       },
-#endif
-                        {"New Folder",  [=]() { createFolder(Folder); }                              },
-                        {"Rename",      [=]() { renameFile(fileList[index][1], fileList[index][0]); }},
-                        {"Delete",      [=]() { deleteFromSd(fileList[index][1]); }                  },
-                        {"Main Menu",   [=]() { returnToMenu = true; }                               },
-                    };
-                    loopOptions(options);
-                    tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
-                    reload = true;
-                    redraw = true;
-                } else if (fileList[index][2] == "file") {
-                    goto Files;
-                } else {
-                    bool bkf = false;
-                    options = {
-#ifdef E_PAPER_DISPLAY
-                        {"Back Folder", [&]() { bkf = true; }          },
-#endif
-                        {"New Folder",  [=]() { createFolder(Folder); }},
-                    };
-                    if (fileToCopy != "") options.push_back({"Paste", [=]() { pasteFile(Folder); }});
-                    options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
-                    loopOptions(options);
-                    if (bkf) goto BACK_FOLDER;
-                    reload = true;
-                    redraw = true;
-                }
-            } else {
-            Files:
-                if (fileList[index][2] == "folder") {
-                    Folder = fileList[index][1];
-                    redraw = true;
-                } else if (fileList[index][2] == "file") {
-                    options = {
-                        {"Install",    [=]() { updateFromSD(fileList[index][1]); }                  },
-                        {"New Folder", [=]() { createFolder(Folder); }                              },
-                        {"Rename",     [=]() { renameFile(fileList[index][1], fileList[index][0]); }},
-                        {"Copy",       [=]() { copyFile(fileList[index][1]); }                      },
-                    };
-                    if (fileToCopy != "") options.push_back({"Paste", [=]() { pasteFile(Folder); }});
-                    options.push_back({"Delete", [=]() { deleteFromSd(fileList[index][1]); }});
-                    options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
-
-                    if (!filePicker) loopOptions(options);
-                    else {
-                        result = fileList[index][1];
-                        break;
-                    }
-                    reload = true;
-                    redraw = true;
-                } else {
-                BACK_FOLDER:
-                    if (Folder == "/") break;
-                    while (fileList[index][2] != "operator") index++; // to reach pre_folder
-                    Folder = fileList[index][1];
-                    index = 0;
-                    redraw = true;
-                }
-                redraw = true;
-            }
-            tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
-            tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
-            redraw = true;
+    // Menu for if it is a Folder
+    if (isFolder) {
+        // Short press on folder opens the folder
+        if (!LongPressDetected) {
+            PreFolder = Folder;
+            Folder = fileToUse;
+            Serial.printf("Going : Folder    = %s\nPreFolder = %s\n", Folder, PreFolder);
+            goto RESTART;
         }
-    WAITING:
-        yield();
 
-        if (check(EscPress)) goto BACK_FOLDER;
+        std::vector<Option> opt = {
+#ifdef E_PAPER_DISPLAY
+            {"Open Folder", [&]() { Folder = fileToUse; }                         },
+#endif
+            {"New Folder",  [=]() { createFolder(Folder); }                       },
+            {"Rename",      [=]() { renameFile(fileToUse, options[index].label); }},
+            {"Delete",      [=]() { deleteFromSd(fileToUse); }                    },
+            {"Main Menu",   [=]() { returnToMenu = true; }                        },
+        };
+        Menuindex = loopOptions(opt);
+        // Menu for if it is an Operator
+    } else if (isOperator) {
+        if (LongPressDetected) {
+            bkf = false;
+            std::vector<Option> opt = {
+#ifdef E_PAPER_DISPLAY
+                {"Back Folder", [&]() { bkf = true; }          },
+#endif
+                {"New Folder",  [=]() { createFolder(Folder); }},
+            };
+            if (fileToCopy != "") opt.push_back({"Paste", [=]() { pasteFile(Folder); }});
+            opt.push_back({"Main Menu", [=]() { returnToMenu = true; }});
+            Menuindex = loopOptions(opt);
+        }
+        if (bkf || fileToUse == "") {
+        BACK_FOLDER:
+            Folder = PreFolder;
+            if (PreFolder != "/") PreFolder = PreFolder.substring(0, PreFolder.lastIndexOf('/'));
+            if (PreFolder == "") PreFolder = "/";
+            if (_Folder == PreFolder) returnToMenu = true;
+            Serial.printf("Backing: Folder    = %s\nPreFolder = %s\n", Folder, PreFolder);
+        }
+    } else {
+        std::vector<Option> opt = {
+            {"Install",    [=]() { updateFromSD(fileToUse); }                    },
+            {"New Folder", [=]() { createFolder(Folder); }                       },
+            {"Rename",     [=]() { renameFile(fileToUse, options[index].label); }},
+            {"Copy",       [=]() { copyFile(fileToUse); }                        },
+        };
+        if (fileToCopy != "") opt.push_back({"Paste", [=]() { pasteFile(Folder); }});
+        opt.push_back({"Delete", [=]() { deleteFromSd(fileToUse); }});
+        opt.push_back({"Main Menu", [=]() { returnToMenu = true; }});
+        Menuindex = loopOptions(opt);
     }
-    // clear fileList memory
-    for (int i = 0; i < MAXFILES; i++) {
-        fileList[i][0] = "";
-        fileList[i][1] = "";
-        fileList[i][2] = "";
-    }
-    closeSdCard();
-    setupSdCard();
+    if (Menuindex >= 0) read_fs = true;
+    if (!returnToMenu) goto RESTART;
+    // Free the memory
+    options.clear();
     tft->fillScreen(BGCOLOR);
-    return result;
+    return fileToUse;
 }
+
 /***************************************************************************************
 ** Function name: performUpdate
 ** Description:   this function performs the update
@@ -652,6 +490,12 @@ void updateFromSD(String path) {
         file.close();
         tft->fillScreen(BGCOLOR);
         FREE_TFT
+#if CONFIG_IDF_TARGET_ESP32P4
+        const esp_partition_t *partition =
+            esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+        esp_ota_set_boot_partition(partition);
+        ESP.deepSleep(100);
+#endif
         ESP.restart();
     } else {
         if (!file.seek(0x8000)) goto Exit;
@@ -703,12 +547,12 @@ void updateFromSD(String path) {
             }
         }
 
-        log_i("Appsize: %d", app_size);
-        log_i("Spiffsize: %d", spiffs_size);
-        log_i("FATsize[0]: %d - max: %d at offset: %d", fat_size_sys, MAX_FAT_sys, fat_offset_sys);
-        log_i("FATsize[1]: %d - max: %d at offset: %d", fat_size_vfs, MAX_FAT_vfs, fat_offset_vfs);
-        log_i("FAT: %d", fat);
-        log_i("------------------------");
+        // log_i("Appsize: %d", app_size);
+        // log_i("Spiffsize: %d", spiffs_size);
+        // log_i("FATsize[0]: %d - max: %d at offset: %d", fat_size_sys, MAX_FAT_sys, fat_offset_sys);
+        // log_i("FATsize[1]: %d - max: %d at offset: %d", fat_size_vfs, MAX_FAT_vfs, fat_offset_vfs);
+        // log_i("FAT: %d", fat);
+        // log_i("------------------------");
 
         if (!fat) {
             fat_size_sys = 0;
@@ -720,11 +564,15 @@ void updateFromSD(String path) {
         prog_handler = 0; // Install flash update
         if (spiffs && askSpiffs) {
             options = {
-                {"SPIFFS No",  [&]() { spiffs = false; }},
-                {"SPIFFS Yes", [&]() { spiffs = true; } },
+                {"SPIFFS No",  [&]() { spiffs = false; }     },
+                {"SPIFFS Yes", [&]() { spiffs = true; }      },
+                {"Cancel",     [&]() { returnToMenu = true; }}
             };
-
-            loopOptions(options);
+            if (loopOptions(options) < 0 || returnToMenu) {
+                file.close();
+                tft->fillScreen(BGCOLOR);
+                return;
+            }
             tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
         }
 
@@ -759,6 +607,12 @@ void updateFromSD(String path) {
         displayRedStripe("Complete");
         delay(1000);
         FREE_TFT
+#if CONFIG_IDF_TARGET_ESP32P4
+        const esp_partition_t *partition =
+            esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+        esp_ota_set_boot_partition(partition);
+        ESP.deepSleep(100);
+#endif
         ESP.restart();
     }
 Exit:

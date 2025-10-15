@@ -11,12 +11,25 @@
 #include <interface.h>
 #include <pre_compiler.h>
 #include <vector>
-inline constexpr size_t DOC_JSON_CAPACITY = 32768;
-inline constexpr size_t SETTINGS_JSON_CAPACITY = 8192;
 #if !defined(SDM)
 #define SDM SD
 #define SDM_SD
 #endif
+
+#define KEY_ESCAPE 0x1B
+#define NO_COLOR 1 // color is from 0x0000 (BLACK) to 0xffff (WHITE), 1 is for checking
+
+struct Option {
+    String label;
+    std::function<void()> operation;
+    uint16_t color;
+
+    Option(String lbl = "", const std::function<void()> &op = nullptr, uint16_t color = NO_COLOR)
+        : label(lbl), operation(op), color(color) {}
+};
+
+extern std::vector<Option> options;
+
 struct MenuOptions {
     String name;
     String text;
@@ -168,8 +181,6 @@ extern int prog_handler; // 0 - Flash, 1 - SPIFFS, 2 - Download
 
 extern bool sdcardMounted;
 
-extern std::vector<std::pair<String, std::function<void()>>> options;
-
 extern String ssid;
 
 extern String pwd;
@@ -180,13 +191,19 @@ extern String wui_pwd;
 
 extern String dwn_path;
 
-extern String direct_link;
-
 extern int currentIndex;
 
-extern DynamicJsonDocument doc;
+extern uint16_t total_firmware; // Number of available firmware on the list
 
-extern DynamicJsonDocument settings;
+extern uint8_t current_page; // Current Page
+
+extern uint8_t num_pages; // Number of pages (total fw/fw per page)
+
+extern JsonDocument doc;
+
+extern JsonArray favorite;
+
+extern JsonDocument settings;
 
 extern String fileToCopy;
 
@@ -205,9 +222,6 @@ extern bool update;
 
 // Used to choose SPIFFS or not
 extern bool askSpiffs;
-
-// Don't let open OTA after use WebUI due t oRAM handling
-extern bool stopOta;
 
 // size o the file in the webInterface
 extern size_t file_size;

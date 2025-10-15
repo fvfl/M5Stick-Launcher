@@ -1,8 +1,8 @@
 #ifndef Pins_Arduino_h
 #define Pins_Arduino_h
 
-#include <stdint.h>
 #include "soc/soc_caps.h"
+#include <stdint.h>
 
 // BOOT_MODE 35
 // BOOT_MODE2 36 pullup
@@ -50,36 +50,29 @@ static const uint8_t T12 = 14;
 static const uint8_t T13 = 15;
 
 /* ESP32-P4 EV Function board specific definitions */
-//ETH
-#define ETH_PHY_TYPE    ETH_PHY_TLK110
-#define ETH_PHY_ADDR    1
-#define ETH_PHY_MDC     31
-#define ETH_PHY_MDIO    52
-#define ETH_PHY_POWER   51
-#define ETH_RMII_TX_EN  49
-#define ETH_RMII_TX0    34
-#define ETH_RMII_TX1    35
-#define ETH_RMII_RX0    29
+// ETH
+#define ETH_PHY_TYPE ETH_PHY_TLK110
+#define ETH_PHY_ADDR 1
+#define ETH_PHY_MDC 31
+#define ETH_PHY_MDIO 52
+#define ETH_PHY_POWER 51
+#define ETH_RMII_TX_EN 49
+#define ETH_RMII_TX0 34
+#define ETH_RMII_TX1 35
+#define ETH_RMII_RX0 29
 #define ETH_RMII_RX1_EN 30
 #define ETH_RMII_CRS_DV 28
-#define ETH_RMII_CLK    50
-#define ETH_CLK_MODE    EMAC_CLK_EXT_IN
+#define ETH_RMII_CLK 50
+#define ETH_CLK_MODE EMAC_CLK_EXT_IN
 
-//SDMMC
-#define BOARD_HAS_SDMMC
-#define BOARD_SDMMC_SLOT           0
-#define BOARD_SDMMC_POWER_CHANNEL  4
-#define BOARD_SDMMC_POWER_PIN      45
-#define BOARD_SDMMC_POWER_ON_LEVEL LOW
-
-//WIFI - ESP32C6
+// WIFI - ESP32C6
 #define BOARD_HAS_SDIO_ESP_HOSTED
-#define BOARD_SDIO_ESP_HOSTED_CLK   18
-#define BOARD_SDIO_ESP_HOSTED_CMD   19
-#define BOARD_SDIO_ESP_HOSTED_D0    14
-#define BOARD_SDIO_ESP_HOSTED_D1    15
-#define BOARD_SDIO_ESP_HOSTED_D2    16
-#define BOARD_SDIO_ESP_HOSTED_D3    17
-#define BOARD_SDIO_ESP_HOSTED_RESET 54
+#define BOARD_SDIO_ESP_HOSTED_CLK 12
+#define BOARD_SDIO_ESP_HOSTED_CMD 13
+#define BOARD_SDIO_ESP_HOSTED_D0 11
+#define BOARD_SDIO_ESP_HOSTED_D1 10
+#define BOARD_SDIO_ESP_HOSTED_D2 9
+#define BOARD_SDIO_ESP_HOSTED_D3 8
+#define BOARD_SDIO_ESP_HOSTED_RESET 15
 
 #endif /* Pins_Arduino_h */

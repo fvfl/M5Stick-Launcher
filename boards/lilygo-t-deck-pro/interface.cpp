@@ -377,6 +377,7 @@ void InputHandler(void) {
             if (keyVal == KEY_BACKSPACE) {
                 KeyStroke.del = true;
                 EscPress = true;
+                KeyStroke.exit_key = true;
             } else if (keyVal == KEY_ENTER) {
                 KeyStroke.enter = true;
                 SelPress = true;

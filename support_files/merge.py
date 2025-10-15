@@ -37,6 +37,10 @@ part_bin = build_dir / "partitions.bin"
 nvs_bin = proj_dir / "support_files/UiFlow2_nvs.bin"
 app_bin  = build_dir / "firmware.bin"
 
+if mcu=="esp32p4":
+    APP_OFFSET = 0x20000
+    nvs_bin = proj_dir / "support_files/UiFlow2_nvs_p4.bin"
+
 out_bin = proj_dir / f"Launcher-{pioenv}.bin"
 
 # Esptool from PlatformIO + Python executable
@@ -111,11 +115,23 @@ def _merge_bins_callback(target, source, env):
     cmd_parts = [
         "pio pkg exec -p \"tool-esptoolpy\" -- esptool",
         "--chip", chip_arg,
-        "merge_bin",
+        "merge-bin",
         "--output", q(out_bin),
-        hex(boot_offset), q(boot_bin),
-        hex(PART_TABLE_OFFSET), q(part_bin),
     ]
+
+    if mcu=="esp32p4":
+        cmd_parts.extend([
+            hex(0x0),"./support_files/esp32p4.bin",
+            hex(PART_TABLE_OFFSET), q(part_bin),
+        ])
+    else:
+        cmd_parts.extend([
+            hex(boot_offset), q(boot_bin),
+            hex(PART_TABLE_OFFSET), q(part_bin),
+        ])
+
+
+
 
     flag_path = Path(env.subst("$PROJECT_DIR")) / ".pio" / "build" / env.subst("${PIOENV}") / "nvs_flag.txt"
     nvs_flag_present = flag_path.exists()
@@ -139,7 +155,7 @@ def _merge_bins_callback(target, source, env):
 
     if rc != 0:
         print(f"[merge_bin] Failed with exit code {rc}")
-        env.Exit(rc)
+        # env.Exit(rc)
     else:
         try:
             size = out_bin.stat().st_size

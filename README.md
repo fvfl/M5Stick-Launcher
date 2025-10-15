@@ -74,15 +74,49 @@ Join our [Discord community](https://discord.gg/BE9by2a2FF)
 
 ## To-Do list
 Things that needs to be done in next updates
-     * [ ] OTA Pagination (multiple firmware list files)
      * [ ] LVGL for e-paper displays
      * [ ] Move to ESP-IDF Platform
 
-<details>
-  <summary><h2>Changelog</h2></summary>
 
-* 2.5.4:
-     * [x] Add support to direct link install (edit config.conf, enable dev_mode, put your firmware bin [without partitions and bootloader] and install from CFG>Direct Link install ). Made to use Github Codespaces open port to test firmware
+## Latest Changelog
+
+* 2.6.0:
+     * [x] Pulling data from my new api, integrating all devices list with m5burner api and counting downloads into the m5burner database.
+     * [x] OTA Pagination (pages of 100 firmware ordered by download-default)
+     * [x] New Device: [M5Stack Tab5](https://shop.m5stack.com/products/m5stack-tab5-iot-development-kit-esp32-p4?ref=Pirata).
+     * [x] New Device: [Lilygo T-HMI](https://www.lilygo.cc/products/t-hmi?bg_ref=sDI8Bh4HmO)
+     * [x] New Feature: Backup SPIFFS/FAT now prompts to merge data into a chosen binary, so you can install firmware and data choosign `SPIFFS Yes` on install and backup B Binaries now have incremental names.
+     * [x] New Feature: Added Filter and ordering to the fimware list.
+     * [x] New Feature: Added *Starred* firmware list (controlled by me.. support the project to have yout firmware into the starred list.).
+     * [x] New Feature: Added "Favorite" (Need SD Card), where you an add the firmwares from the OTA list, or Manually add your binary links from your local server or whatever.
+     * [x] config.conf changes:
+```
+...
+    "favorite": [
+      { // Example of firmware added into Favorites through OTA function
+        "name": "Evil-Cardputer-7h30th3r0n3",
+        "fid": "2128851a0c98a4c1d15ac1a327b49812",
+        "link": ""
+      },
+      { // Example of my custom link file added manually editiing this file
+        "name": "Launcher Beta link",
+        "fid": "", // leave it blank
+        "link": "https://github.com/bmorcelli/Launcher/releases/download/beta/Launcher-m5stack-cardputer.bin"
+      },
+      {
+        "name": "Bruce Beta link",
+        "fid": "",
+        "link": "https://github.com/pr3y/Bruce/releases/download/betaRelease/Bruce-m5stack-cardputer.bin"
+      },
+    ],
+    "c0:4e:30:13:8d:f4": 1, // Rotation is now bound to hardware MAC
+...
+
+```
+
+
+<details>
+  <summary><h2>Older Changelogs</h2></summary>
 
 * 2.5.3:
      * [x] Restored T-Deck OTA

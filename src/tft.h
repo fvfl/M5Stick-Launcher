@@ -193,22 +193,76 @@ public:
 #elif USE_M5GFX
 #include <M5GFX.h>
 #include <M5Unified.h>
-class Ard_eSPI : public M5GFX {
+class Ard_eSPI {
 public:
+    int _fsize;
+    uint16_t _fg;
+    uint16_t _bg;
     // Driver initilizer
-    Ard_eSPI() : M5GFX() {};
-    inline void begin() { M5GFX::init(); };
-    inline int getTextsize() { return _text_style.size_x; };
-    inline uint16_t getTextcolor() { return _text_style.fore_rgb888; };
-    inline uint16_t getTextbgcolor() { return _text_style.back_rgb888; };
-
-    inline void drawChar2(int16_t x, int16_t y, char c, int16_t a, int16_t b) {
-        M5GFX::drawChar(x, y, c, a, b, _text_style.size_x);
-    }
-    inline void drawCentreString(String s, uint16_t x, uint16_t y, int f) {
-        M5GFX::drawCentreString(s, x, y);
+    Ard_eSPI() {
+        _fsize = 1;
+        _fg = BLACK;
+        _bg = BLACK;
     };
-    inline void drawRightString(String s, uint16_t x, uint16_t y, int f) { M5GFX::drawRightString(s, x, y); };
+    inline void begin() {};
+    inline int getTextsize() { return _fsize; };
+    inline uint16_t getTextcolor() { return _fg; };
+    inline uint16_t getTextbgcolor() { return _bg; };
+
+    inline size_t drawChar2(int16_t x, int16_t y, char c, int16_t a, int16_t b) {
+        return M5.Display.drawChar(x, y, c, b, a, _fsize);
+    }
+    inline size_t drawCentreString(String s, uint16_t x, uint16_t y, int f) {
+        return M5.Display.drawCentreString(s, x, y);
+    };
+    inline size_t drawRightString(String s, uint16_t x, uint16_t y, int f) {
+        return M5.Display.drawRightString(s, x, y);
+    };
+    inline void fillScreen(uint16_t c) { return M5.Display.fillScreen(c); }
+    inline void setRotation(int rot) { return M5.Display.setRotation(rot); };
+    inline void setTextColor(uint16_t fgcolor, uint16_t bgcolor) {
+        _fg = fgcolor;
+        _bg = bgcolor;
+        return M5.Display.setTextColor(fgcolor, bgcolor);
+    }
+    inline void setTextColor(uint16_t fgcolor) {
+        _fg = fgcolor;
+        return M5.Display.setTextColor(fgcolor);
+    }
+    inline void setCursor(int32_t x, int32_t y) { return M5.Display.setCursor(x, y); };
+    inline void setTextSize(uint32_t c) {
+        _fsize = c;
+        return M5.Display.setTextSize(c);
+    }
+    inline int32_t getCursorX(void) const { return M5.Display.getCursorX(); }
+    inline int32_t getCursorY(void) const { return M5.Display.getCursorY(); }
+    inline void drawRoundRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t r, uint16_t c) {
+        return M5.Display.drawRoundRect(x, y, w, h, r, c);
+    }
+    inline void fillRoundRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t r, uint16_t c) {
+        return M5.Display.fillRoundRect(x, y, w, h, r, c);
+    }
+    inline void fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) {
+        return M5.Display.fillRect(x, y, w, h, c);
+    }
+    inline void drawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c) {
+        return M5.Display.drawRect(x, y, w, h, c);
+    }
+    inline void drawArc(int16_t x, int16_t y, int16_t r, int16_t ir, int16_t sA, int16_t eA, int16_t fg) {
+        return M5.Display.drawArc(x, y, r, ir, float(sA + 90), float(eA + 90), fg);
+    }
+    inline void drawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint16_t c) {
+        return M5.Display.drawLine(x0, y0, x1, y1, c);
+    }
+    inline void drawPixel(uint32_t x, uint32_t y, uint16_t c) { return M5.Display.drawPixel(x, y, c); }
+    inline size_t print(String a) { return M5.Display.print(a); }
+    inline size_t print(char a) { return M5.Display.print(a); }
+    inline size_t print(int a) { return M5.Display.print(a); }
+    inline size_t println(String a) { return M5.Display.println(a); }
+    inline size_t println() { return M5.Display.println(); }
+    inline int32_t width() { return M5.Display.width(); }
+    inline int32_t height() { return M5.Display.height(); }
+    inline size_t drawString(String s, int x, int y) { return M5.Display.drawString(s, x, y); };
 };
 
 #else

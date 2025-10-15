@@ -51,7 +51,7 @@ TouchPoint touchPoint;
 keyStroke KeyStroke;
 
 #if defined(HAS_TOUCH)
-volatile uint16_t tftHeight = TFT_WIDTH - 20;
+volatile uint16_t tftHeight = TFT_WIDTH - (FM * LH + 4);
 #else
 volatile uint16_t tftHeight = TFT_WIDTH;
 #endif
@@ -88,11 +88,6 @@ bool onlyBins;
 bool returnToMenu;
 bool update;
 bool askSpiffs;
-#ifdef DISABLE_OTA
-bool stopOta = true;
-#else
-bool stopOta;
-#endif
 
 // bool command;
 size_t file_size;
@@ -101,10 +96,13 @@ String pwd;
 String wui_usr = "admin";
 String wui_pwd = "launcher";
 String dwn_path = "/downloads/";
-String direct_link = "";
-DynamicJsonDocument doc(DOC_JSON_CAPACITY);
-DynamicJsonDocument settings(SETTINGS_JSON_CAPACITY);
-std::vector<std::pair<String, std::function<void()>>> options;
+uint16_t total_firmware = 0;
+uint8_t current_page = 1;
+uint8_t num_pages = 0;
+JsonDocument doc;
+JsonArray favorite;
+JsonDocument settings;
+std::vector<Option> options;
 const int bufSize = 1024;
 uint8_t buff[1024] = {0};
 
@@ -227,6 +225,23 @@ void _post_setup_gpio() {}
 **  Where the devices are started and variables set
 *********************************************************************/
 void setup() {
+#if CONFIG_IDF_TARGET_ESP32P4
+    const esp_partition_t *partition =
+        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+    esp_ota_set_boot_partition(partition);
+    EEPROM.begin(16);
+    int init = EEPROM.read(6);
+    if (init >= 1) { // restart com eeprom em 1
+        EEPROM.write(6, 0);
+        EEPROM.commit();
+        EEPROM.end();
+        ESP.restart();
+    } else {
+        EEPROM.write(6, 1);
+        EEPROM.commit();
+        EEPROM.end();
+    }
+#endif
     Serial.begin(115200);
 
 // Setup GPIOs and stuff
@@ -336,14 +351,14 @@ void setup() {
     tft->setRotation(rotation);
     if (rotation & 0b1) {
 #if defined(HAS_TOUCH)
-        tftHeight = TFT_WIDTH - 20;
+        tftHeight = TFT_WIDTH - (FM * LH + 4);
 #else
         tftHeight = TFT_WIDTH;
 #endif
         tftWidth = TFT_HEIGHT;
     } else {
 #if defined(HAS_TOUCH)
-        tftHeight = TFT_HEIGHT - 20;
+        tftHeight = TFT_HEIGHT - (FM * LH + 4);
 #else
         tftHeight = TFT_HEIGHT;
 #endif
@@ -409,6 +424,12 @@ void setup() {
         {
             tft->fillScreen(BLACK);
             FREE_TFT
+#if CONFIG_IDF_TARGET_ESP32P4
+            const esp_partition_t *partition =
+                esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+            esp_ota_set_boot_partition(partition);
+            ESP.deepSleep(100);
+#endif
             ESP.restart();
         }
     }
@@ -418,6 +439,12 @@ void setup() {
     if (firstByte == 0xE9) {
         tft->fillScreen(BLACK);
         FREE_TFT
+#if CONFIG_IDF_TARGET_ESP32P4
+        const esp_partition_t *partition =
+            esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+        esp_ota_set_boot_partition(partition);
+        ESP.deepSleep(100);
+#endif
         ESP.restart();
     } else goto Launcher;
 
@@ -439,8 +466,8 @@ void loop() {
     bool redraw = true;
     bool update_sd;
     int index = 0;
-    int opt = 5;     // there are 3 options> 1 list SD files, 2 OTA, 3 USB and 4 Config
-    stopOta = false; // variable used in WebUI, and to prevent open OTA after webUI without restart
+    int opt = 5; // there are 3 options> 1 list SD files, 2 OTA, 3 USB and 4 Config
+    int pass_by = 0;
     getBrightness();
     if (!sdcardMounted) index = 1; // if SD card is not present, paint SD square grey and auto select OTA
     std::vector<MenuOptions> menuItems = {
@@ -466,7 +493,7 @@ void loop() {
 #endif
          [=]() { loopOptionsWebUi(); }
         },
-#ifdef ARDUINO_USB_MODE
+#if defined(ARDUINO_USB_MODE) && !defined(ARDUINO_M5STACK_TAB5)
         {
 #if TFT_HEIGHT < 135
          "USB", "SD->USB",
@@ -507,6 +534,11 @@ void loop() {
                 }
                 update_sd = sdcardMounted;
             }
+            if (!dev_mode && pass_by == 5) {
+                displayRedStripe("Dev mode Activated");
+                vTaskDelay(2000 / portTICK_PERIOD_MS);
+                dev_mode = true;
+            }
             drawMainMenu(menuItems, index);
 #if defined(HAS_TOUCH)
             TouchFooter();
@@ -516,7 +548,7 @@ void loop() {
             returnToMenu = false;
 #ifdef E_PAPER_DISPLAY
             tft->display(false);
-            delay(200);
+            vTaskDelay(pdTICKS_TO_MS(200));
 #endif
         }
         if (touchPoint.pressed) {
@@ -548,12 +580,16 @@ void loop() {
         if (check(PrevPress)) {
             if (index == 0) index = opt - 1;
             else if (index > 0) index--;
+            pass_by = 0;
             redraw = true;
         }
         // DW Btn to next item
         if (check(NextPress)) {
             index++;
-            if ((index + 1) > opt) index = 0;
+            if ((index + 1) > opt) {
+                index = 0;
+                if (!dev_mode) pass_by++;
+            }
             redraw = true;
         }
 
@@ -562,6 +598,7 @@ void loop() {
             menuItems.at(index).action(); // Call the action associated with the selected menu item
             tft->drawPixel(0, 0, 0);
             tft->fillScreen(BGCOLOR);
+            pass_by = 0;
             returnToMenu = false;
             redraw = true;
         }
@@ -605,7 +642,7 @@ void loop() {
                     int count = 0;
                     Serial.println("Connecting to " + ssid);
                     while (WiFi.status() != WL_CONNECTED) {
-                        delay(500);
+                        vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                         digitalWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
@@ -635,7 +672,7 @@ void loop() {
                 int count = 0;
                 Serial.println("Connecting to " + ssid);
                 while (WiFi.status() != WL_CONNECTED) {
-                    delay(500);
+                    vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                     digitalWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
