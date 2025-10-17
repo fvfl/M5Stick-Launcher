@@ -303,9 +303,17 @@
               }
             - {
                 vendor: "Lilygo",
-                name: "T-Deck",
-                description: "(Normal and Plus)",
+                name: "T-Deck Plus",
+                description: "",
                 link: "https://www.lilygo.cc/products/t-deck-plus-ca?bg_ref=sDI8Bh4HmO",
+                family: "ESP32-S3",
+                env: "lilygo-t-deck-plus",
+              }
+            - {
+                vendor: "Lilygo",
+                name: "T-Deck",
+                description: "",
+                link: "https://www.lilygo.cc/products/t-deck?bg_ref=sDI8Bh4HmO",
                 family: "ESP32-S3",
                 env: "lilygo-t-deck",
               }
