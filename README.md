@@ -79,6 +79,10 @@ Things that needs to be done in next updates
 
 
 ## Latest Changelog
+* 2.6.1:
+     * [x] Fixed T-Deck Plus touchscreen (added new env for it)
+     * [x] Fixed M5Stack CoreS3 SD Card not mounting
+     * [x] Add Delete from Favorites option
 
 * 2.6.0:
      * [x] Pulling data from my new api, integrating all devices list with m5burner api and counting downloads into the m5burner database.

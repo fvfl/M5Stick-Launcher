@@ -161,18 +161,31 @@ void ota_function() {
         if (returnToMenu) return;
         if (fav) {
             int idx = 0;
-        RELOAD:
-            options.clear();
-            for (JsonObject item : favorite) {
-                if (item["fid"].as<String>().length() > 0) {
-                    options.push_back({item["name"].as<String>(), [=]() {
-                                           loopVersions(item["fid"].as<String>());
+            auto NavMenu = [&](int fw) {
+                options.clear();
+                if (favorite[fw]["fid"].as<String>().length() > 0) {
+                    options.push_back({"View firmware", [=]() {
+                                           loopVersions(favorite[fw]["fid"].as<String>());
                                        }});
                 } else {
-                    options.push_back({item["name"].as<String>(), [=]() {
-                                           installExtFirmware(item["link"].as<String>());
+                    options.push_back({"Install", [=]() {
+                                           installExtFirmware(favorite[fw]["link"].as<String>());
                                        }});
                 }
+                options.push_back({"Remove Favorite", [=]() {
+                                       favorite.remove(fw);
+                                       saveConfigs();
+                                   }});
+                options.push_back({"Back to List", [=]() { /* Do nothing, just return */ }});
+                options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
+                loopOptions(options);
+            };
+        RELOAD:
+            options.clear();
+            int count = 0;
+            for (JsonObject item : favorite) {
+                options.push_back({item["name"].as<String>(), [=]() { NavMenu(count); }});
+                count++;
             }
             options.push_back({"Main Menu", [=]() { returnToMenu = true; }, ALCOLOR});
             idx = loopOptions(options, false, FGCOLOR, BGCOLOR, false, idx);
@@ -442,8 +455,8 @@ bool installExtFirmware(String url) {
         for (int i = 0x0; i <= 0x1A0; i += 0x20) { // Partition
             memcpy(bytes, &buff[i], 16);
 
-            // https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/partition-tables.html ->
-            // spiffs (0x82) is for SPIFFS Filesystem.
+            // https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/partition-tables.html
+            // -> spiffs (0x82) is for SPIFFS Filesystem.
 
             // if (bytes[3] == 0xFF) Serial.println(": ------- END of Table ------- |");
             if (bytes[3] == 0x00 || (bytes[3] >= 0x10 && bytes[3] <= 0x1F)) {
