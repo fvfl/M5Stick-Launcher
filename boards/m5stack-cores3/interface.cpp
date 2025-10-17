@@ -38,20 +38,7 @@ void InputHandler(void) {
         auto t = M5.Touch.getDetail();
         if (t.isPressed() || t.isHolding()) {
             tm = millis();
-            if (rotation == 0) {
-                t.y = (tftHeight + 20) - t.y;
-                t.x = tftWidth - t.x;
-            }
-            if (rotation == 1) {
-                int tmp = t.x;
-                t.x = tftWidth - t.y;
-                t.y = tmp;
-            }
-            if (rotation == 3) {
-                int tmp = t.x;
-                t.x = t.y;
-                t.y = (tftHeight + 20) - tmp;
-            }
+            
             if (!wakeUpScreen()) AnyKeyPress = true;
             else return;
 

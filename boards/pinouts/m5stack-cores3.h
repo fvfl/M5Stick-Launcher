@@ -1,8 +1,8 @@
 #ifndef Pins_Arduino_h
 #define Pins_Arduino_h
 
-#include <stdint.h>
 #include "soc/soc_caps.h"
+#include <stdint.h>
 
 #define USB_VID 0x303a
 #define USB_PID 0x1001
@@ -11,9 +11,9 @@
 // Use different pin with 3V and connect with 48
 // and change this setup for the chosen pin (for example 38)
 static const uint8_t LED_BUILTIN = SOC_GPIO_PIN_COUNT + 48;
-#define BUILTIN_LED    LED_BUILTIN  // backward compatibility
-#define LED_BUILTIN    LED_BUILTIN
-#define RGB_BUILTIN    LED_BUILTIN
+#define BUILTIN_LED LED_BUILTIN // backward compatibility
+#define LED_BUILTIN LED_BUILTIN
+#define RGB_BUILTIN LED_BUILTIN
 #define RGB_BRIGHTNESS 64
 
 static const uint8_t TX = 43;
@@ -60,43 +60,4 @@ static const uint8_t G46 = 46;
 
 static const uint8_t ADC = 10;
 
-#define HAS_RTC 
-#define USB_as_HID
-
-#define HAS_TOUCH
-
-#define ALLOW_ALL_GPIO_FOR_IR_RF
-
-#define LED GROVE_SDA
-#define LED_ON HIGH
-#define LED_OFF LOW
-
-// Font sizes
-#define FP 1
-#define FM 2
-#define FG 3
-
-// Screen Setup
-#define HAS_SCREEN
-#define ROTATION 2
-
-
-#define BTN_ALIAS '"Ok"'
-#define BTN_PIN -1
-#define BTN_ACT LOW
-
-// SD Card Setup pins
-#define SDCARD_CS 4
-#define SDCARD_SCK 36
-#define SDCARD_MISO 35
-#define SDCARD_MOSI 37
-
-// Default I2C port
-#define GROVE_SDA 32
-#define GROVE_SCL 33
-
-#define SPI_SCK_PIN 0
-#define SPI_MOSI_PIN GROVE_SDA
-#define SPI_MISO_PIN GROVE_SCL
-#define SPI_SS_PIN 26
 #endif /* Pins_Arduino_h */
