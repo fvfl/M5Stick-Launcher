@@ -79,6 +79,11 @@ Things that needs to be done in next updates
 
 
 ## Latest Changelog
+
+* 2.6.2:
+     * [x] Fixed T-Embed CC1101 OTA Link
+     * [x] Changed SD file listings for speed([PR 230](https://github.com/bmorcelli/Launcher/pull/230)) [Issue 229](https://github.com/bmorcelli/Launcher/issues/229) thanks @geo-tp and @emericklaw
+
 * 2.6.1:
      * [x] Fixed T-Deck Plus touchscreen (added new env for it)
      * [x] Fixed M5Stack CoreS3 SD Card not mounting
