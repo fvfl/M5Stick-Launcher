@@ -108,7 +108,10 @@
         "text_encoding": "cpp",
         "typeindex": "cpp",
         "valarray": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "rmt.h": "c",
+        "stdbool.h": "c",
+        "rmt_encoder.h": "c"
     },
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
