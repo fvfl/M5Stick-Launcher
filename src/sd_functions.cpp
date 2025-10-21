@@ -292,6 +292,8 @@ void readFs(String &folder, std::vector<Option> &opt) {
             ext.toUpperCase();
             if (onlyBins && !ext.equals("BIN")) { continue; }
             color = FGCOLOR;
+        } else {
+            nameOnly = "/" + nameOnly; // add / before folder name
         }
         opt.push_back({nameOnly, [fullPath]() { fileToUse = fullPath; }, color});
     }

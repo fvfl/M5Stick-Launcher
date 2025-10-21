@@ -4,6 +4,7 @@
 #include <EPD_translate.h>
 #define DARKGREY TFT_DARKGREY
 #define BLACK TFT_BLACK
+#define WHITE TFT_WHITE
 #define RED TFT_RED
 #define GREEN TFT_GREEN
 #define DARKCYAN TFT_DARKCYAN
@@ -37,6 +38,7 @@ private:
 #define DARKGREY 0x8888
 #define BLACK GxEPD_WHITE
 #define RED GxEPD_WHITE
+#define WHITE GxEPD_BLACK
 #define GREEN 0xAAAA
 #define DARKCYAN 0x6666
 #define LIGHTGREY 0x4444

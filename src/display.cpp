@@ -336,6 +336,11 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
     uint16_t _color = tft->getTextcolor();
     uint16_t _bgcolor = tft->getTextbgcolor();
 
+#if E_PAPER_DISPLAY
+    bgcolor = BLACK;
+    fgcolor = WHITE;
+#endif
+
     // stripe drwawing
     int size;
     if (text.length() * LW * FM < (tft->width() - 2 * FM * LW)) size = FM;
@@ -416,8 +421,12 @@ Opt_Coord drawOptions(
     bool border
 ) {
     int index = idx;
+    uint16_t alcolor = ALCOLOR;
 #ifdef E_PAPER_DISPLAY
     tft->stopCallback();
+    bgcolor = BLACK;
+    alcolor = WHITE;
+    fgcolor = WHITE;
 #endif
 
     Opt_Coord coord;
@@ -569,7 +578,7 @@ Opt_Coord drawOptions(
         int navX = boxX + paddingSide + 0 > ((lineWidth - textWidth) / 2) ? 0 : ((lineWidth - textWidth) / 2);
         tft->fillRect(boxX + paddingSide, rowTop, lineWidth, lineHeight, bgcolor);
         tft->setCursor(navX, rowTop);
-        tft->setTextColor(ALCOLOR, bgcolor);
+        tft->setTextColor(alcolor, bgcolor);
         tft->drawCentreString(text, tftWidth / 2, rowTop, 1);
 
         MenuOptions navItem("", isUp ? "-" : "+", nullptr, true, false);
@@ -592,7 +601,7 @@ Opt_Coord drawOptions(
         bool showEscLabel = (!border && start == 0 && optionIndex == 0);
         if (showEscLabel) {
             tft->setCursor(cursorX, rowTop);
-            tft->setTextColor(RED, bgcolor);
+            tft->setTextColor(alcolor, bgcolor);
             tft->print("[ESC]");
             prefixWidth += 5 * charWidth;
             cursorX += 5 * charWidth;
@@ -608,6 +617,9 @@ Opt_Coord drawOptions(
 
         uint16_t color = opt[optionIndex].color;
         if (color == NO_COLOR) color = fgcolor;
+#ifdef E_PAPER_DISPLAY
+        color = WHITE;
+#endif
 
         int labelX = cursorX;
         int labelWidth = lineWidth - prefixWidth;
