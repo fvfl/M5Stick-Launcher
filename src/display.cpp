@@ -166,6 +166,9 @@ void initDisplay(bool doAll) {
     if (runOnce) goto END;
     else runOnce = true;
     tft->stopCallback();
+#ifdef USE_M5GFX
+    M5.Display.setAutoDisplay(false);
+#endif
 #endif
 
     if (_name == 1) name = "u/bmorcelli";
@@ -235,6 +238,9 @@ void initDisplay(bool doAll) {
 
 #ifdef E_PAPER_DISPLAY // epaper display draws only once
     tft->display(false);
+#ifdef USE_M5GFX
+    M5.Display.setAutoDisplay(true);
+#endif
     tft->startCallback();
 #endif
 
@@ -424,9 +430,15 @@ Opt_Coord drawOptions(
     uint16_t alcolor = ALCOLOR;
 #ifdef E_PAPER_DISPLAY
     tft->stopCallback();
+#ifdef USE_M5GFX
+    bgcolor = WHITE;
+    alcolor = BLACK;
+    fgcolor = BLACK;
+#else
     bgcolor = BLACK;
     alcolor = WHITE;
     fgcolor = WHITE;
+#endif
 #endif
 
     Opt_Coord coord;
@@ -618,7 +630,11 @@ Opt_Coord drawOptions(
         uint16_t color = opt[optionIndex].color;
         if (color == NO_COLOR) color = fgcolor;
 #ifdef E_PAPER_DISPLAY
+#ifdef USE_M5GFX
+        color = BLACK;
+#else
         color = WHITE;
+#endif
 #endif
 
         int labelX = cursorX;

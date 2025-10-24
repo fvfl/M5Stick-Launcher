@@ -52,4 +52,8 @@
 #include "elecrow-esp32-24B.h"
 #elif ARDUINO_M5STACK_TAB5
 #include "m5stack-tab5.h"
+#elif ARDUINO_M5STACK_PAPERS3
+#include "m5stack-paper-s3.h"
+#elif ARDUINO_M5STACK_PAPER
+#include "m5stack-paper.h"
 #endif

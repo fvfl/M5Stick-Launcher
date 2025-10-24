@@ -24,9 +24,15 @@ uint32_t MAX_SPIFFS = 0;
 uint32_t MAX_APP = 0;
 uint32_t MAX_FAT_vfs = 0;
 uint32_t MAX_FAT_sys = 0;
+#ifdef USE_M5GFX
+uint16_t FGCOLOR = BLACK;
+uint16_t ALCOLOR = BLACK;
+uint16_t BGCOLOR = WHITE;
+#else
 uint16_t FGCOLOR = GREEN;
 uint16_t ALCOLOR = RED;
 uint16_t BGCOLOR = BLACK;
+#endif
 uint16_t odd_color = 0x30c5;
 uint16_t even_color = 0x32e5;
 
@@ -284,6 +290,23 @@ void setup() {
         EEPROM.writeString(EEPROMSIZE, ""); // resets ssid at the end of the EEPROM
         EEPROM.write(EEPROMSIZE - 2, 1);    // AskSpiffs
 
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+        // FGCOLOR
+        EEPROM.write(EEPROMSIZE - 3, 0x00);
+        EEPROM.write(EEPROMSIZE - 4, 0x00);
+        // BGCOLOR
+        EEPROM.write(EEPROMSIZE - 5, 0xFF);
+        EEPROM.write(EEPROMSIZE - 6, 0xFF);
+        // ALCOLOR
+        EEPROM.write(EEPROMSIZE - 7, 0x88);
+        EEPROM.write(EEPROMSIZE - 8, 0x88);
+        // odd
+        EEPROM.write(EEPROMSIZE - 9, 0x55);
+        EEPROM.write(EEPROMSIZE - 10, 0x55);
+        // even
+        EEPROM.write(EEPROMSIZE - 11, 0x22);
+        EEPROM.write(EEPROMSIZE - 12, 0x22);
+#else
         // FGCOLOR
         EEPROM.write(EEPROMSIZE - 3, 0x07);
         EEPROM.write(EEPROMSIZE - 4, 0xE0);
@@ -299,6 +322,7 @@ void setup() {
         // even
         EEPROM.write(EEPROMSIZE - 11, 0x32);
         EEPROM.write(EEPROMSIZE - 12, 0xe5);
+#endif
 
 #if defined(HEADLESS)
         // SD Pins

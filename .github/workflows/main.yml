@@ -94,6 +94,22 @@
                 env: "m5stack-tab5",
               }
             - {
+                vendor: "M5Stack",
+                name: "PaperS3",
+                description: "",
+                link: "https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata",
+                family: "ESP32-S3",
+                env: "m5stack-paper-s3",
+              }
+            - {
+                vendor: "WIP", # "M5Stack",
+                name: "Paper",
+                description: "",
+                link: "https://shop.m5stack.com/products/m5paper-esp32-development-kit-v1-1-960x540-4-7-eink-display-235-ppi?ref=Pirata",
+                family: "ESP32",
+                env: "m5stack-paper",
+              }
+            - {
                 vendor: "Espressif",
                 name: "ESP32-S3-4mb",
                 description: "",

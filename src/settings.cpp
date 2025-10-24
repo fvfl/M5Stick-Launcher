@@ -48,7 +48,7 @@ void settings_menu() {
              setdimmerSet();
              saveConfigs();
          }                                                           },
-#ifndef E_PAPER_DISPLAY
+#if !defined(E_PAPER_DISPLAY)
         {"UI Color",    [=]() {
              setUiColor();
              saveConfigs();
@@ -78,7 +78,7 @@ void settings_menu() {
                                gsetAskSpiffs(true, true);
                                saveConfigs();
                            }});
-#ifndef E_PAPER_DISPLAY
+#if !defined(E_PAPER_DISPLAY) || defined(USE_M5GFX)
     options.push_back({"Orientation", [=]() {
                            gsetRotation(true);
                            saveConfigs();
@@ -503,6 +503,7 @@ void getConfigs() {
                 count++;
                 log_i("Fail");
             }
+#ifndef E_PAPER_DISPLAY
             if (setting["FGCOLOR"].is<uint16_t>()) {
                 FGCOLOR = setting["FGCOLOR"].as<uint16_t>();
             } else {
@@ -533,6 +534,7 @@ void getConfigs() {
                 count++;
                 log_i("Fail");
             }
+#endif
             if (setting["dev"].is<bool>()) {
                 dev_mode = setting["dev"].as<bool>();
             } else {

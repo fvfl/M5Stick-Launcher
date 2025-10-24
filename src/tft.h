@@ -1,6 +1,6 @@
 #ifndef __TFT_H
 #define __TFT_H
-#if defined(E_PAPER_DISPLAY) && !defined(GxEPD2_DISPLAY)
+#if defined(E_PAPER_DISPLAY) && !defined(GxEPD2_DISPLAY) && !defined(USE_M5GFX)
 #include <EPD_translate.h>
 #define DARKGREY TFT_DARKGREY
 #define BLACK TFT_BLACK
@@ -207,6 +207,14 @@ public:
         _bg = BLACK;
     };
     inline void begin() {};
+// E-Paper finctions
+#if defined(E_PAPER_DISPLAY)
+    void stopCallback() {};
+    void startCallback() {};
+    void display(bool a) { M5.Display.display(); };
+    void setFullWindow() {};
+#endif
+    // End of E-Paper functions
     inline int getTextsize() { return _fsize; };
     inline uint16_t getTextcolor() { return _fg; };
     inline uint16_t getTextbgcolor() { return _bg; };
