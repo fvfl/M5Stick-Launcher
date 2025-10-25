@@ -114,7 +114,7 @@ struct box_t {
 // Retrieves the current keyStroke from InputHandler, resets it after use.
 // This function is used in loopTask to get the latest key press.
 keyStroke _getKeyPress() {
-#ifndef USE_TFT_eSPI_TOUCH
+#ifndef DONT_USE_INPUT_TASK
     keyStroke key = KeyStroke;
     KeyStroke.Clear();
     return key;
@@ -519,7 +519,7 @@ String generalKeyboard(
             // waits at least 250ms before accepting another input, to prevent rapid involuntary repeats
 
 #if defined(HAS_TOUCH) // CYD, Core2, CoreS3
-#if defined(USE_TFT_eSPI_TOUCH)
+#if defined(DONT_USE_INPUT_TASK)
             check(AnyKeyPress);
 #endif
             if (touchPoint.pressed) {
@@ -846,3 +846,4 @@ void checkReboot() {}
 ** Description:   Delivers the battery value from 0-100
 ***************************************************************************************/
 int getBattery() { return 0; }
+
