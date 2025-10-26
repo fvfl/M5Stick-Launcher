@@ -2,7 +2,6 @@
 #define __ONLINELAUNCHER_H
 
 #include <ArduinoJson.h>
-#include <EEPROM.h>
 #include <HTTPClient.h>
 #include <M5-HTTPUpdate.h>
 #include <SPIFFS.h>

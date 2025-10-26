@@ -1,7 +1,6 @@
 #ifndef __PARTITIONER_H
 #define __PARTITIONER_H
 
-#include <EEPROM.h>
 #include <FS.h>
 #include <esp_flash.h>
 #include <esp_ota_ops.h>

@@ -1,11 +1,10 @@
 #ifndef __SETTINGS_H
 #define __SETTINGS_H
 
-#include <EEPROM.h>
 #include <FS.h>
-#include <SD_MMC.h>
 #include <SD.h>
-//#include <ArduinoJson.h>
+#include <SD_MMC.h>
+#include <ArduinoJson.h>
 
 /*
 config.conf JSON structure
@@ -38,13 +37,20 @@ void settings_menu();
 void _setBrightness(uint8_t brightval) __attribute__((weak));
 void setBrightnessMenu();
 void setBrightness(int bright, bool save = true);
-void getBrightness(); 
+void getBrightness();
 bool gsetOnlyBins(bool set = false, bool value = true);
 bool gsetAskSpiffs(bool set = false, bool value = true);
 int gsetRotation(bool set = false);
 void getConfigs();
 void saveConfigs();
+bool saveIntoNVS();
+bool saveWifiIntoNVS();
+bool getFromNVS();
+bool getWifiFromNVS();
+bool getWifiCredential(const String &ssid, String &password);
+bool setWifiCredential(const String &ssid, const String &password, bool persist = false);
 void setdimmerSet();
 void setUiColor();
 void chargeMode();
+JsonObject ensureSettingsRoot();
 #endif

@@ -19,6 +19,11 @@ Join our [Discord community](https://discord.gg/BE9by2a2FF)
 * Choose OTA to install new binaries from M5Burner repo
 * After installed, when turn on the device, if you don't press anything, the installed program will be launched.
 
+## My SD Card doesn't work!
+* Make sure your SD is a SDHC (Not SDXC)
+* Maximum size of 32Gb (I use 8 or 16Gb)
+* Formatted in FAT32 (Use [Rufus tool](https://rufus.ie/) to format your SD Card)
+
 ## With Launcher you'll be able to:
 <details>
   <summary><h3>OTA - OTA Update</h3></summary>
@@ -79,6 +84,11 @@ Things that needs to be done in next updates
 
 
 ## Latest Changelog
+* 2.6.3:
+     * [x] Fixed Marauder keyboard
+     * [x] Changed from EEPROM to NVS to save configs and Wifi creds [Issue 232](https://github.com/bmorcelli/Launcher/issues/232)
+     * [x] Port to [M5-PaperS3](https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata)
+
 
 * 2.6.2:
      * [x] Fixed T-Embed CC1101 OTA Link

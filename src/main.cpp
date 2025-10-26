@@ -1,6 +1,5 @@
 #include <globals.h>
 
-#include <EEPROM.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
 // #include <M5-HTTPUpdate.h>
@@ -10,6 +9,7 @@
 #include <tft.h>
 #endif
 #include "esp_ota_ops.h"
+#include "nvs_flash.h"
 #include <SD.h>
 #include <SPIFFS.h>
 
@@ -231,21 +231,26 @@ void _post_setup_gpio() {}
 **  Where the devices are started and variables set
 *********************************************************************/
 void setup() {
+    nvs_flash_init();
 #if CONFIG_IDF_TARGET_ESP32P4
     const esp_partition_t *partition =
         esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
     esp_ota_set_boot_partition(partition);
-    EEPROM.begin(16);
-    int init = EEPROM.read(6);
+    std::unique_ptr<nvs::NVSHandle> nvsHandle = nvs::open_nvs_handle("launcher", NVS_READWRITE, &err);
+    bool init = false;
+    esp_err_t nve = nvsHandle->get_item("init", init);
+    if (nve != ESP_OK) {
+        nvsHandle->set_item("init", false);
+        nvsHandle->commit();
+        init = false;
+    }
     if (init >= 1) { // restart com eeprom em 1
-        EEPROM.write(6, 0);
-        EEPROM.commit();
-        EEPROM.end();
+        nvsHandle->set_item("init", false);
+        nvsHandle->commit();
         ESP.restart();
     } else {
-        EEPROM.write(6, 1);
-        EEPROM.commit();
-        EEPROM.end();
+        nvsHandle->set_item("init", true);
+        nvsHandle->commit();
     }
 #endif
     Serial.begin(115200);
@@ -267,95 +272,8 @@ void setup() {
 
     _setup_gpio();
 
-    EEPROM.begin(EEPROMSIZE + 32); // open eeprom.... 32 is the size of the SSID string stored at the end of
-                                   // the memory, using this trick to not change all the addresses
-    if (EEPROM.read(EEPROMSIZE - 13) > 3 || EEPROM.read(EEPROMSIZE - 14) > 240 ||
-        EEPROM.read(EEPROMSIZE - 15) > 100 || EEPROM.read(EEPROMSIZE - 1) > 1 ||
-        EEPROM.read(EEPROMSIZE - 2) > 1 ||
-        (EEPROM.read(EEPROMSIZE - 3) == 0xFF && EEPROM.read(EEPROMSIZE - 4) == 0xFF &&
-         EEPROM.read(EEPROMSIZE - 5) == 0xFF && EEPROM.read(EEPROMSIZE - 6) == 0xFF)) {
-        log_i(
-            "EEPROM back to default\n0=%d\n1=%d\n2=%d\n9=%d\nES-1=%d",
-            EEPROM.read(EEPROMSIZE - 13),
-            EEPROM.read(EEPROMSIZE - 14),
-            EEPROM.read(EEPROMSIZE - 15),
-            EEPROM.read(EEPROMSIZE - 1),
-            EEPROM.read(EEPROMSIZE - 2)
-        );
-        EEPROM.write(EEPROMSIZE - 13, rotation); // Left rotation
-        EEPROM.write(EEPROMSIZE - 14, 20);       // 20s Dimm time
-        EEPROM.write(EEPROMSIZE - 15, 100);      // 100% brightness
-        EEPROM.write(EEPROMSIZE - 1, 1);         // OnlyBins
-        EEPROM.writeString(20, "");
-        EEPROM.writeString(EEPROMSIZE, ""); // resets ssid at the end of the EEPROM
-        EEPROM.write(EEPROMSIZE - 2, 1);    // AskSpiffs
-
-#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
-        // FGCOLOR
-        EEPROM.write(EEPROMSIZE - 3, 0x00);
-        EEPROM.write(EEPROMSIZE - 4, 0x00);
-        // BGCOLOR
-        EEPROM.write(EEPROMSIZE - 5, 0xFF);
-        EEPROM.write(EEPROMSIZE - 6, 0xFF);
-        // ALCOLOR
-        EEPROM.write(EEPROMSIZE - 7, 0x88);
-        EEPROM.write(EEPROMSIZE - 8, 0x88);
-        // odd
-        EEPROM.write(EEPROMSIZE - 9, 0x55);
-        EEPROM.write(EEPROMSIZE - 10, 0x55);
-        // even
-        EEPROM.write(EEPROMSIZE - 11, 0x22);
-        EEPROM.write(EEPROMSIZE - 12, 0x22);
-#else
-        // FGCOLOR
-        EEPROM.write(EEPROMSIZE - 3, 0x07);
-        EEPROM.write(EEPROMSIZE - 4, 0xE0);
-        // BGCOLOR
-        EEPROM.write(EEPROMSIZE - 5, 0);
-        EEPROM.write(EEPROMSIZE - 6, 0);
-        // ALCOLOR
-        EEPROM.write(EEPROMSIZE - 7, 0xF8);
-        EEPROM.write(EEPROMSIZE - 8, 0x00);
-        // odd
-        EEPROM.write(EEPROMSIZE - 9, 0x30);
-        EEPROM.write(EEPROMSIZE - 10, 0xC5);
-        // even
-        EEPROM.write(EEPROMSIZE - 11, 0x32);
-        EEPROM.write(EEPROMSIZE - 12, 0xe5);
-#endif
-
-#if defined(HEADLESS)
-        // SD Pins
-        EEPROM.write(90, 0);
-        EEPROM.write(91, 0);
-        EEPROM.write(92, 0);
-        EEPROM.write(93, 0);
-#endif
-        EEPROM.commit(); // Store data to EEPROM
-    }
-
-    rotation = EEPROM.read(EEPROMSIZE - 13);
-    dimmerSet = EEPROM.read(EEPROMSIZE - 14);
-    bright = EEPROM.read(EEPROMSIZE - 15);
-    onlyBins = EEPROM.read(EEPROMSIZE - 1);
-    askSpiffs = EEPROM.read(EEPROMSIZE - 2);
-    FGCOLOR = (EEPROM.read(EEPROMSIZE - 3) << 8) | EEPROM.read(EEPROMSIZE - 4);
-    BGCOLOR = (EEPROM.read(EEPROMSIZE - 5) << 8) | EEPROM.read(EEPROMSIZE - 6);
-    ALCOLOR = (EEPROM.read(EEPROMSIZE - 7) << 8) | EEPROM.read(EEPROMSIZE - 8);
-    odd_color = (EEPROM.read(EEPROMSIZE - 9) << 8) | EEPROM.read(EEPROMSIZE - 10);
-    even_color = (EEPROM.read(EEPROMSIZE - 11) << 8) | EEPROM.read(EEPROMSIZE - 12);
-    pwd = EEPROM.readString(20);          // read what is on EEPROM here for headless environment
-    ssid = EEPROM.readString(EEPROMSIZE); // read what is on EEPROM here for headless environment
-
-#if defined(HEADLESS)
-                                          // SD Pins
-    _miso = EEPROM.read(90);
-    _mosi = EEPROM.read(91);
-    _sck = EEPROM.read(92);
-    _cs = EEPROM.read(93);
-#endif
-
-    EEPROM.end();
+    // Get Configuration from NVS partition
+    getFromNVS();
 
     // declare variables
     size_t currentIndex = 0;
@@ -677,13 +595,7 @@ void loop() {
                                    // with same SSID
                         }
                     }
-                    if (WiFi.status() != WL_CONNECTED) {
-                        // saves last connected network into EEPROM
-                        EEPROM.begin(EEPROMSIZE + 32);
-                        EEPROM.writeString(20, pwd);
-                        EEPROM.writeString(EEPROMSIZE, ssid);
-                        EEPROM.end();
-                    }
+                    if (WiFi.status() != WL_CONNECTED) { saveIntoNVS(); }
                 }
             }
         }

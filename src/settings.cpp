@@ -3,35 +3,115 @@
 #include "display.h"
 #include "esp_mac.h"
 #include "mykeyboard.h"
+#include "nvs.h"
+#include "nvs_handle.hpp"
 #include "onlineLauncher.h"
 #include "partitioner.h"
 #include "sd_functions.h"
+#include <cstdio>
+#include <cstdlib>
 #include <globals.h>
-/**************************************************************************************
-EEPROM ADDRESSES MAP
+#include <memory>
 
+namespace {
+uint32_t crc32(const uint8_t *data, size_t length) {
+    uint32_t crc = 0xFFFFFFFF;
+    while (length--) {
+        crc ^= *data++;
+        for (int i = 0; i < 8; ++i) {
+            if (crc & 1) crc = (crc >> 1) ^ 0xEDB88320;
+            else crc >>= 1;
+        }
+    }
+    return crc ^ 0xFFFFFFFF;
+}
 
-0	N Rot 	    16		    32	Pass	48	Pass	64	Pass	80	Pass	96		112
-1	N Dim	    17		    33	Pass	49	Pass	65	Pass	81	Pass	97		113
-2	N Bri       18		    34	Pass  	50	Pass	66	Pass	82	Pass	98		114
-3	N	        19		    35	Pass	51	Pass	67	Pass	83	Pass	99		115	(L- Brigh)
-4	N	        20	Pass  	36	Pass	52	Pass	68	Pass	84	Pass    100		116	(L- Dim)
-5	N	        21	Pass  	37	Pass  	53	Pass	69	Pass	85		    101		117	(L- Rotation)
-6	 	        22	Pass  	38	Pass  	54	Pass	70	Pass	86		    102		118	(L-odd)
-7	 	        23	Pass  	39	Pass  	55	Pass	71	Pass	87		    103		119	(L-odd)
-8	 	        24	Pass  	40	Pass  	56	Pass	72	Pass	88		    104		120	(L-even)
-9	 	        25	Pass  	41	Pass  	57	Pass	73	Pass	89		    105		121	(L-even)
-10  	        26	Pass  	42	Pass  	58	Pass	74	Pass	90 miso     106		122	(L-BGCOLOR)
-11  	        27	Pass  	43	Pass  	59	Pass	75	Pass	91 mosi     107		123	(L-BGCOLOR)
-12  	        28	Pass  	44	Pass  	60	Pass	76	Pass	92 sck      108		124	(L-FGCOLOR)
-13		        29	Pass  	45	Pass  	61	Pass	77	Pass	93 cs	    109		125	(L-FGCOLOR)
-14		        30	Pass	46	Pass  	62	Pass	78	Pass	94		    110		126	(L-AskSpiffs)
-15		        31	Pass  	47	Pass  	63	Pass	79	Pass	95		    111		127	(L-OnlyBins)
+String makeWifiKey(char prefix, uint32_t crc) {
+    char key[11] = {0};
+    std::snprintf(key, sizeof(key), "%c_%08X", prefix, crc);
+    return String(key);
+}
 
-From 1 to 5: Nemo shared addresses
-(L -*) stands for Launcher addresses
+std::unique_ptr<nvs::NVSHandle> openNamespace(const char *ns, nvs_open_mode_t mode, esp_err_t &err) {
+    auto handle = nvs::open_nvs_handle(ns, mode, &err);
+    if (err != ESP_OK) {
+        log_i("openNamespace(%s) failed: %d", ns, err);
+        return nullptr;
+    }
+    return handle;
+}
 
-***************************************************************************************/
+JsonArray ensureWifiListInternal() {
+    JsonObject setting = ensureSettingsRoot();
+    if (setting.isNull()) return JsonArray();
+
+    JsonArray wifiList = setting["wifi"].as<JsonArray>();
+    if (wifiList.isNull()) { wifiList = setting.createNestedArray("wifi"); }
+    if (wifiList.isNull()) { log_e("ensureWifiList: failed to create wifi list"); }
+    return wifiList;
+}
+} // namespace
+
+JsonObject ensureSettingsRoot() {
+    JsonArray settingsArray = settings.as<JsonArray>();
+    if (settingsArray.isNull()) {
+        settings.clear();
+        settingsArray = settings.to<JsonArray>();
+    }
+    if (settingsArray.isNull()) {
+        log_e("ensureSettingsRoot: unable to prepare settings array");
+        return JsonObject();
+    }
+
+    JsonObject setting;
+    if (settingsArray.size() > 0 && settingsArray[0].is<JsonObject>()) {
+        setting = settingsArray[0].as<JsonObject>();
+    } else {
+        settingsArray.clear();
+        setting = settingsArray.add<JsonObject>();
+    }
+
+    if (setting.isNull()) { log_e("ensureSettingsRoot: failed to create root object"); }
+    return setting;
+}
+
+bool getWifiCredential(const String &searchSsid, String &outPwd) {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+
+    for (JsonObject wifiEntry : wifiList) {
+        if (wifiEntry["ssid"].as<String>() == searchSsid) {
+            outPwd = wifiEntry["pwd"].as<String>();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool setWifiCredential(const String &ssidValue, const String &passwordValue, bool persist) {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+
+    JsonObject target;
+    for (JsonObject wifiEntry : wifiList) {
+        if (wifiEntry["ssid"].as<String>() == ssidValue) {
+            target = wifiEntry;
+            break;
+        }
+    }
+    if (target.isNull()) { target = wifiList.createNestedObject(); }
+    if (target.isNull()) {
+        log_e("setWifiCredential: failed to allocate entry");
+        return false;
+    }
+
+    target["ssid"] = ssidValue;
+    target["pwd"] = passwordValue;
+
+    if (persist) { saveConfigs(); }
+    return true;
+}
 
 void settings_menu() {
     options = {
@@ -132,13 +212,7 @@ void setBrightness(int brightval, bool save) {
     _setBrightness(brightval);
 #endif
 
-    if (save) {
-        EEPROM.begin(EEPROMSIZE); // open eeprom
-        bright = brightval;
-        EEPROM.write(EEPROMSIZE - 15, brightval); // set the byte
-        EEPROM.commit();                          // Store data to EEPROM
-        EEPROM.end();                             // Free EEPROM memory
-    }
+    if (save) { saveIntoNVS(); }
 }
 
 /*********************************************************************
@@ -146,9 +220,6 @@ void setBrightness(int brightval, bool save) {
 **  save brightness value into EEPROM
 **********************************************************************/
 void getBrightness() {
-    EEPROM.begin(EEPROMSIZE);
-    bright = EEPROM.read(EEPROMSIZE - 15);
-    EEPROM.end(); // Free EEPROM memory
     if (bright > 100) {
         bright = 100;
 
@@ -172,22 +243,17 @@ void getBrightness() {
 **  get onlyBins from EEPROM
 **********************************************************************/
 bool gsetOnlyBins(bool set, bool value) {
-    EEPROM.begin(EEPROMSIZE);
-    int onlyBin = EEPROM.read(EEPROMSIZE - 1);
     bool result = false;
 
-    if (onlyBin > 1) { set = true; }
+    if (onlyBins > 1) { set = true; }
 
-    if (onlyBin == 0) result = false;
+    if (onlyBins == 0) result = false;
     else result = true;
 
     if (set) {
         result = value;
         onlyBins = value; // update the global variable
-        EEPROM.write(EEPROMSIZE - 1, result);
-        EEPROM.commit();
     }
-    EEPROM.end(); // Free EEPROM memory
     return result;
 }
 
@@ -196,22 +262,17 @@ bool gsetOnlyBins(bool set, bool value) {
 **  get onlyBins from EEPROM
 **********************************************************************/
 bool gsetAskSpiffs(bool set, bool value) {
-    EEPROM.begin(EEPROMSIZE);
-    int spiffs = EEPROM.read(EEPROMSIZE - 2);
     bool result = false;
 
-    if (spiffs > 1) { set = true; }
+    if (askSpiffs > 1) { set = true; }
 
-    if (spiffs == 0) result = false;
+    if (askSpiffs == 0) result = false;
     else result = true;
 
     if (set) {
         result = value;
         askSpiffs = value; // update the global variable
-        EEPROM.write(EEPROMSIZE - 2, result);
-        EEPROM.commit();
     }
-    EEPROM.end(); // Free EEPROM memory
     return result;
 }
 
@@ -225,14 +286,12 @@ bool gsetAskSpiffs(bool set, bool value) {
 #define DRV 1
 #endif
 int gsetRotation(bool set) {
-    EEPROM.begin(EEPROMSIZE);
-    int getRot = EEPROM.read(EEPROMSIZE - 13);
     int result = ROTATION;
 
-    if (getRot > 3) {
+    if (rotation > 3) {
         set = true;
         result = ROTATION;
-    } else result = getRot;
+    } else result = rotation;
 
     if (set) {
         options = {
@@ -267,11 +326,8 @@ int gsetRotation(bool set) {
         }
 
         tft->setRotation(result);
-        EEPROM.write(EEPROMSIZE - 13, result);
-        EEPROM.commit();
         tft->fillScreen(BGCOLOR);
     }
-    EEPROM.end(); // Free EEPROM memory
     return result;
 }
 /*********************************************************************
@@ -352,25 +408,6 @@ void setUiColor() {
     };
     loopOptions(options);
     displayRedStripe("Saving...");
-    EEPROM.begin(EEPROMSIZE);
-
-    EEPROM.write(EEPROMSIZE - 3, int((FGCOLOR >> 8) & 0x00FF));
-    EEPROM.write(EEPROMSIZE - 4, int(FGCOLOR & 0x00FF));
-
-    EEPROM.write(EEPROMSIZE - 5, int((BGCOLOR >> 8) & 0x00FF));
-    EEPROM.write(EEPROMSIZE - 6, int(BGCOLOR & 0x00FF));
-
-    EEPROM.write(EEPROMSIZE - 7, int((ALCOLOR >> 8) & 0x00FF));
-    EEPROM.write(EEPROMSIZE - 8, int(ALCOLOR & 0x00FF));
-
-    EEPROM.write(EEPROMSIZE - 9, int((odd_color >> 8) & 0x00FF));
-    EEPROM.write(EEPROMSIZE - 10, int(odd_color & 0x00FF));
-
-    EEPROM.write(EEPROMSIZE - 11, int((even_color >> 8) & 0x00FF));
-    EEPROM.write(EEPROMSIZE - 12, int(even_color & 0x00FF));
-
-    EEPROM.commit(); // Store data to EEPROM
-    EEPROM.end();
 }
 /*********************************************************************
 **  Function: setdimmerSet
@@ -389,10 +426,6 @@ void setdimmerSet() {
 
     loopOptions(options);
     dimmerSet = time;
-    EEPROM.begin(EEPROMSIZE);
-    EEPROM.write(EEPROMSIZE - 14, dimmerSet); // 20s Dimm time
-    EEPROM.commit();
-    EEPROM.end();
 }
 
 /*********************************************************************
@@ -450,6 +483,233 @@ bool config_exists() {
         log_i("config_exists: config.conf exists");
         return true;
     }
+}
+
+bool saveIntoNVS() {
+    esp_err_t err = ESP_OK;
+    auto nvsHandle = openNamespace("launcher", NVS_READWRITE, err);
+    if (!nvsHandle) return false;
+
+    err |= nvsHandle->set_item("dimtime", dimmerSet);
+    err |= nvsHandle->set_item("bright", bright);
+    err |= nvsHandle->set_item("onlyBins", onlyBins);
+    err |= nvsHandle->set_item("askSpiffs", askSpiffs);
+    err |= nvsHandle->set_item("rotation", rotation);
+    err |= nvsHandle->set_item("FGCOLOR", FGCOLOR);
+    err |= nvsHandle->set_item("BGCOLOR", BGCOLOR);
+    err |= nvsHandle->set_item("ALCOLOR", ALCOLOR);
+    err |= nvsHandle->set_item("odd_color", odd_color);
+    err |= nvsHandle->set_item("even_color", even_color);
+    err |= nvsHandle->set_item("dev_mode", dev_mode);
+    err |= nvsHandle->set_string("wui_usr", wui_usr.c_str());
+    err |= nvsHandle->set_string("wui_pwd", wui_pwd.c_str());
+    err |= nvsHandle->set_string("dwn_path", dwn_path.c_str());
+#if defined(HEADLESS)
+    // SD Pins
+    err |= nvsHandle->set_item("miso", _miso);
+    err |= nvsHandle->set_item("mosi", _mosi);
+    err |= nvsHandle->set_item("sck", _sck);
+    err |= nvsHandle->set_item("cs", _cs);
+#endif
+    if (err != ESP_OK) {
+        log_i("Failed to store settings in NVS: %d", err);
+    } else {
+        log_i("Settings stored in NVS successfully");
+    }
+
+    nvsHandle->commit();
+    if (!saveWifiIntoNVS()) { log_i("saveIntoNVS: failed to store WiFi list"); }
+    return true;
+}
+bool saveWifiIntoNVS() {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+
+    esp_err_t err = ESP_OK;
+    auto nvsHandle = openNamespace("l_wifi", NVS_READWRITE, err);
+    if (!nvsHandle) return false;
+
+    err = nvsHandle->erase_all();
+    if (err != ESP_OK) { log_i("saveWifiIntoNVS: failed to clear WiFi namespace: %d", err); }
+
+    for (JsonObject wifiObj : wifiList) {
+        String ssid = wifiObj["ssid"].as<String>();
+        if (ssid.isEmpty()) continue;
+        String pwd = wifiObj["pwd"].as<String>();
+        uint32_t crc = crc32(reinterpret_cast<const uint8_t *>(ssid.c_str()), ssid.length());
+        String ssidKey = makeWifiKey('s', crc);
+        String pwdKey = makeWifiKey('p', crc);
+
+        esp_err_t ssidErr = nvsHandle->set_string(ssidKey.c_str(), ssid.c_str());
+        esp_err_t pwdErr = nvsHandle->set_string(pwdKey.c_str(), pwd.c_str());
+        if (ssidErr != ESP_OK || pwdErr != ESP_OK) {
+            log_i(
+                "saveWifiIntoNVS: failed storing %s (ssid err=%d pwd err=%d)", ssid.c_str(), ssidErr, pwdErr
+            );
+        }
+    }
+
+    nvsHandle->commit();
+    return true;
+}
+
+void defaultValues() {
+    // rotation = ROTATION;
+    dimmerSet = 20;
+    bright = 100;
+    onlyBins = true;
+    askSpiffs = true;
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+    FGCOLOR = 0x0000;
+    BGCOLOR = 0xFFFF;
+    ALCOLOR = 0x8888;
+    odd_color = 0x5555;
+    even_color = 0x2222;
+#else
+    FGCOLOR = 0x07E0;
+    BGCOLOR = 0x0000;
+    ALCOLOR = 0xF800;
+    odd_color = 0x30c5;
+    even_color = 0x32e5;
+#endif
+    dev_mode = false;
+    wui_usr = "admin";
+    wui_pwd = "launcher";
+    dwn_path = "/downloads/";
+#if defined(HEADLESS)
+    // SD Pins
+    _miso = 0;
+    _mosi = 0;
+    _sck = 0;
+    _cs = 0;
+#endif
+    saveIntoNVS();
+}
+bool getFromNVS() {
+    esp_err_t err;
+    std::unique_ptr<nvs::NVSHandle> nvsHandle = nvs::open_nvs_handle("launcher", NVS_READONLY, &err);
+    if (err != ESP_OK) {
+        // If NVS read fails, set default values
+        log_i("Failed to retrieve settings from NVS: %d\nUsing Default values", err);
+        defaultValues();
+        return false;
+    }
+    // Get settings from NVS
+    if (err != ESP_OK) {
+        log_i("Failed to open NVS handle: %d", err);
+        return false;
+    }
+    err = nvsHandle->get_item("dimtime", dimmerSet);
+    err |= nvsHandle->get_item("bright", bright);
+    err |= nvsHandle->get_item("onlyBins", onlyBins);
+    err |= nvsHandle->get_item("askSpiffs", askSpiffs);
+    err |= nvsHandle->get_item("rotation", rotation);
+    err |= nvsHandle->get_item("FGCOLOR", FGCOLOR);
+    err |= nvsHandle->get_item("BGCOLOR", BGCOLOR);
+    err |= nvsHandle->get_item("ALCOLOR", ALCOLOR);
+    err |= nvsHandle->get_item("odd_color", odd_color);
+    err |= nvsHandle->get_item("even_color", even_color);
+    err |= nvsHandle->get_item("dev_mode", dev_mode);
+#if defined(HEADLESS)
+    // SD Pins
+    err |= nvsHandle->get_item("miso", _miso);
+    err |= nvsHandle->get_item("mosi", _mosi);
+    err |= nvsHandle->get_item("sck", _sck);
+    err |= nvsHandle->get_item("cs", _cs);
+#endif
+    char buffer[64];
+    err |= nvsHandle->get_string("wui_usr", buffer, sizeof(buffer));
+    wui_usr = String(buffer);
+    err |= nvsHandle->get_string("wui_pwd", buffer, sizeof(buffer));
+    wui_pwd = String(buffer);
+    err |= nvsHandle->get_string("dwn_path", buffer, sizeof(buffer));
+    dwn_path = String(buffer);
+    if (err != ESP_OK) {
+        log_i("Failed to retrieve settings from NVS: %d\nUsing Default values", err);
+        defaultValues();
+        return false;
+    }
+
+    return true;
+}
+bool getWifiFromNVS() {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+    wifiList.clear();
+
+    Serial.println("NVS: Finding keys in NVS...");
+    nvs_handle_t rawHandle;
+    esp_err_t err = nvs_open("l_wifi", NVS_READONLY, &rawHandle);
+    if (err != ESP_OK) {
+        Serial.printf("Error opening l_wifi: %s\n", esp_err_to_name(err));
+        return false;
+    }
+
+    nvs_iterator_t it = nullptr;
+    err = nvs_entry_find("nvs", "l_wifi", NVS_TYPE_ANY, &it);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_close(rawHandle);
+        return true;
+    }
+    if (err != ESP_OK) {
+        Serial.printf("Error finding l_wifi entry, error: %s\n", esp_err_to_name(err));
+        nvs_close(rawHandle);
+        return false;
+    }
+
+    while (err == ESP_OK) {
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
+        String key = String(info.key);
+        if (key.startsWith("s_")) {
+            size_t ssid_size = 0;
+            err = nvs_get_str(rawHandle, info.key, NULL, &ssid_size);
+            if (err != ESP_OK) {
+                Serial.printf("Error %d looking for %s\n", err, info.key);
+                break;
+            }
+
+            char *ssidBuff = static_cast<char *>(malloc(ssid_size));
+            if (!ssidBuff) {
+                Serial.println("Failed to allocate buffer for SSID");
+                break;
+            }
+
+            err = nvs_get_str(rawHandle, info.key, ssidBuff, &ssid_size);
+            if (err == ESP_OK) {
+                String suffix = key.substring(2);
+                String pwdKey = "p_" + suffix;
+                size_t pwd_size = 0;
+                String pwdValue;
+                if (nvs_get_str(rawHandle, pwdKey.c_str(), NULL, &pwd_size) == ESP_OK) {
+                    char *pwdBuff = static_cast<char *>(malloc(pwd_size));
+                    if (pwdBuff) {
+                        if (nvs_get_str(rawHandle, pwdKey.c_str(), pwdBuff, &pwd_size) == ESP_OK) {
+                            pwdValue = String(pwdBuff);
+                        } else {
+                            Serial.printf("Error retrieving pwd for key %s\n", pwdKey.c_str());
+                        }
+                        free(pwdBuff);
+                    } else {
+                        Serial.println("Failed to allocate buffer for password");
+                    }
+                } else {
+                    Serial.printf("Password key %s not found\n", pwdKey.c_str());
+                }
+
+                setWifiCredential(String(ssidBuff), pwdValue, false);
+                Serial.printf("SSID: %s, PWD: %s\n", ssidBuff, pwdValue.c_str());
+            } else {
+                Serial.printf("Error %d retrieving %s\n", err, info.key);
+            }
+            free(ssidBuff);
+        }
+
+        err = nvs_entry_next(&it);
+    }
+    nvs_release_iterator(it);
+    nvs_close(rawHandle);
+    return true;
 }
 
 /*********************************************************************
@@ -576,31 +836,7 @@ void getConfigs() {
             if (dimmerSet > 120) dimmerSet = 10;
 
             file.close();
-
-            EEPROM.begin(EEPROMSIZE);
-            EEPROM.write(EEPROMSIZE - 13, rotation);
-            EEPROM.write(EEPROMSIZE - 14, dimmerSet);
-            EEPROM.write(EEPROMSIZE - 15, bright);
-            EEPROM.write(EEPROMSIZE - 1, int(onlyBins));
-            EEPROM.write(EEPROMSIZE - 2, int(askSpiffs));
-
-            EEPROM.write(EEPROMSIZE - 3, int((FGCOLOR >> 8) & 0x00FF));
-            EEPROM.write(EEPROMSIZE - 4, int(FGCOLOR & 0x00FF));
-
-            EEPROM.write(EEPROMSIZE - 5, int((BGCOLOR >> 8) & 0x00FF));
-            EEPROM.write(EEPROMSIZE - 6, int(BGCOLOR & 0x00FF));
-
-            EEPROM.write(EEPROMSIZE - 7, int((ALCOLOR >> 8) & 0x00FF));
-            EEPROM.write(EEPROMSIZE - 8, int(ALCOLOR & 0x00FF));
-
-            EEPROM.write(EEPROMSIZE - 9, int((odd_color >> 8) & 0x00FF));
-            EEPROM.write(EEPROMSIZE - 10, int(odd_color & 0x00FF));
-
-            EEPROM.write(EEPROMSIZE - 11, int((even_color >> 8) & 0x00FF));
-            EEPROM.write(EEPROMSIZE - 12, int(even_color & 0x00FF));
-
-            if (!EEPROM.commit()) log_i("fail to write EEPROM");
-            EEPROM.end();
+            saveIntoNVS();
             log_i("Using config.conf setup file");
         } else {
         Default:
@@ -608,6 +844,9 @@ void getConfigs() {
             saveConfigs();
             log_i("Using settings stored on EEPROM");
         }
+    } else {
+        getFromNVS();
+        getWifiFromNVS();
     }
 }
 /*********************************************************************
@@ -718,10 +957,6 @@ void saveConfigs() {
 
         break;
     }
-
-    EEPROM.begin(EEPROMSIZE + 32);
-    EEPROM.writeString(20, pwd);
-    EEPROM.writeString(EEPROMSIZE, ssid);
-    EEPROM.commit();
-    EEPROM.end();
+    saveIntoNVS();
+    saveWifiIntoNVS();
 }

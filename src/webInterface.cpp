@@ -445,17 +445,11 @@ void configureWebServer() {
                 }
 
                 // Grava os valores no EEPROM
-                EEPROM.begin(EEPROMSIZE + 32);
-                EEPROM.write(90, static_cast<uint8_t>(miso));
-                EEPROM.write(91, static_cast<uint8_t>(mosi));
-                EEPROM.write(92, static_cast<uint8_t>(sck));
-                EEPROM.write(93, static_cast<uint8_t>(cs));
-                EEPROM.commit();
-                EEPROM.end();
                 _sck = sck;
                 _miso = miso;
                 _mosi = mosi;
                 _cs = cs;
+                saveIntoNVS();
                 setupSdCard();
                 request->send(200, "text/plain", "Pins configured.");
             error:
@@ -488,7 +482,12 @@ void configureWebServer() {
                 const char *pwdd = request->getParam("pwd")->value().c_str();
                 pwd = pwdd;
                 ssid = ssidd;
-                saveConfigs();
+                if (setWifiCredential(ssid, pwd)) {
+                    Serial.printf("WebUI: ssid->%s, pwd->%s\n", ssid.c_str(), pwd.c_str());
+                    saveConfigs();
+                } else {
+                    Serial.println("WebUI: failed to store new WiFi entry");
+                }
             }
         } else {
             return request->requestAuthentication();

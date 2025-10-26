@@ -17,27 +17,14 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         bool found = false;
         bool wrongPass = false;
         getConfigs();
-        JsonObject setting = settings[0];
-        JsonArray WifiList = setting["wifi"].as<JsonArray>();
-        if (WifiList.isNull()) { WifiList = setting.createNestedArray("wifi"); }
-        EEPROM.begin(EEPROMSIZE);
-        pwd = EEPROM.readString(20);
-        EEPROM.end();
-        Serial.printf("sdcardMounted: %d\n", sdcardMounted);
 
-        if (sdcardMounted) {
-            for (JsonObject wifiEntry : WifiList) {
-                String name = wifiEntry["ssid"].as<String>();
-                String pass = wifiEntry["pwd"].as<String>();
-                Serial.printf("SSID: %s, Pass: %s\n", name, pass);
-                if (name == ssid) {
-                    pwd = pass;
-                    found = true;
-                    Serial.printf("Found SSID: %s\n", name);
-                    break;
-                }
-            }
+        String knownPwd;
+        if (getWifiCredential(ssid, knownPwd)) {
+            pwd = knownPwd;
+            found = true;
+            Serial.printf("Found SSID: %s\n", ssid.c_str());
         }
+        Serial.printf("sdcardMounted: %d\n", sdcardMounted);
 
     Retry:
         if (!found || wrongPass) {
@@ -49,32 +36,19 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
                 }
             }
 
-            EEPROM.begin(EEPROMSIZE);
-            if (pwd != EEPROM.readString(20)) {
-                EEPROM.writeString(20, pwd);
-                EEPROM.commit(); // Store data to EEPROM
-            }
-            EEPROM.end(); // Free EEPROM memory
-            if (sdcardMounted && !found) {
-                JsonObject newWifi = WifiList.add<JsonObject>();
-                if (newWifi.isNull()) { newWifi = WifiList.add<JsonObject>(); }
-                if (!newWifi.isNull()) {
-                    newWifi["ssid"] = ssid;
-                    newWifi["pwd"] = pwd;
+            if (!found) {
+                if (setWifiCredential(ssid, pwd)) {
                     found = true;
+                    Serial.printf("wifiConnect: ssid->%s, pwd->%s\n", ssid.c_str(), pwd.c_str());
                     saveConfigs();
                 } else {
-                    log_e("wifiConnect: failed to store new WiFi entry");
+                    Serial.println("wifiConnect: failed to store new WiFi entry");
                 }
-            } else if (sdcardMounted && found && wrongPass) {
-                for (JsonObject wifiEntry : WifiList) {
-                    if (wifiEntry["ssid"].as<String>() == ssid) {
-                        wifiEntry["pwd"] = pwd;
-                        Serial.printf("Mudou pwd de SSID: %s\n", ssid);
-                        break;
-                    }
+            } else if (wrongPass) {
+                if (setWifiCredential(ssid, pwd)) {
+                    Serial.printf("Mudou pwd de SSID: %s\n", ssid.c_str());
+                    saveConfigs();
                 }
-                saveConfigs();
             }
         }
 

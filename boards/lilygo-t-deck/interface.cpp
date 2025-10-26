@@ -1,6 +1,5 @@
 #include "TouchDrvGT911.hpp"
 #include "powerSave.h"
-#include <EEPROM.h>
 #include <Wire.h>
 #include <interface.h>
 TouchDrvGT911 touch;
@@ -94,39 +93,7 @@ void _setup_gpio() {
 ** Description:   second stage gpio setup to make a few functions work
 ***************************************************************************************/
 // uint8_t isPlus = false;
-void _post_setup_gpio() {
-    // EEPROM.begin(15);
-    // isPlus = EEPROM.read(8);
-
-    // if (isPlus > 1) {
-    //     touch.setMaxCoordinates(320, 240);
-    //     touch.setSwapXY(true);
-    //     touch.setMirrorXY(true, true);
-    //     tft->fillScreen(BGCOLOR);
-    //     tft->setTextSize(2);
-    //     tft->drawCentreString("Touchscreen Setup", tftWidth / 2, 15, 1);
-    //     tft->drawCentreString("Touch the GREEN circle", tftWidth / 2, 35, 1);
-    //     tft->fillCircle(30, tftHeight / 2, 20, GREEN);
-    //     while (1) {
-    //         TouchPointPro t;
-    //         if (touch.getPoint(&t.x, &t.y)) {
-    //             if (t.x > 10 && t.x < 50 && t.y > (tftHeight / 2 - 20) && t.y < (tftHeight / 2 + 20)) {
-    //                 isPlus = 0;
-    //                 break;
-    //             } else if (t.x > (tftWidth - 50) && t.x < (tftWidth - 10) && t.y > (tftHeight / 2 - 20) &&
-    //                        t.y < (tftHeight / 2 + 20)) {
-    //                 isPlus = 1;
-    //                 break;
-    //             }
-    //         }
-    //         vTaskDelay(pdTICKS_TO_MS(10));
-    //     }
-    //     tft->fillScreen(BGCOLOR);
-    //     EEPROM.write(8, isPlus);
-    //     EEPROM.commit();
-    // }
-    // EEPROM.end();
-}
+void _post_setup_gpio() {}
 
 /***************************************************************************************
 ** Function name: getBattery()

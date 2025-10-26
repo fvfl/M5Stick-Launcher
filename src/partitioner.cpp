@@ -432,9 +432,6 @@ void partitionCrawler() {
         ESP_LOGE(TAG, "Failed to write 0x00 to the first byte of the running partition");
     } else {
         ESP_LOGI(TAG, "Restarting system to boot from test partition");
-        // Forces Recovering EEPROM data to default.
-        EEPROM.begin(EEPROMSIZE);
-        EEPROM.write(EEPROMSIZE - 13, 0xFF);
         esp_restart();
     }
 }
