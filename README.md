@@ -88,6 +88,8 @@ Things that needs to be done in next updates
      * [x] Fixed Marauder keyboard
      * [x] Changed from EEPROM to NVS to save configs and Wifi creds [Issue 232](https://github.com/bmorcelli/Launcher/issues/232)
      * [x] Port to [M5-PaperS3](https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata)
+     * [x] Fixed SelPress leaking into main menu
+     * [x] T-Embed (all) and T-LoraPager Encoder enhancement
 
 
 * 2.6.2:

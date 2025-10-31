@@ -415,6 +415,7 @@ void loop() {
     int index = 0;
     int opt = 5; // there are 3 options> 1 list SD files, 2 OTA, 3 USB and 4 Config
     int pass_by = 0;
+    bool first_loop = true;
     getBrightness();
     if (!sdcardMounted) index = 1; // if SD card is not present, paint SD square grey and auto select OTA
     std::vector<MenuOptions> menuItems = {
@@ -497,6 +498,11 @@ void loop() {
             tft->display(false);
             vTaskDelay(pdTICKS_TO_MS(200));
 #endif
+            if (first_loop) {
+                first_loop = false;
+                delay(350);
+                resetGlobals(); // avoid leaking command after menu is shown
+            }
         }
         if (touchPoint.pressed) {
             int i = 0;

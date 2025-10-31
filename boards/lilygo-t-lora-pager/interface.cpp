@@ -10,8 +10,6 @@ ExtensionIOXL9555 io;
 
 // Rotary encoder
 #include <RotaryEncoder.h>
-extern RotaryEncoder *encoder;
-IRAM_ATTR void checkPosition();
 RotaryEncoder *encoder = nullptr;
 IRAM_ATTR void checkPosition() { encoder->tick(); }
 
@@ -22,6 +20,7 @@ PowersBQ25896 PPM;
 
 // Fuel gauge
 #include <bq27220.h>
+#define BATTERY_DESIGN_CAPACITY 1500
 BQ27220 bq;
 
 // Keyboard
@@ -138,6 +137,9 @@ void _setup_gpio() {
         PPM.disableOTG();
     }
 
+    // Battery gauge
+    if (bq.getDesignCap() != BATTERY_DESIGN_CAPACITY) { bq.setDesignCap(BATTERY_DESIGN_CAPACITY); }
+
     if (io.begin(Wire, 0x20)) {
         const uint8_t expands[] = {
             EXPANDS_KB_RST,
@@ -205,7 +207,8 @@ void _setBrightness(uint8_t brightval) {
 void InputHandler(void) {
 
     static unsigned long tm = millis();
-    static int _last_dir = 0;
+    static int posDifference = 0;
+    static int lastPos = 0;
     bool sel = !BTN_ACT;
     bool esc = !BTN_ACT;
 
@@ -214,7 +217,12 @@ void InputHandler(void) {
 
     if (millis() - tm < 500) return;
 
-    _last_dir = (int)encoder->getDirection();
+    int newPos = encoder->getPosition();
+    if (newPos != lastPos) {
+        posDifference += (newPos - lastPos);
+        lastPos = newPos;
+    }
+
     sel = digitalRead(SEL_BTN);
     esc = digitalRead(BK_BTN);
 
@@ -241,19 +249,25 @@ void InputHandler(void) {
         }
     } else KeyStroke.Clear();
 
-    if (_last_dir != 0 || sel == BTN_ACT || esc == BTN_ACT || KeyStroke.enter) {
+    if (posDifference != 0 || sel == BTN_ACT || esc == BTN_ACT || KeyStroke.enter) {
         if (!wakeUpScreen()) {
             AnyKeyPress = true;
 
-            if (_last_dir < 0) PrevPress = true;
-            if (_last_dir > 0) NextPress = true;
-            if (sel == BTN_ACT) SelPress = true;
+            if (posDifference < 0) {
+                PrevPress = true;
+                posDifference++;
+            }
+            if (posDifference > 0) {
+                NextPress = true;
+                posDifference--;
+            }
+            if (sel == BTN_ACT || KeyStroke.enter) SelPress = true;
             if (esc == BTN_ACT) EscPress = true;
         } else goto END;
     }
 
 END:
-    if (sel == BTN_ACT || esc == BTN_ACT) tm = millis();
+    if (sel == BTN_ACT || esc == BTN_ACT || KeyStroke.enter) tm = millis();
 }
 
 void powerOff() { PPM.shutdown(); }
