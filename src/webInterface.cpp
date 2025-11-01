@@ -8,6 +8,8 @@
 #include "sd_functions.h"
 #include "settings.h"
 #include <globals.h>
+#include <map>
+
 struct Config {
     String httpuser;
     String httppassword;   // password to access web admin
@@ -38,13 +40,8 @@ String uploadFolder = "";
 **  Display options to launch the WebUI
 **********************************************************************/
 void webUIMyNet() {
-    if (WiFi.status() != WL_CONNECTED) {
-        connectWifi();
-    } else {
-        // If it is already connected, just start the network
-        startWebUi("", 0, false);
-    }
-    // On fail installing will run the following line
+    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    if (WiFi.status() == WL_CONNECTED) startWebUi("", 0, false);
 }
 
 /**********************************************************************
@@ -111,14 +108,69 @@ String listFiles(String folder) {
     return returnText;
 }
 
-// used by server.on functions to discern whether a user has the correct httpapitoken OR is authenticated by
-// username and password
-bool checkUserWebAuth(AsyncWebServerRequest *request) {
-    bool isAuthenticated = false;
-    if (request->authenticate(config.httpuser.c_str(), config.httppassword.c_str())) {
-        isAuthenticated = true;
+std::map<String, unsigned long> sessions;
+bool sessionTokenLoaded = false;
+String persistedSessionToken;
+
+void ensurePersistedSessionLoaded() {
+    if (sessionTokenLoaded) return;
+    sessionTokenLoaded = true;
+    persistedSessionToken = loadSessionToken();
+    if (!persistedSessionToken.isEmpty()) { sessions[persistedSessionToken] = millis(); }
+}
+// Generate random token
+String generateToken(int length = 24) {
+    String token = "";
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    for (int i = 0; i < length; i++) { token += charset[random(0, sizeof(charset) - 1)]; }
+    return token;
+}
+
+/**********************************************************************
+**  Function: serveWebUIFile
+**  serves files for WebUI and checks for custom WebUI files
+**********************************************************************/
+void serveWebUIFile(
+    AsyncWebServerRequest *request, String filename, const char *contentType, bool gzip,
+    const uint8_t *originaFile, uint32_t originalFileSize
+) {
+    (void)filename;
+    AsyncWebServerResponse *response =
+        request->beginResponse_P(200, contentType, originaFile, originalFileSize);
+    if (gzip) response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+}
+
+/**********************************************************************
+**  Function: checkUserWebAuth
+** used by server->on functions to discern whether a user has the correct
+** httpapitoken OR is authenticated by username and password
+**********************************************************************/
+bool checkUserWebAuth(AsyncWebServerRequest *request, bool onFailureReturnLoginPage = false) {
+    ensurePersistedSessionLoaded();
+
+    if (request->hasHeader("Cookie")) {
+        const AsyncWebHeader *cookie = request->getHeader("Cookie");
+        String c = cookie->value();
+        int idx = c.indexOf("ESP32SESSION=");
+        if (idx != -1) {
+            int start = idx + 13;
+            int end = c.indexOf(';', start);
+            if (end == -1) end = c.length();
+            String token = c.substring(start, end);
+            auto it = sessions.find(token);
+            if (it != sessions.end()) {
+                it->second = millis();
+                return true;
+            }
+        }
     }
-    return isAuthenticated;
+    if (onFailureReturnLoginPage) {
+        serveWebUIFile(request, "login.html", "text/html", true, login_html, login_html_size);
+    } else {
+        request->send(401, "text/plain", "Unauthorized");
+    }
+    return false;
 }
 
 // Função auxiliar para criar diretórios recursivamente
@@ -222,6 +274,8 @@ void handleUpload(
 void notFound(AsyncWebServerRequest *request) { request->send(404, "text/plain", "Not found"); }
 
 void configureWebServer() {
+    ensurePersistedSessionLoaded();
+
     // configure web server
 
     MDNS.begin(host);
@@ -229,10 +283,54 @@ void configureWebServer() {
     // if url isn't found
     server->onNotFound([](AsyncWebServerRequest *request) { request->redirect("/"); });
 
-    // visiting this page will cause you to be logged out
+    // Login
+    server->on("/login", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("username", true) && request->hasParam("password", true)) {
+            String username = request->getParam("username", true)->value();
+            String password = request->getParam("password", true)->value();
+
+            if (username == wui_usr && password == wui_pwd) {
+                String token = generateToken();
+                sessions.clear();
+                sessions[token] = millis();
+                saveSessionToken(token);
+                sessionTokenLoaded = true;
+                persistedSessionToken = token;
+
+                AsyncWebServerResponse *response = request->beginResponse(302);
+                response->addHeader("Location", "/");
+                response->addHeader("Set-Cookie", "ESP32SESSION=" + token + "; Path=/; HttpOnly");
+                request->send(response);
+                return;
+            }
+        }
+        AsyncWebServerResponse *response = request->beginResponse(302);
+        response->addHeader("Location", "/?failed");
+        request->send(response);
+    });
+
+    // Logout
     server->on("/logout", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->requestAuthentication();
-        request->send(401);
+        ensurePersistedSessionLoaded();
+        if (request->hasHeader("Cookie")) {
+            const AsyncWebHeader *cookie = request->getHeader("Cookie");
+            String c = cookie->value();
+            int idx = c.indexOf("ESP32SESSION=");
+            if (idx != -1) {
+                int start = idx + 13;
+                int end = c.indexOf(';', start);
+                if (end == -1) end = c.length();
+                String token = c.substring(start, end);
+                sessions.erase(token);
+                saveSessionToken("");
+                sessionTokenLoaded = true;
+                persistedSessionToken = "";
+            }
+        }
+        AsyncWebServerResponse *response = request->beginResponse(302);
+        response->addHeader("Location", "/?loggedout");
+        response->addHeader("Set-Cookie", "ESP32SESSION=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+        request->send(response);
     });
 
     // presents a "you are now logged out webpage
@@ -241,60 +339,59 @@ void configureWebServer() {
         Serial.println(logmessage);
 #ifdef PART_04MB
         AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", "", 0);
-#else
-    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", logout_html, logout_html_size);
-    response->addHeader("Content-Encoding", "gzip");
-#endif
         request->send(response);
+#else
+        serveWebUIFile(request, "logout.html", "text/html", true, logout_html, logout_html_size);
+#endif
     });
 
     server->on("/UPDATE", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (request->hasParam("fileName", true)) {
-            fileToCopy = request->getParam("fileName", true)->value().c_str();
-            request->send(200, "text/plain", "Starting Update");
-            updateFromSd_var = true;
+        if (checkUserWebAuth(request)) {
+            if (request->hasParam("fileName", true)) {
+                fileToCopy = request->getParam("fileName", true)->value().c_str();
+                request->send(200, "text/plain", "Starting Update");
+                updateFromSd_var = true;
+            }
         }
     });
 
     server->on("/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (request->hasParam("fileName", true) && request->hasParam("filePath", true)) {
-            String fileName = request->getParam("fileName", true)->value().c_str();
-            String filePath = request->getParam("filePath", true)->value().c_str();
-            String filePath2 = filePath.substring(0, filePath.lastIndexOf('/') + 1) + fileName;
-            if (!setupSdCard()) {
-                request->send(200, "text/plain", "Fail starting SD Card.");
-            } else {
-                // Rename the file of folder
-                if (SDM.rename(filePath, filePath2)) {
-                    request->send(200, "text/plain", filePath + " renamed to " + filePath2);
+        if (checkUserWebAuth(request)) {
+            if (request->hasParam("fileName", true) && request->hasParam("filePath", true)) {
+                String fileName = request->getParam("fileName", true)->value().c_str();
+                String filePath = request->getParam("filePath", true)->value().c_str();
+                String filePath2 = filePath.substring(0, filePath.lastIndexOf('/') + 1) + fileName;
+                if (!setupSdCard()) {
+                    request->send(200, "text/plain", "Fail starting SD Card.");
                 } else {
-                    request->send(200, "text/plain", "Fail renaming file.");
+                    // Rename the file of folder
+                    if (SDM.rename(filePath, filePath2)) {
+                        request->send(200, "text/plain", filePath + " renamed to " + filePath2);
+                    } else {
+                        request->send(200, "text/plain", "Fail renaming file.");
+                    }
                 }
             }
         }
     });
-    server->on(
-        "/OTAFILE",
-        HTTP_POST,
-        [](AsyncWebServerRequest *request) {
-            // Aqui você pode tratar parâmetros que não são parte do upload
-        },
-        handleUpload
-    );
-    server->on("/OTA", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (request->hasParam("update", true)) {
-            update = true;
-            request->send(200, "text/plain", "Update");
-        }
+    server->on("/OTAFILE", HTTP_POST, [](AsyncWebServerRequest *request) {}, handleUpload);
 
-        if (request->hasParam("command", true)) {
-            command = request->getParam("command", true)->value().toInt();
-            if (request->hasParam("size", true)) {
-                file_size = request->getParam("size", true)->value().toInt();
-                if (file_size > 0) {
-                    update = true;
-                    runOnce = true;
-                    request->send(200, "text/plain", "OK");
+    server->on("/OTA", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (checkUserWebAuth(request)) {
+            if (request->hasParam("update", true)) {
+                update = true;
+                request->send(200, "text/plain", "Update");
+            }
+
+            if (request->hasParam("command", true)) {
+                command = request->getParam("command", true)->value().toInt();
+                if (request->hasParam("size", true)) {
+                    file_size = request->getParam("size", true)->value().toInt();
+                    if (file_size > 0) {
+                        update = true;
+                        runOnce = true;
+                        request->send(200, "text/plain", "OK");
+                    }
                 }
             }
         }
@@ -303,37 +400,19 @@ void configureWebServer() {
     server->onFileUpload(handleUpload);
 
     server->on("/scripts.js", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (checkUserWebAuth(request)) {
-            AsyncWebServerResponse *response =
-                request->beginResponse_P(200, "application/javascript", scripts_js, scripts_js_size);
-            response->addHeader("Content-Encoding", "gzip");
-            request->send(response);
-        } else {
-            return request->requestAuthentication();
-        }
+        serveWebUIFile(request, "scripts.js", "application/javascript", true, scripts_js, scripts_js_size);
     });
+
     server->on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (checkUserWebAuth(request)) {
 #ifdef PART_04MB
-            AsyncWebServerResponse *response =
-                request->beginResponse_P(200, "text/css", style_4mb_css, style_4mb_css_size);
+        serveWebUIFile(request, "style.css", "text/css", true, style_4mb_css, style_4mb_css_size);
 #else
-      AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", style_css, style_css_size);
+        serveWebUIFile(request, "style.css", "text/css", true, style_css, style_css_size);
 #endif
-            response->addHeader("Content-Encoding", "gzip");
-            request->send(response);
-        } else {
-            return request->requestAuthentication();
-        }
     });
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (checkUserWebAuth(request)) {
-            AsyncWebServerResponse *response =
-                request->beginResponse_P(200, "text/html", index_html, index_html_size);
-            response->addHeader("Content-Encoding", "gzip");
-            request->send(response);
-        } else {
-            return request->requestAuthentication();
+        if (checkUserWebAuth(request, true)) {
+            serveWebUIFile(request, "index.html", "text/html", true, index_html, index_html_size);
         }
     });
     server->on("/systeminfo", HTTP_GET, [](AsyncWebServerRequest *request) {

@@ -90,6 +90,7 @@ Things that needs to be done in next updates
      * [x] Port to [M5-PaperS3](https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata)
      * [x] Fixed SelPress leaking into main menu
      * [x] T-Embed (all) and T-LoraPager Encoder enhancement
+     * [x] WebUi session enhancement and fixes
 
 
 * 2.6.2:

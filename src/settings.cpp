@@ -521,6 +521,23 @@ bool saveIntoNVS() {
     if (!saveWifiIntoNVS()) { log_i("saveIntoNVS: failed to store WiFi list"); }
     return true;
 }
+
+bool saveSessionToken(const String &token) {
+    esp_err_t err = ESP_OK;
+    auto nvsHandle = openNamespace("launcher", NVS_READWRITE, err);
+    if (!nvsHandle) return false;
+
+    if (token.isEmpty()) {
+        err = nvsHandle->erase_item("token");
+        if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    } else {
+        err = nvsHandle->set_string("token", token.c_str());
+    }
+
+    if (err == ESP_OK) { err = nvsHandle->commit(); }
+    return err == ESP_OK;
+}
+
 bool saveWifiIntoNVS() {
     JsonArray wifiList = ensureWifiListInternal();
     if (wifiList.isNull()) return false;
@@ -551,6 +568,18 @@ bool saveWifiIntoNVS() {
 
     nvsHandle->commit();
     return true;
+}
+
+String loadSessionToken() {
+    esp_err_t err = ESP_OK;
+    auto nvsHandle = openNamespace("launcher", NVS_READONLY, err);
+    if (!nvsHandle) return "";
+
+    char buffer[65] = {0};
+    err = nvsHandle->get_string("token", buffer, sizeof(buffer));
+    if (err != ESP_OK) return "";
+
+    return String(buffer);
 }
 
 void defaultValues() {
@@ -960,3 +989,5 @@ void saveConfigs() {
     saveIntoNVS();
     saveWifiIntoNVS();
 }
+
+

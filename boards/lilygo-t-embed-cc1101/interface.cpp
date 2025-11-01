@@ -118,8 +118,7 @@ void _setBrightness(uint8_t brightval) {
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
-    static unsigned long tm = millis();  // debauce for buttons
-    static unsigned long tm2 = millis(); // delay between Select and encoder (avoid missclick)
+    static unsigned long tm = millis(); // debauce for buttons
     static int posDifference = 0;
     static int lastPos = 0;
     bool sel = !BTN_ACT;
@@ -131,12 +130,12 @@ void InputHandler(void) {
         lastPos = newPos;
     }
 
-    if (millis() - tm > 200 || !LongPress) {
-        sel = digitalRead(SEL_BTN);
+    if (millis() - tm < 200 && !LongPress) return;
+
+    sel = digitalRead(SEL_BTN);
 #ifdef T_EMBED_1101
-        esc = digitalRead(BK_BTN);
+    esc = digitalRead(BK_BTN);
 #endif
-    }
 
     if (posDifference != 0 || sel == BTN_ACT || esc == BTN_ACT) {
         if (!wakeUpScreen()) AnyKeyPress = true;
@@ -145,21 +144,18 @@ void InputHandler(void) {
     if (posDifference > 0) {
         PrevPress = true;
         posDifference--;
-        tm2 = millis();
     }
     if (posDifference < 0) {
         NextPress = true;
         posDifference++;
-        tm2 = millis();
     }
 
-    if (sel == BTN_ACT && millis() - tm2 > 200) {
+    if (sel == BTN_ACT) {
         posDifference = 0;
         SelPress = true;
         tm = millis();
     }
     if (esc == BTN_ACT) {
-        AnyKeyPress = true;
         EscPress = true;
         tm = millis();
     }

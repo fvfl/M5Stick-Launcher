@@ -733,7 +733,9 @@ String generalKeyboard(
 #endif
 
 #if defined(HAS_ENCODER) // T-Embed and T-LoRa-Pager
+            LongPress = true;
             if (check(SelPress) || selection_made) {
+                LongPress = false;
                 selection_made = true;
             } else {
                 /* NEXT "Btn" to move forward on th X axis (to the right) */
@@ -846,4 +848,3 @@ void checkReboot() {}
 ** Description:   Delivers the battery value from 0-100
 ***************************************************************************************/
 int getBattery() { return 0; }
-

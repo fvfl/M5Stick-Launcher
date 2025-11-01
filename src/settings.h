@@ -53,4 +53,6 @@ void setdimmerSet();
 void setUiColor();
 void chargeMode();
 JsonObject ensureSettingsRoot();
+bool saveSessionToken(const String &token);
+String loadSessionToken();
 #endif
