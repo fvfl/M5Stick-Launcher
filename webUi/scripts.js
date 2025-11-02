@@ -1,51 +1,70 @@
 function _(e) { return document.getElementById(e); }
+
+function httpRequest(method, url, { async = true, body, headers = {}, onload, onerror } = {}) {
+    const xhr = new XMLHttpRequest();
+    if (typeof onload === "function") {
+        xhr.onload = () => onload(xhr);
+    }
+    xhr.onerror = () => {
+        if (typeof onerror === "function") {
+            onerror(xhr);
+        } else {
+            console.error("Network error or request failure.");
+        }
+    };
+    xhr.open(method, url, async);
+    Object.keys(headers).forEach((header) => xhr.setRequestHeader(header, headers[header]));
+    if (body !== undefined && body !== null) {
+        xhr.send(body);
+    } else {
+        xhr.send();
+    }
+    return xhr;
+}
+
+function isNullOrEmpty(value) {
+    return value === null || value === "";
+}
+
 function WifiConfig(target) {
     let wifiSsid;
     let wifiPwd;
-    if (target == "usr") {
+    if (target === "usr") {
         wifiSsid = prompt("Username of access Launcher", "admin");
         wifiPwd = prompt("Password", "launcher");
-    }
-    if (target == "ssid") {
+    } else if (target === "ssid") {
         wifiSsid = prompt("SSID of your network", "");
         wifiPwd = prompt("Password of your network", "");
     }
-    if (wifiSsid == null || wifiSsid == "" || wifiPwd == null) {
+    if (isNullOrEmpty(wifiSsid) || wifiPwd === null) {
         window.alert("Invalid " + target + " or password");
     } else {
-        xmlhttp = new XMLHttpRequest();
-        xmlhttp.open("GET", "/wifi?" + target + "=" + wifiSsid + "&pwd=" + wifiPwd, false);
-        xmlhttp.send();
-        _("status").innerHTML = xmlhttp.responseText;
+        const xhr = httpRequest("GET", "/wifi?" + target + "=" + wifiSsid + "&pwd=" + wifiPwd, { async: false });
+        _("status").innerHTML = xhr.responseText;
     }
 }
+
 function SDConfig() {
-    let miso = prompt("MISO pin", "");
-    let mosi = prompt("MOSI pin", "");
-    let sck = prompt("SCK pin", "");
-    let cs = prompt("CS pin", "");
-    if (miso == "" || mosi == "" || sck == "" || cs == "" || miso == null || mosi == null || sck == null || cs == null) {
+    const miso = prompt("MISO pin", "");
+    const mosi = prompt("MOSI pin", "");
+    const sck = prompt("SCK pin", "");
+    const cs = prompt("CS pin", "");
+    if ([miso, mosi, sck, cs].some(isNullOrEmpty)) {
         window.alert("Invalid pins");
     } else {
-        xmlhttp = new XMLHttpRequest();
-        xmlhttp.open("GET", "/sdpins?miso=" + miso + "&mosi=" + mosi + "&sck=" + sck + "&cs=" + cs, false);
-        xmlhttp.send();
-        _("status").innerHTML = xmlhttp.responseText;
+        const xhr = httpRequest("GET", "/sdpins?miso=" + miso + "&mosi=" + mosi + "&sck=" + sck + "&cs=" + cs, { async: false });
+        _("status").innerHTML = xhr.responseText;
     }
 }
 function startUpdate(fileName) {
-    const ajax4 = new XMLHttpRequest();
     const formdata4 = new FormData();
     formdata4.append("fileName", fileName);
-    ajax4.open("POST", "/UPDATE", false);
-    ajax4.send(formdata4);
+    httpRequest("POST", "/UPDATE", { async: false, body: formdata4 });
 }
 function callOTA() {
-    const ajax3 = new XMLHttpRequest();
     const formdata = new FormData();
     formdata.append("update", 1);
-    ajax3.open("POST", "/OTA", false);
-    ajax3.send(formdata);
+    httpRequest("POST", "/OTA", { async: false, body: formdata });
     _("detailsheader").innerHTML = "<h3>OTA Update</h3>";
     _("status").innerHTML = "";
     _("details").innerHTML = "";
@@ -134,14 +153,13 @@ function analyzeFile() {
     reader.readAsArrayBuffer(file);
 }
 function uploadSlice(blobData, c_size, fileName, comm) {
-    var uploadForm = "Preparing...";
-    currentFileIndex = 0;
+    _("updetails").innerHTML = "Preparing...";
     totalFiles = 1;
-    _("updetails").innerHTML = uploadForm;
+    completedFiles = 0;
     const ajax = new XMLHttpRequest();
     ajax.onload = function () {
         if (ajax.status === 200 && ajax.responseText === "OK") {
-            var fileProgressDiv = document.createElement("div");
+            const fileProgressDiv = document.createElement("div");
             fileProgressDiv.innerHTML = `<p>Updating...</p><p><progress id="otaprb" value="0" max="100" style="width:100%;"></progress></p>`;
             _("updetails").appendChild(fileProgressDiv);
             const formdata2 = new FormData();
@@ -149,7 +167,7 @@ function uploadSlice(blobData, c_size, fileName, comm) {
             const ajax2 = new XMLHttpRequest();
             ajax2.open("POST", "/OTAFILE");
             ajax2.upload.addEventListener("progress", function (event) {
-                var p = (event.loaded / event.total) * 100;
+                const p = (event.loaded / event.total) * 100;
                 _("otaprb").value = Math.round(p);
             }, false);
             ajax2.addEventListener("load", function () { _("status").innerHTML = "Instalation Complete, Restart your device!"; }, false);
@@ -159,7 +177,7 @@ function uploadSlice(blobData, c_size, fileName, comm) {
         }
     };
     ajax.onerror = function () {
-        console.error("Erro na requisição inicial GET.");
+        console.error("Initial OTA request failed.");
     };
     const formdata = new FormData();
     formdata.append("command", comm);
@@ -168,103 +186,93 @@ function uploadSlice(blobData, c_size, fileName, comm) {
     ajax.send(formdata);
 }
 function logoutButton() {
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "/logout", true);
-    xhr.send();
+    httpRequest("GET", "/logout");
     setTimeout(function () { window.open("/logged-out", "_self"); }, 500);
 }
 function rebootButton() {
     if (confirm("Confirm Restart?!")) {
-        xmlhttp = new XMLHttpRequest();
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/reboot", true);
-        xhr.send();
+        httpRequest("GET", "/reboot");
     }
 }
 function systemInfo() {
-    const xmlhttp = new XMLHttpRequest();
-    xmlhttp.onload = function () {
-        if (xmlhttp.status === 200) {
-            try {
-                const data = JSON.parse(xmlhttp.responseText);
-                _("firmwareVersion").innerHTML = data.VERSION;
-                _("freeSD").innerHTML = data.SD.free;
-                _("usedSD").innerHTML = data.SD.used;
-                _("totalSD").innerHTML = data.SD.total;
-            } catch (error) {
-                console.error("JSON Parsing Error: ", error);
+    httpRequest("GET", "/systeminfo", {
+        onload: (xhr) => {
+            if (xhr.status === 200) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    _("firmwareVersion").innerHTML = data.VERSION;
+                    _("freeSD").innerHTML = data.SD.free;
+                    _("usedSD").innerHTML = data.SD.used;
+                    _("totalSD").innerHTML = data.SD.total;
+                } catch (error) {
+                    console.error("JSON Parsing Error: ", error);
+                }
+            } else {
+                console.error("Request Error: " + xhr.status);
             }
-        } else {
-            console.error("Request Error: " + xmlhttp.status);
         }
-    };
-    xmlhttp.onerror = function () {
-        console.error("Network error or request failure.");
-    };
-    xmlhttp.open("GET", "/systeminfo", true);
-    xmlhttp.send();
+    });
 }
 function listFilesButton(folders) {
-    var xmlhttp = new XMLHttpRequest();
     _("drop-area").style.display = 'block';
     _("actualFolder").value = folders;
-    var PreFolder = folders.substring(0, folders.lastIndexOf('/'));
-    if (PreFolder == "") { PreFolder = "/"; }
-    xmlhttp.onload = function () {
-        if (xmlhttp.status === 200) {
-            var responseText = xmlhttp.responseText;
-            var lines = responseText.split('\n');
-            var tableContent = "<table><tr><th align='left'>Name</th><th style=\"text-align=center;\">Size</th><th></th></tr>\n";
-            tableContent += "<tr><th align='left'><a onclick=\"listFilesButton('" + PreFolder + "')\" href='javascript:void(0);'>... </a></th><th align='left'></th><th></th></tr>\n";
-            var folder = "";
-            var foldersArray = [];
-            var filesArray = [];
-            lines.forEach(function (line) {
-                if (line) {
-                    var type = line.substring(0, 2);
-                    var path = line.substring(3, line.lastIndexOf(':'));
-                    var filename = line.substring(3, line.lastIndexOf(':'));
-                    var size = line.substring(line.lastIndexOf(':') + 1);
-                    if (type === "pa") {
-                        if (path !== "" && folder != "/") folder = path + (path.endsWith("/") ? "" : "/");
-                    } else if (type === "Fo") {
-                        foldersArray.push({ path: folder + path, name: filename });
-                    } else if (type === "Fi") {
-                        filesArray.push({ path: folder + path, name: filename, size: size });
+    let previousFolder = folders.substring(0, folders.lastIndexOf('/'));
+    if (previousFolder === "") { previousFolder = "/"; }
+    httpRequest("GET", "/listfiles?folder=" + folders, {
+        onload: (xhr) => {
+            if (xhr.status === 200) {
+                const responseText = xhr.responseText;
+                const lines = responseText.split('\n');
+                let tableContent = "<table><tr><th align='left'>Name</th><th style=\"text-align=center;\">Size</th><th></th></tr>\n";
+                tableContent += "<tr><th align='left'><a onclick=\"listFilesButton('" + previousFolder + "')\" href='javascript:void(0);'>... </a></th><th align='left'></th><th></th></tr>\n";
+                let folder = "";
+                const foldersArray = [];
+                const filesArray = [];
+                lines.forEach((line) => {
+                    if (line) {
+                        const type = line.substring(0, 2);
+                        const path = line.substring(3, line.lastIndexOf(':'));
+                        const filename = line.substring(3, line.lastIndexOf(':'));
+                        const size = line.substring(line.lastIndexOf(':') + 1);
+                        if (type === "pa") {
+                            if (path !== "" && folder !== "/") folder = path + (path.endsWith("/") ? "" : "/");
+                        } else if (type === "Fo") {
+                            foldersArray.push({ path: folder + path, name: filename });
+                        } else if (type === "Fi") {
+                            filesArray.push({ path: folder + path, name: filename, size });
+                        }
                     }
-                }
-            });
-            foldersArray.sort((a, b) => a.name.localeCompare(b.name));
-            filesArray.sort((a, b) => a.name.localeCompare(b.name));
-            foldersArray.forEach(function (item) {
-                tableContent += "<tr align='left'><td><a onclick=\"listFilesButton('" + item.path + "')\" href='javascript:void(0);'>" + item.name + "</a></td>";
-                tableContent += "<td></td>\n";
-                tableContent += "<td><i style=\"color: #e0d204;\" class=\"gg-folder\" onclick=\"listFilesButton('" + item.path + "')\"></i>&nbsp&nbsp";
-                tableContent += "<i style=\"color: #e0d204;\" class=\"gg-rename\" onclick=\"renameFile('" + item.path + "', '" + item.name + "')\"></i>&nbsp&nbsp";
-                tableContent += "<i style=\"color: #e0d204;\" class=\"gg-trash\" onclick=\"downloadDeleteButton('" + item.path + "', 'delete')\"></i></td></tr>\n\n";
-            });
-            filesArray.forEach(function (item) {
-                tableContent += "<tr align='left'><td>" + item.name;
-                if (item.name.substring(item.name.lastIndexOf('.') + 1).toLowerCase() === "bin") {
-                    tableContent += "&nbsp<i class=\"rocket\" onclick=\"startUpdate('" + item.path + "')\"></i>";
-                }
-                tableContent += "</td>\n";
-                tableContent += "<td style=\"font-size: 10px; text-align=center;\">" + item.size + "</td>\n";
-                tableContent += "<td><i class=\"gg-arrow-down-r\" onclick=\"downloadDeleteButton('" + item.path + "', 'download')\"></i>&nbsp&nbsp\n";
-                tableContent += "<i class=\"gg-rename\" onclick=\"renameFile('" + item.path + "', '" + item.name + "')\"></i>&nbsp&nbsp\n";
-                tableContent += "<i class=\"gg-trash\" onclick=\"downloadDeleteButton('" + item.path + "', 'delete')\"></i></td></tr>\n\n";
-            });
-            tableContent += "</table>";
-            _("details").innerHTML = tableContent;
-        } else {
-            console.error('Erro na requisição: ' + xmlhttp.status);
+                });
+                foldersArray.sort((a, b) => a.name.localeCompare(b.name));
+                filesArray.sort((a, b) => a.name.localeCompare(b.name));
+                foldersArray.forEach((item) => {
+                    tableContent += "<tr align='left'><td><a onclick=\"listFilesButton('" + item.path + "')\" href='javascript:void(0);'>" + item.name + "</a></td>";
+                    tableContent += "<td></td>\n";
+                    tableContent += "<td><i style=\"color: #e0d204;\" class=\"gg-folder\" onclick=\"listFilesButton('" + item.path + "')\"></i>&nbsp&nbsp";
+                    tableContent += "<i style=\"color: #e0d204;\" class=\"gg-rename\" onclick=\"renameFile('" + item.path + "', '" + item.name + "')\"></i>&nbsp&nbsp";
+                    tableContent += "<i style=\"color: #e0d204;\" class=\"gg-trash\" onclick=\"downloadDeleteButton('" + item.path + "', 'delete')\"></i></td></tr>\n\n";
+                });
+                filesArray.forEach((item) => {
+                    tableContent += "<tr align='left'><td>" + item.name;
+                    if (item.name.substring(item.name.lastIndexOf('.') + 1).toLowerCase() === "bin") {
+                        tableContent += "&nbsp<i class=\"gg-arrow-top-right-r\" onclick=\"startUpdate('" + item.path + "')\"></i>";
+                    }
+                    tableContent += "</td>\n";
+                    tableContent += "<td style=\"font-size: 10px; text-align=center;\">" + item.size + "</td>\n";
+                    tableContent += "<td><i class=\"gg-arrow-down-r\" onclick=\"downloadDeleteButton('" + item.path + "', 'download')\"></i>&nbsp&nbsp\n";
+                    tableContent += "<i class=\"gg-rename\" onclick=\"renameFile('" + item.path + "', '" + item.name + "')\"></i>&nbsp&nbsp\n";
+                    tableContent += "<i class=\"gg-trash\" onclick=\"downloadDeleteButton('" + item.path + "', 'delete')\"></i></td></tr>\n\n";
+                });
+                tableContent += "</table>";
+                _("details").innerHTML = tableContent;
+            } else {
+                console.error("Request Error: " + xhr.status);
+            }
+        },
+        onerror: () => {
+            console.error("Network error while fetching file list.");
         }
-    };
-    xmlhttp.onerror = function () {
-        console.error('Erro na rede ou falha na requisição.');
-    };
-    xmlhttp.open("GET", "/listfiles?folder=" + folders, true);
-    xmlhttp.send();
+    });
     _("detailsheader").innerHTML = "<h3>Files</h3>";
     _("updetailsheader").innerHTML = "<h3>Folder Actions: " +
         "<input type='file' id='fa' multiple style='display:none'>" +
@@ -282,64 +290,63 @@ function listFilesButton(folders) {
     _("uploadSpiffs").style.display = 'none';
 }
 function renameFile(filePath, oldName) {
-    var actualFolder = _("actualFolder").value;
-    let fileName = prompt("Enter the new name: ", oldName);
-    if (fileName == null || fileName == "") {
+    const actualFolder = _("actualFolder").value;
+    const fileName = prompt("Enter the new name: ", oldName);
+    if (isNullOrEmpty(fileName)) {
         window.alert("Invalid Name");
     } else {
-        const ajax5 = new XMLHttpRequest();
         const formdata5 = new FormData();
         formdata5.append("filePath", filePath);
         formdata5.append("fileName", fileName);
-        ajax5.open("POST", "/rename", false);
-        ajax5.send(formdata5);
-        _("status").innerHTML = ajax5.responseText;
+        const xhr = httpRequest("POST", "/rename", { async: false, body: formdata5 });
+        _("status").innerHTML = xhr.responseText;
         listFilesButton(actualFolder);
     }
 }
 function downloadDeleteButton(filename, action) {
-    var urltocall = "/file?name=" + filename + "&action=" + action;
-    var actualFolder = _("actualFolder").value;
-    var option;
-    if (action == "delete") {
-        option = confirm("Do you really want to DELETE the file: " + filename + " ?\n\nThis action can't be undone!");
+    const urltocall = "/file?name=" + filename + "&action=" + action;
+    const actualFolder = _("actualFolder").value;
+    const isDelete = action === "delete";
+    if (isDelete || action === "create") {
+        if (!isDelete || confirm("Do you really want to DELETE the file: " + filename + " ?\n\nThis action can't be undone!")) {
+            const xhr = httpRequest("GET", urltocall, { async: false });
+            _("status").innerHTML = xhr.responseText;
+            listFilesButton(actualFolder);
+        }
+        return;
     }
-    xmlhttp = new XMLHttpRequest();
-    if (option == true || action == "create") {
-        xmlhttp.open("GET", urltocall, false);
-        xmlhttp.send();
-        _("status").innerHTML = xmlhttp.responseText;
-        listFilesButton(actualFolder);
-    }
-    if (action == "download") {
+    if (action === "download") {
         _("status").innerHTML = "";
         window.open(urltocall, "_blank");
     }
 }
 function CreateFolder(folders) {
-    let ff = prompt("Folder Name", "");
-    if (ff == "" || ff == null) {
+    const folderName = prompt("Folder Name", "");
+    if (isNullOrEmpty(folderName)) {
         window.alert("Invalid Folder Name");
     } else {
-        downloadDeleteButton(_("actualFolder").value + "/" + ff, 'create');
+        downloadDeleteButton(_("actualFolder").value + "/" + folderName, 'create');
     }
 }
-window.addEventListener("load", function () {
-    var dropArea = _("drop-area");
-    dropArea.addEventListener("dragenter", dragEnter, false);
-    dropArea.addEventListener("dragover", dragOver, false);
-    dropArea.addEventListener("dragleave", dragLeave, false);
+const addHighlight = (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.add("highlight");
+};
+const removeHighlight = (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.remove("highlight");
+};
+window.addEventListener("load", () => {
+    const dropArea = _("drop-area");
+    dropArea.addEventListener("dragenter", addHighlight, false);
+    dropArea.addEventListener("dragover", addHighlight, false);
+    dropArea.addEventListener("dragleave", removeHighlight, false);
     dropArea.addEventListener("drop", drop, false);
 });
-function dragEnter(event) { event.preventDefault(); this.classList.add("highlight"); }
-function dragOver(event) { event.preventDefault(); this.classList.add("highlight"); }
-function dragLeave(event) { event.preventDefault(); this.classList.remove("highlight"); }
-var currentFileIndex = 0;
-var totalSize = 0;
-var totalFiles = 0;
-var totalProgress = 0;
+let totalFiles = 0;
+let completedFiles = 0;
 function writeSendForm() {
-    var uploadform =
+    const uploadform =
         "<p>Send files</p>" +
         "<div id=\"file-progress-container\"></div>";
     _("updetails").innerHTML = uploadform;
@@ -380,7 +387,7 @@ function FileTree(item, path = "", filesQ) {
         }
     });
 }
-window.addEventListener("load", function () {
+window.addEventListener("load", () => {
     listFilesButton("/");
     systemInfo();
 });
@@ -401,7 +408,7 @@ function processNextUpload(folder) {
     if (fileQueue.length === 0) {
         if (activeUploads === 0) {
             _("status").innerHTML = "Upload Complete";
-            var actualFolder = _("actualFolder").value;
+            const actualFolder = _("actualFolder").value;
             listFilesButton(actualFolder);
         }
         return;
@@ -426,17 +433,17 @@ function uploadFile(folder, file) {
     return new Promise((resolve, reject) => {
         const progressBarId = `${file.name}-progressBar`;
         if (!_(progressBarId)) {
-            var fileProgressDiv = document.createElement("div");
+            const fileProgressDiv = document.createElement("div");
             fileProgressDiv.innerHTML = `<p>${file.name}: <progress id="${progressBarId}" value="0" max="100" style="width:100%;"></progress></p>`;
             _("file-progress-container").appendChild(fileProgressDiv);
         }
-        var formdata = new FormData();
+        const formdata = new FormData();
         formdata.append("file", file, file.webkitRelativePath || file.name);
         formdata.append("folder", folder);
-        var ajax = new XMLHttpRequest();
-        ajax.upload.addEventListener("progress", function (event) {
+        const ajax = new XMLHttpRequest();
+        ajax.upload.addEventListener("progress", (event) => {
             if (event.lengthComputable) {
-                var percent = (event.loaded / event.total) * 100;
+                const percent = (event.loaded / event.total) * 100;
                 _(progressBarId).value = Math.round(percent);
             }
         }, false);
