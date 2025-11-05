@@ -1,6 +1,6 @@
 #include "tft.h"
 
-#if defined(E_PAPER_DISPLAY) && !defined(GxEPD2_DISPLAY)
+#if defined(E_PAPER_DISPLAY) && !defined(GxEPD2_DISPLAY) && !defined(USE_M5GFX)
 
 #elif defined(HEADLESS)
 
@@ -9,7 +9,9 @@
 #elif defined(USE_TFT_ESPI)
 
 #elif defined(USE_M5GFX)
-
+#if defined(E_PAPER_DISPLAY)
+M5Canvas sprite(&M5.Display);
+#endif
 #else
 void Ard_eSPI::drawCentreString(String s, uint16_t x, uint16_t y, int f) {
     uint16_t _x = cursor_x;

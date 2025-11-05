@@ -195,6 +195,12 @@ public:
 #elif USE_M5GFX
 #include <M5GFX.h>
 #include <M5Unified.h>
+#if defined(E_PAPER_DISPLAY)
+extern M5Canvas sprite;
+#define drv sprite
+#else
+#define drv M5.Display
+#endif
 class Ard_eSPI {
 public:
     int _fsize;
@@ -206,12 +212,16 @@ public:
         _fg = BLACK;
         _bg = BLACK;
     };
-    inline void begin() {};
+    inline void begin() {
+#if defined(E_PAPER_DISPLAY)
+        sprite.createSprite(M5.Display.width(), M5.Display.height());
+#endif
+    };
 // E-Paper finctions
 #if defined(E_PAPER_DISPLAY)
     void stopCallback() {};
     void startCallback() {};
-    void display(bool a) { M5.Display.display(); };
+    void display(bool a = false) { sprite.pushSprite(0, 0); };
     void setFullWindow() {};
 #endif
     // End of E-Paper functions
@@ -220,59 +230,59 @@ public:
     inline uint16_t getTextbgcolor() { return _bg; };
 
     inline size_t drawChar2(int16_t x, int16_t y, char c, int16_t a, int16_t b) {
-        return M5.Display.drawChar(x, y, c, b, a, _fsize);
+        return drv.drawChar(x, y, c, b, a, _fsize);
     }
     inline size_t drawCentreString(String s, uint16_t x, uint16_t y, int f) {
-        return M5.Display.drawCentreString(s, x, y);
+        return drv.drawCentreString(s, x, y);
     };
     inline size_t drawRightString(String s, uint16_t x, uint16_t y, int f) {
-        return M5.Display.drawRightString(s, x, y);
+        return drv.drawRightString(s, x, y);
     };
-    inline void fillScreen(uint16_t c) { return M5.Display.fillScreen(c); }
-    inline void setRotation(int rot) { return M5.Display.setRotation(rot); };
+    inline void fillScreen(uint16_t c) { return drv.fillScreen(c); }
+    inline void setRotation(int rot) { return drv.setRotation(rot); };
     inline void setTextColor(uint16_t fgcolor, uint16_t bgcolor) {
         _fg = fgcolor;
         _bg = bgcolor;
-        return M5.Display.setTextColor(fgcolor, bgcolor);
+        return drv.setTextColor(fgcolor, bgcolor);
     }
     inline void setTextColor(uint16_t fgcolor) {
         _fg = fgcolor;
-        return M5.Display.setTextColor(fgcolor);
+        return drv.setTextColor(fgcolor);
     }
-    inline void setCursor(int32_t x, int32_t y) { return M5.Display.setCursor(x, y); };
+    inline void setCursor(int32_t x, int32_t y) { return drv.setCursor(x, y); };
     inline void setTextSize(uint32_t c) {
         _fsize = c;
-        return M5.Display.setTextSize(c);
+        return drv.setTextSize(c);
     }
-    inline int32_t getCursorX(void) const { return M5.Display.getCursorX(); }
-    inline int32_t getCursorY(void) const { return M5.Display.getCursorY(); }
+    inline int32_t getCursorX(void) const { return drv.getCursorX(); }
+    inline int32_t getCursorY(void) const { return drv.getCursorY(); }
     inline void drawRoundRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t r, uint16_t c) {
-        return M5.Display.drawRoundRect(x, y, w, h, r, c);
+        return drv.drawRoundRect(x, y, w, h, r, c);
     }
     inline void fillRoundRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t r, uint16_t c) {
-        return M5.Display.fillRoundRect(x, y, w, h, r, c);
+        return drv.fillRoundRect(x, y, w, h, r, c);
     }
     inline void fillRect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c) {
-        return M5.Display.fillRect(x, y, w, h, c);
+        return drv.fillRect(x, y, w, h, c);
     }
     inline void drawRect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c) {
-        return M5.Display.drawRect(x, y, w, h, c);
+        return drv.drawRect(x, y, w, h, c);
     }
     inline void drawArc(int16_t x, int16_t y, int16_t r, int16_t ir, int16_t sA, int16_t eA, int16_t fg) {
-        return M5.Display.drawArc(x, y, r, ir, float(sA + 90), float(eA + 90), fg);
+        return drv.drawArc(x, y, r, ir, float(sA + 90), float(eA + 90), fg);
     }
     inline void drawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint16_t c) {
-        return M5.Display.drawLine(x0, y0, x1, y1, c);
+        return drv.drawLine(x0, y0, x1, y1, c);
     }
-    inline void drawPixel(uint32_t x, uint32_t y, uint16_t c) { return M5.Display.drawPixel(x, y, c); }
-    inline size_t print(String a) { return M5.Display.print(a); }
-    inline size_t print(char a) { return M5.Display.print(a); }
-    inline size_t print(int a) { return M5.Display.print(a); }
-    inline size_t println(String a) { return M5.Display.println(a); }
-    inline size_t println() { return M5.Display.println(); }
-    inline int32_t width() { return M5.Display.width(); }
-    inline int32_t height() { return M5.Display.height(); }
-    inline size_t drawString(String s, int x, int y) { return M5.Display.drawString(s, x, y); };
+    inline void drawPixel(uint32_t x, uint32_t y, uint16_t c) { return drv.drawPixel(x, y, c); }
+    inline size_t print(String a) { return drv.print(a); }
+    inline size_t print(char a) { return drv.print(a); }
+    inline size_t print(int a) { return drv.print(a); }
+    inline size_t println(String a) { return drv.println(a); }
+    inline size_t println() { return drv.println(); }
+    inline int32_t width() { return drv.width(); }
+    inline int32_t height() { return drv.height(); }
+    inline size_t drawString(String s, int x, int y) { return drv.drawString(s, x, y); };
 };
 
 #else

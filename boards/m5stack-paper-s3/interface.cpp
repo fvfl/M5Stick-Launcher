@@ -9,12 +9,7 @@
 ** Location: main.cpp
 ** Description:   initial setup for the device
 ***************************************************************************************/
-void _setup_gpio() {
-    M5.begin();
-#if defined(ARDUINO_M5STACK_PAPERS3)
-    M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-#endif
-}
+void _setup_gpio() { M5.begin(); }
 
 /***************************************************************************************
 ** Function name: _post_setup_gpio()

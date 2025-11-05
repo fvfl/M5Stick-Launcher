@@ -58,6 +58,7 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         tft->fillScreen(BGCOLOR);
         tftprint("Connecting to: " + ssid + ".", 10);
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
+
         // Simulação da função de desenho no display TFT
         int count = 0;
         while (WiFi.status() != WL_CONNECTED) {
@@ -74,6 +75,9 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
                 if (!returnToMenu) goto Retry;
                 else goto END;
             }
+#ifdef E_PAPER_DISPLAY
+            tft->display(false);
+#endif
         }
     } else { // Running in Access point mode
         IPAddress AP_GATEWAY(172, 0, 0, 1);
@@ -201,7 +205,9 @@ bool getInfo(String serverUrl, JsonDocument &_doc) {
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
         tft->drawCentreString("Getting info from", tftWidth / 2, tftHeight / 3, 1);
         tft->drawCentreString("LauncherHub", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
-
+#ifdef E_PAPER_DISPLAY
+        tft->display(false);
+#endif
         tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
         const uint8_t maxAttempts = 5;
         for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {

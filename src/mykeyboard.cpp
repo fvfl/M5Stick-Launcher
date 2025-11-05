@@ -497,6 +497,9 @@ String generalKeyboard(
 #ifdef E_PAPER_DISPLAY
             tft->startCallback();
             tft->display(false);
+#if defined(USE_M5GFX)
+            M5.Display.setEpdMode(epd_mode_t::epd_fast);
+#endif
 #endif
         }
 
@@ -810,7 +813,9 @@ String generalKeyboard(
     // Resets screen when finished writing
     tft->fillScreen(BGCOLOR);
     resetTftDisplay();
-
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
+#endif
     return current_text;
 }
 

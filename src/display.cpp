@@ -166,9 +166,6 @@ void initDisplay(bool doAll) {
     if (runOnce) goto END;
     else runOnce = true;
     tft->stopCallback();
-#ifdef USE_M5GFX
-    M5.Display.setAutoDisplay(false);
-#endif
 #endif
 
     if (_name == 1) name = "u/bmorcelli";
@@ -237,10 +234,8 @@ void initDisplay(bool doAll) {
     tft->setTextColor(FGCOLOR);
 
 #ifdef E_PAPER_DISPLAY // epaper display draws only once
+    TouchFooter2();
     tft->display(false);
-#ifdef USE_M5GFX
-    M5.Display.setAutoDisplay(true);
-#endif
     tft->startCallback();
 #endif
 
@@ -346,6 +341,9 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
     bgcolor = BLACK;
     fgcolor = WHITE;
 #endif
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+    M5.Display.setEpdMode(epd_mode_t::epd_fast);
+#endif
 
     // stripe drwawing
     int size;
@@ -361,7 +359,12 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
         tft->setCursor(tftWidth / 2 - FP * 3 * text.length(), tftHeight / 2 - FP * LH / 2);
     }
     tft->println(text);
-
+#if E_PAPER_DISPLAY
+    tft->display(false);
+#if defined(USE_M5GFX)
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
+#endif
+#endif
     // return previous tft settings
     tft->setTextSize(_size);
     tft->setTextColor(_color, _bgcolor);
@@ -374,7 +377,7 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
 ** Dependencia: prog_handler =>>    0 - Flash, 1 - SPIFFS
 ***************************************************************************************/
 void progressHandler(size_t progress, size_t total) {
-#ifdef GxEPD2_DISPLAY
+#if defined(E_PAPER_DISPLAY) && (defined(GxEPD2_DISPLAY) || defined(USE_M5GFX))
     static unsigned long lastUpdate = 0;
     tft->setFullWindow();
 #endif
@@ -409,11 +412,14 @@ void progressHandler(size_t progress, size_t total) {
     if (prog_handler == 1) tft->fillRect(20, tftHeight - 26, barWidth, 13, ALCOLOR);
     else tft->fillRect(20, tftHeight - 45, barWidth, 13, FGCOLOR);
 
-#ifdef GxEPD2_DISPLAY
+#if defined(E_PAPER_DISPLAY) && (defined(GxEPD2_DISPLAY) || defined(USE_M5GFX))
     if (millis() - lastUpdate > 3000) {
         tft->display();
         lastUpdate = millis();
     }
+#endif
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+    M5.Display.setEpdMode(epd_mode_t::epd_fastest);
 #endif
     wakeUpScreen();
 }
@@ -809,6 +815,9 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
         if (redraw) {
             list = {};
             coord = drawOptions(index, options, list, al, bg, border);
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+            M5.Display.setEpdMode(epd_mode_t::epd_text);
+#endif
             max_idx = 0;
             min_idx = MAXFILES;
             int tmp = 0;
@@ -918,6 +927,9 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
     if (border) tft->fillScreen(BGCOLOR);
 #if defined(HAS_TOUCH)
     TouchFooter(FGCOLOR);
+#endif
+#if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
 #endif
     return index;
 }
@@ -1220,4 +1232,3 @@ uint16_t getComplementaryColor(uint16_t color) {
     int b = 31 - (color & 0x1F);
     return (r << 11) | (g << 5) | b;
 }
-
