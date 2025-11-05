@@ -164,7 +164,7 @@ void settings_menu() {
                            saveConfigs();
                        }});
 #endif
-#if !defined(CORE_4MB) && defined(M5STACK)
+#if defined(PART_08MB) && defined(M5STACK)
     options.push_back({"Partition Change", [=]() { partitioner(); }});
     options.push_back({"List of Partitions", [=]() { partList(); }});
 #endif
@@ -989,5 +989,3 @@ void saveConfigs() {
     saveIntoNVS();
     saveWifiIntoNVS();
 }
-
-
