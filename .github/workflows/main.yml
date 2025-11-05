@@ -15,452 +15,67 @@
 
   jobs:
     compile_sketch:
-      name: Build ${{ matrix.board.name }}
+      name: Build ${{ matrix.board.env }}
       runs-on: ubuntu-latest
       strategy:
         fail-fast: false
         matrix:
           board:
-            - {
-                vendor: "M5Stack",
-                name: "Cardputer and Cardputer ADV",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stack-cardputer-kit-w-m5stamps3?ref=Pirata",
-                family: "ESP32-S3",
-                env: "m5stack-cardputer",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "StickCPlus2",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stickc-plus2-esp32-mini-iot-development-kit?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-cplus2",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "StickCPlus",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stickc-plus-esp32-pico-mini-iot-development-kit?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-cplus1_1",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "StickC",
-                description: "",
-                link: "https://shop.m5stack.com/collections/m5-controllers?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-c",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "Core2",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stack-core2-esp32-iot-development-kit?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-core2",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "Core16mb",
-                description: "",
-                link: "https://shop.m5stack.com/products/esp32-basic-core-lot-development-kit-v2-7?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-core",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "Core4mb",
-                description: "",
-                link: "https://shop.m5stack.com/products/esp32-basic-core-lot-development-kit-v2-7?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-core-4Mb",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "CoreS3",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stack-cores3-esp32s3-lotdevelopment-kit?ref=Pirata",
-                family: "ESP32-S3",
-                env: "m5stack-cores3",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "Tab5",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5stack-tab5-iot-development-kit-esp32-p4?ref=Pirata",
-                family: "ESP32-P4",
-                env: "m5stack-tab5",
-              }
-            - {
-                vendor: "M5Stack",
-                name: "PaperS3",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata",
-                family: "ESP32-S3",
-                env: "m5stack-paper-s3",
-              }
-            - {
-                vendor: "WIP", # "M5Stack",
-                name: "Paper",
-                description: "",
-                link: "https://shop.m5stack.com/products/m5paper-esp32-development-kit-v1-1-960x540-4-7-eink-display-235-ppi?ref=Pirata",
-                family: "ESP32",
-                env: "m5stack-paper",
-              }
-            - {
-                vendor: "Espressif",
-                name: "ESP32-S3-4mb",
-                description: "",
-                link: "",
-                family: "ESP32-S3",
-                env: "headless-esp32s3-4mb",
-              }
-            - {
-                vendor: "Espressif",
-                name: "ESP32-S3-8mb",
-                description: "",
-                link: "",
-                family: "ESP32-S3",
-                env: "headless-esp32s3-8mb",
-              }
-            - {
-                vendor: "Espressif",
-                name: "ESP32-S3-16mb",
-                description: "",
-                link: "",
-                family: "ESP32-S3",
-                env: "headless-esp32s3-16mb",
-              }
-            - {
-                vendor: "Espressif",
-                name: "ESP32-4mb",
-                description: "",
-                link: "",
-                family: "ESP32",
-                env: "headless-esp32-4mb",
-              }
-            - {
-                vendor: "Espressif",
-                name: "ESP32-8mb",
-                description: "",
-                link: "",
-                family: "ESP32",
-                env: "headless-esp32-8mb",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S028R",
-                description: "(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432S028",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S028R Inverted Colors",
-                description: "(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2-USB",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432W328C Inverted Colors and 2.4in ",
-                description: "(Capacitive)(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432W328C_2",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432W328C",
-                description: "(Capacitive)(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432W328C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432W328R",
-                description: "(Resistive)(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432W328R",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S024R",
-                description: "(Resistive)(OTA)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432S024R",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S022C",
-                description: "(Capacitive)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432S022C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S032C",
-                description: "(3.2in, Capacitive)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432S032C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-2432S032R",
-                description: "(3.2in, Resistive)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-2432S032R",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-3248S035R",
-                description: "(3.5in, Resistive)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-3248S035R",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-3248S035C",
-                description: "(3.5in, Capacitive)",
-                link: "",
-                family: "ESP32",
-                env: "CYD-3248S035C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-8048S043C",
-                description: "(ESP32S3, 4.3in, 800x480, Capacitive)",
-                link: "",
-                family: "ESP32-S3",
-                env: "CYD-8048S043C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-8048W550C",
-                description: "(ESP32S3, 5.5in, 800x480, Capacitive)",
-                link: "",
-                family: "ESP32-S3",
-                env: "CYD-8048W550C",
-              }
-            - {
-                vendor: "CYD",
-                name: "CYD-3248W535C",
-                description: "(ESP32S3, 3.5in, 320x480, Capacitive)",
-                link: "",
-                family: "ESP32-S3",
-                env: "CYD-3248W535C",
-              }
-            - {
-                vendor: "WIP",
-                name: "CYD-4827S043R",
-                description: "(ESP32S3, 4.3in, 480x272, Resistive)",
-                link: "",
-                family: "ESP32-S3",
-                env: "CYD-4827S043R",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Dongle S3 (tft)",
-                description: "(single press, double press and long press logic)",
-                link: "https://www.lilygo.cc/products/t-dongle-s3?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-dongle-s3-tft",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Display-S3",
-                description: "Touch and no touch (single press and longpress logic on both buttons )",
-                link: "https://www.lilygo.cc/products/t-display-s3?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-display-S3-touch",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Display_S3_PRO",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-display-s3-pro?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-display-S3-pro",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Embed",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-embed?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-embed",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Embed_CC1101",
-                description: "(Transparent version)",
-                link: "https://www.lilygo.cc/products/t-embed-cc1101-plus?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-embed-cc1101",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-LoRa-Pager",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-lora-pager-meshtastic?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-lora-pager",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Deck Plus",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-deck-plus-ca?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-deck-plus",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Deck",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-deck?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-deck",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-Deck Pro",
-                description: "e-Paper display",
-                link: "https://www.lilygo.cc/products/t-deck-pro-meshtastic?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-deck-pro",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T5_E-Paper_S3_Pro",
-                description: "(H752 hardware v1.0-240810)",
-                link: "https://www.lilygo.cc/products/t5-e-paper-s3-pro?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t5-epaper-s3-pro",
-              }
-            - {
-                vendor: "Lilygo",
-                name: "T-HMI",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-hmi?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-hmi",
-              }
-            - {
-                vendor: "WIP",
-                name: "T-Display-S3 AMOLED Plus",
-                description: "",
-                link: "https://www.lilygo.cc/products/t-display-s3-amoled-plus?bg_ref=sDI8Bh4HmO",
-                family: "ESP32-S3",
-                env: "lilygo-t-display-S3-amoled",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Smoochie Board",
-                description: "",
-                link: "",
-                family: "ESP32-S3",
-                env: "smoochiee-board",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Marauder V4-OG and V6",
-                description: "",
-                link: "https://github.com/justcallmekoko/ESP32Marauder/wiki/esp32-marauder-kit",
-                family: "ESP32",
-                env: "Marauder-v4-OG",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Marauder V6.x",
-                description: "",
-                link: "https://justcallmekokollc.com/products/esp32-marauder-v6",
-                family: "ESP32",
-                env: "Marauder-v61",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Marauder V7",
-                description: "",
-                link: "https://justcallmekokollc.com/products/esp32-marauder-v7-pre-order",
-                family: "ESP32",
-                env: "Marauder-v7",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Marauder Mini",
-                description: "",
-                link: "https://justcallmekokollc.com/products/marauder-mini",
-                family: "ESP32",
-                env: "Marauder-Mini",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Awok Dual Mini v2",
-                description: "",
-                link: "https://awokdynamics.com/products/dual-mini-v2",
-                family: "ESP32",
-                env: "Awok-Mini",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "Awok Dual Touch v2",
-                description: "",
-                link: "https://awokdynamics.com/products/dual-touch-v2",
-                family: "ESP32",
-                env: "Awok-Touch",
-              }
-            - {
-                vendor: "CUSTOM",
-                name: "RabbitLabs The Phantom",
-                description: "",
-                link: "https://rabbit-labs.com/product/the-phantom-by-rabbit-labs/?v=dc634e207282",
-                family: "ESP32",
-                env: "Phantom_S024R",
-              }
-            - {
-                vendor: "WIP",
-                name: "Elecrow ESP32 2.4in",
-                description: "",
-                link: "https://www.elecrow.com/wiki/esp32-display-242727-intelligent-touch-screen-wi-fi26ble-240320-hmi-display.html",
-                family: "ESP32",
-                env: "elecrow-24B",
-              }
-            - {
-                vendor: "WIP",
-                name: "Elecrow ESP32 2.8in",
-                description: "",
-                link: "https://www.elecrow.com/wiki/esp32-display-282727-intelligent-touch-screen-wi-fi26ble-240320-hmi-display.html",
-                family: "ESP32",
-                env: "elecrow-28B",
-              }
-            - {
-                vendor: "WIP",
-                name: "Elecrow ESP32 3.5in",
-                description: "",
-                link: "https://www.elecrow.com/wiki/esp32-display-352727-intelligent-touch-screen-wi-fi26ble-320480-hmi-display.html",
-                family: "ESP32",
-                env: "elecrow-35B",
-              }
-            - {
-                vendor: "WIP",
-                name: "Elecrow ESP32 3.5in v2.2",
-                description: "",
-                link: "https://www.elecrow.com/wiki/esp32-display-352727-intelligent-touch-screen-wi-fi26ble-320480-hmi-display.html",
-                family: "ESP32",
-                env: "elecrow-35Bv2_2",
-              }
+            - { env: "m5stack-cardputer"          }
+            - { env: "m5stack-cplus2"             }
+            - { env: "m5stack-cplus1_1"           }
+            - { env: "m5stack-c"                  }
+            - { env: "m5stack-core2"              }
+            - { env: "m5stack-core"               }
+            - { env: "m5stack-core-4Mb"           }
+            - { env: "m5stack-cores3"             }
+            - { env: "m5stack-tab5"               }
+            - { env: "m5stack-paper-s3"           }
+            - { env: "m5stack-paper"              }
+            - { env: "headless-esp32s3-4mb"       }
+            - { env: "headless-esp32s3-8mb"       }
+            - { env: "headless-esp32s3-16mb"      }
+            - { env: "headless-esp32-4mb"         }
+            - { env: "headless-esp32-8mb"         }
+            - { env: "CYD-2432S028"               }
+            - { env: "CYD-2-USB"                  }
+            - { env: "CYD-2432W328C_2"            }
+            - { env: "CYD-2432W328C"              }
+            - { env: "CYD-2432W328R"              }
+            - { env: "CYD-2432S024R"              }
+            - { env: "CYD-2432S022C"              }
+            - { env: "CYD-2432S032C"              }
+            - { env: "CYD-2432S032R"              }
+            - { env: "CYD-3248S035R"              }
+            - { env: "CYD-3248S035C"              }
+            - { env: "CYD-8048S043C"              }
+            - { env: "CYD-8048W550C"              }
+            - { env: "CYD-3248W535C"              }
+            - { env: "CYD-4827S043R"              }
+            - { env: "lilygo-t-dongle-s3-tft"     }
+            - { env: "lilygo-t-display-S3-touch"  }
+            - { env: "lilygo-t-display-S3-pro"    }
+            - { env: "lilygo-t-embed"             }
+            - { env: "lilygo-t-embed-cc1101"      }
+            - { env: "lilygo-t-lora-pager"        }
+            - { env: "lilygo-t-deck-plus"         }
+            - { env: "lilygo-t-deck"              }
+            - { env: "lilygo-t-deck-pro"          }
+            - { env: "lilygo-t5-epaper-s3-pro"    }
+            - { env: "lilygo-t-hmi"               }
+            - { env: "lilygo-t-display-S3-amoled" }
+            - { env: "smoochiee-board"            }
+            - { env: "Marauder-v4-OG"             }
+            - { env: "Marauder-v61"               }
+            - { env: "Marauder-v7"                }
+            - { env: "Marauder-Mini"              }
+            - { env: "Awok-Mini"                  }
+            - { env: "Awok-Touch"                 }
+            - { env: "Phantom_S024R"              }
+            - { env: "elecrow-24B"                }
+            - { env: "elecrow-28B"                }
+            - { env: "elecrow-35B"                }
+            - { env: "elecrow-35Bv2_2"            }
 
       steps:
           - uses: actions/checkout@v4
@@ -491,30 +106,14 @@
             run: |
               platformio run -e ${{ matrix.board.env }}
 
-          - name: Prepare JSON and HTML
-            run: |
-
-                js_content="{\"name\":\"${{ matrix.board.name }}\",\"new_install_prompt_erase\": true,\"builds\":[{\"chipFamily\":\"${{ matrix.board.family }}\",\"improv\":false,\"parts\":[{\"path\":\"bins/Launcher-${{ matrix.board.env }}.bin\",\"offset\":0}]}]}"
-                echo "$js_content" > "./Manifest-${{ matrix.board.env }}.json"
-                if [[ "${{ matrix.board.link }}" == "" ]]; then
-                  html="<input type='radio' name='type' value='${{ matrix.board.env }}' id='${{ matrix.board.env }}' /><label for='${{ matrix.board.env}}'>${{ matrix.board.name }} ${{ matrix.board.description }}</label>"
-                else
-                  html="<input type='radio' name='type' value='${{ matrix.board.env }}' id='${{ matrix.board.env }}' /><label for='${{ matrix.board.env}}'>${{ matrix.board.name }} <a href='${{ matrix.board.link }}' target='_blank' rel='noopener noreferrer'>(link)</a> ${{ matrix.board.description }}</label>"
-                fi
-                echo "$html" > ./Launcher-${{ matrix.board.vendor }}.html
-
           - name: Upload Artifacts
             uses: actions/upload-artifact@v4
             with:
-              name: Artifacts-${{ matrix.board.name }}
+              name: Artifacts-${{ matrix.board.env }}
               path: |
                 Launcher-*.bin
-                Manifest-*.json
-                Launcher-*.html
               retention-days: 5
               if-no-files-found: error
-
-
 
     post_compile_steps:
       name: Post-compile steps
@@ -532,96 +131,12 @@
           with:
             path: ~/LauncherArtifacts
 
-        - name: Generate HTML and manifests from Boards
-          run: |
-
-            # Variáveis para armazenar os conteúdos dos arquivos específicos
-            m5stack="\n"
-            lilygo="\n"
-            esp32="\n"
-            cyd="\n"
-            custom="\n"
-            wip="\n"
-            elecrow="\n"
-
-
-            # Itera sobre cada arquivo HTML na pasta de artefatos
-            for file in ~/LauncherArtifacts/**/*.html; do
-              if [ -f "$file" ]; then
-                content=$(cat "$file") # Lê o conteúdo do arquivo
-                case "$(basename "$file")" in
-                  "Launcher-M5Stack.html")
-                    m5stack+="$content\n" # Salva o conteúdo na variável correspondente
-                    ;;
-                  "Launcher-Lilygo.html")
-                    lilygo+="$content\n"
-                    ;;
-                  "Launcher-Espressif.html")
-                    esp32+="$content\n"
-                    ;;
-                  "Launcher-CYD.html")
-                    cyd+="$content\n"
-                    ;;
-                  "Launcher-CUSTOM.html")
-                    custom+="$content\n"
-                    ;;
-                  "Launcher-WIP.html")
-                    wip+="$content\n"
-                    ;;
-                  "Launcher-Elecrow.html")
-                    elecrow+="$content\n"
-                    ;;
-                esac
-                echo "$file" # Exibe o caminho do arquivo processado
-              fi
-            done
-
-            # Começa a lista HTML
-            html="<ul class='device-list m5stack'>"
-            html+="$m5stack"
-            html+="</ul>"
-            html+="<ul class='device-list lilygo'>"
-            html+="$lilygo"
-            html+="</ul>"
-            html+="<ul class='device-list cyd'>"
-            html+="$cyd"
-            html+="</ul>"
-            html+="<ul class='device-list custom'>"
-            html+="$custom"
-            html+="</ul>"
-            html+="<ul class='device-list esp32'>"
-            html+="$esp32"
-            html+="</ul>"
-            html+="<ul class='device-list elecrow'>"
-            html+="$elecrow"
-            html+="</ul>"
-            html+="<ul class='device-list wip'>"
-            html+="$wip"
-            html+="</ul>"
-
-            # Exibe as quebras de linha
-            html=$(echo -e "$html")
-
-
-            # Exibe as variáveis para verificar
-            echo "M5Stack Content: $m5stack"
-            echo "Lilygo Content: $lilygo"
-            echo "ESP32 Content: $esp32"
-            echo "CYD Content: $cyd"
-            echo "CYD Content: $elecrow"
-            echo "CYD Content: $wip"
-
-            echo "$html" > ~/file.html
-            cat ~/file.html
-
         - name: Move artifacts to the correct folders
           run: |
             set -x
             pwd
             mkdir -p artifacts
             cp -f ~/LauncherArtifacts/*/*.bin artifacts
-            cp -f ~/LauncherArtifacts/*/*.json artifacts
-            cp -f ~/file.html artifacts
             tree
 
         - name: Ensure releases exist and get IDs
