@@ -3,3 +3,6 @@
 *.bin
 include/webFiles.h
 checksum.sha256
+build
+node_modules
+
