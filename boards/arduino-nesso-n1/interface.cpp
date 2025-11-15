@@ -37,6 +37,8 @@ void InputHandler(void) {
     static long tm = millis();
     if (millis() - tm > 200 || LongPress) {
         M5.update();
+        bool bntA = M5.BtnA.isPressed();
+        bool bntB = M5.BtnB.isPressed();
         auto t = M5.Touch.getDetail();
         if (t.isPressed() || t.isHolding()) {
             tm = millis();
@@ -50,6 +52,14 @@ void InputHandler(void) {
             touchPoint.pressed = true;
             touchHeatMap(touchPoint);
         } else touchPoint.pressed = false;
+
+        if (bntA || bntB) {
+            tm = millis();
+            if (!wakeUpScreen()) AnyKeyPress = true;
+            else return;
+        }
+        if (bntA) NextPress = true;
+        if (bntB) SelPress = true;
     }
 }
 

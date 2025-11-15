@@ -41,7 +41,9 @@ void sleepModeOn() {
     setCpuFrequencyMhz(80);
     turnOffDisplay();
     disableCore0WDT();
+#if SOC_CPU_CORES_NUM > 1
     disableCore1WDT();
+#endif
     disableLoopWDT();
 #endif
 }
@@ -52,7 +54,9 @@ void sleepModeOff() {
 #ifndef CONFIG_IDF_TARGET_ESP32P4
     setCpuFrequencyMhz(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
     enableCore0WDT();
+#if SOC_CPU_CORES_NUM > 1
     enableCore1WDT();
+#endif
     enableLoopWDT();
     feedLoopWDT();
 #endif

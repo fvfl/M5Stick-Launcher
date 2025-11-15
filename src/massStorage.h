@@ -1,10 +1,10 @@
-#ifdef ARDUINO_USB_MODE
+#ifdef SOC_USB_OTG_SUPPORTED
 
 #ifndef __MASS_STORAGE_H__
 #define __MASS_STORAGE_H__
 
-#include <globals.h>
 #include <USBMSC.h>
+#include <globals.h>
 
 // All credits to @geo_tp for his incredible POC https://github.com/geo-tp/Esp32-USB-Stick
 // Many thanks to @R3cK for bringing it to Bruce, and allowing me to bring it to Launcher
@@ -46,8 +46,8 @@ private:
     void setupUsbEvent(void);
 };
 
-int32_t usbWriteCallback(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize);
-int32_t usbReadCallback(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize);
+int32_t usbWriteCallback(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t bufsize);
+int32_t usbReadCallback(uint32_t lba, uint32_t offset, void *buffer, uint32_t bufsize);
 bool usbStartStopCallback(uint8_t power_condition, bool start, bool load_eject);
 
 void drawUSBStickIcon(bool plugged);

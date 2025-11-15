@@ -221,7 +221,13 @@ public:
 #if defined(E_PAPER_DISPLAY)
     void stopCallback() {};
     void startCallback() {};
-    void display(bool a = false) { sprite.pushSprite(0, 0); };
+    void display(bool a = false) {
+        sprite.pushSprite(0, 0);
+        #if defined(ARDUINO_M5STACK_PAPER)
+        sprite.deleteSprite();
+        sprite.createSprite(M5.Display.width(), M5.Display.height());
+        #endif
+ };
     void setFullWindow() {};
 #endif
     // End of E-Paper functions

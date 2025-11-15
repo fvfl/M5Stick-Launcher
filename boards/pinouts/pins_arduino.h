@@ -56,4 +56,6 @@
 #include "m5stack-paper-s3.h"
 #elif ARDUINO_M5STACK_PAPER
 #include "m5stack-paper.h"
+#elif ARDUINO_NESSO_N1
+#include "arduino-nesso-n1.h"
 #endif
