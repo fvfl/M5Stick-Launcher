@@ -1,4 +1,4 @@
-#ifdef SOC_USB_OTG_SUPPORTED
+#ifdef ARDUINO_USB_MODE
 
 #include "massStorage.h"
 #include "display.h"

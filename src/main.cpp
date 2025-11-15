@@ -441,7 +441,7 @@ void loop() {
 #endif
          [=]() { loopOptionsWebUi(); }
         },
-#if defined(SOC_USB_OTG_SUPPORTED) && !defined(ARDUINO_M5STACK_TAB5)
+#if defined(ARDUINO_USB_MODE) && !defined(ARDUINO_M5STACK_TAB5)
         {
 #if TFT_HEIGHT < 135
          "USB", "SD->USB",

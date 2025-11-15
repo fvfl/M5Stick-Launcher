@@ -1,4 +1,4 @@
-#ifdef SOC_USB_OTG_SUPPORTED
+#ifdef ARDUINO_USB_MODE
 
 #ifndef __MASS_STORAGE_H__
 #define __MASS_STORAGE_H__

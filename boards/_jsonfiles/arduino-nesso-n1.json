@@ -8,8 +8,7 @@
     "variant": "pinouts",
     "extra_flags": [
         "-DARDUINO_NESSO_N1",
-        "-DARDUINO_USB_CDC_ON_BOOT=1",
-        "-DARDUINO_USB_MODE=1"
+        "-DARDUINO_USB_CDC_ON_BOOT=1"
     ]
   },
   "connectivity": [
