@@ -238,14 +238,14 @@ void InputHandler(void) {
 
         // Serial.printf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
 
-        if (keyVal == KEY_BACKSPACE) {
+        if (keyVal == KEY_BACKSPACE && col == 13) {
             del = pressed;
             esc = pressed;
             // if (pressed) key.word.emplace_back(KEY_BACKSPACE);
         } else if (keyVal == '`') {
             esc = pressed;
             if (pressed) key.word.emplace_back(keyVal);
-        } else if (keyVal == KEY_ENTER) {
+        } else if (keyVal == KEY_ENTER && col == 13) {
             key.enter = pressed;
             if (pressed) key.word.emplace_back(KEY_ENTER);
             sel = pressed;
