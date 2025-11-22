@@ -223,11 +223,11 @@ public:
     void startCallback() {};
     void display(bool a = false) {
         sprite.pushSprite(0, 0);
-        #if defined(ARDUINO_M5STACK_PAPER)
+#if defined(ARDUINO_M5STACK_PAPER)
         sprite.deleteSprite();
         sprite.createSprite(M5.Display.width(), M5.Display.height());
-        #endif
- };
+#endif
+    };
     void setFullWindow() {};
 #endif
     // End of E-Paper functions
@@ -354,5 +354,26 @@ public:
 
 private:
 };
+
+#define BLACK RGB565_BLACK
+#define NAVY RGB565_NAVY
+#define DARKGREEN RGB565_DARKGREEN
+#define DARKCYAN RGB565_DARKCYAN
+#define MAROON RGB565_MAROON
+#define PURPLE RGB565_PURPLE
+#define OLIVE RGB565_OLIVE
+#define LIGHTGREY RGB565_LIGHTGREY
+#define DARKGREY RGB565_DARKGREY
+#define BLUE RGB565_BLUE
+#define GREEN RGB565_GREEN
+#define CYAN RGB565_CYAN
+#define RED RGB565_RED
+#define MAGENTA RGB565_MAGENTA
+#define YELLOW RGB565_YELLOW
+#define WHITE RGB565_WHITE
+#define ORANGE RGB565_ORANGE
+#define GREENYELLOW RGB565_GREENYELLOW
+#define PALERED RGB565_PALERED
+
 #endif
 #endif //__TFT_H
