@@ -89,6 +89,7 @@ Things that needs to be done in next updates
      * [x] Fixed Marauder V7 screen issues
      * [x] Enhanced M5-PaperS3 display, using Sprites now for better drawing resolution
      * [x] Fixed M5Stack Cardputer ADV keyboard not adding '*' and '('
+     * [x] Add New Partition Scheme for [Cardputer Game Station](https://github.com/geo-tp/Cardputer-Game-Station-Emulators/), allowing 4.5Mb game ROMs
      * [ ] Port to [M5-Paper](https://shop.m5stack.com/products/m5paper-esp32-development-kit-v1-1-960x540-4-7-eink-display-235-ppi?ref=Pirata)
      * [ ] Port to [Arduino Nesso N1](https://docs.arduino.cc/hardware/nesso-n1), not building
 
