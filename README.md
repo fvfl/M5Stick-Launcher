@@ -86,6 +86,7 @@ Things that needs to be done in next updates
 ## Latest Changelog
 * 2.6.4:
      * [x] Fixed CYD 3243S035R touchscreen rotation
+     * [x] Fixed Marauder V7 screen issues
      * [x] Enhanced M5-PaperS3 display, using Sprites now for better drawing resolution
      * [x] Fixed M5Stack Cardputer ADV keyboard not adding '*' and '('
      * [ ] Port to [M5-Paper](https://shop.m5stack.com/products/m5paper-esp32-development-kit-v1-1-960x540-4-7-eink-display-235-ppi?ref=Pirata)
