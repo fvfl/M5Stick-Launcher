@@ -447,7 +447,11 @@ void performUpdate(Stream &updateSource, size_t updateSize, int command) {
             progressHandler(written, updateSize);
         }
         if (Update.end()) {
-            if (Update.isFinished()) log_i("Update successfully completed.");
+            if (Update.isFinished()) {
+                log_i("Update successfully completed. Rebooting.");
+                displayRedStripe("Removing coredump (if any)...");
+                clearCoredump();
+            }
             else log_i("Update not finished? Something went wrong!");
         } else {
             log_i("Error Occurred. Error #: %s", String(Update.getError()));
@@ -458,6 +462,37 @@ void performUpdate(Stream &updateSource, size_t updateSize, int command) {
         delay(2500);
     }
     vTaskResume(xHandle);
+}
+
+
+/***************************************************************************************
+ ** Function name: clearCoredump
+ ** Description:   As some programs may generate core dumps,
+                   and others try to report them thinking that they wrote it,
+                   this function will clear it to avoid confusion.
+****************************************************************************************/
+bool clearCoredump() {
+    const esp_partition_t *partition =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "coredump");
+        Serial.printf("Coredump partition address: 0x%08X\n", partition ? partition->address : 0);
+    if (!partition) {
+        Serial.println("Failed to find coredump partition");
+        log_e("Failed to find coredump partition");
+        return false;
+    }
+    log_i("Erasing coredump partition at address 0x%08X, size %d bytes",
+          partition->address, partition->size);
+
+    // erase all coredump partition
+    esp_err_t err = esp_flash_erase_region(NULL, partition->address, partition->size);
+    if (err != ESP_OK) {
+        Serial.println("Failed to erase coredump partition");
+        log_e("Failed to erase coredump partition: %s", esp_err_to_name(err));
+        return false;
+    }
+    Serial.println("Coredump partition cleared successfully");
+    log_e("Coredump partition cleared successfully");
+    return true;
 }
 
 /***************************************************************************************

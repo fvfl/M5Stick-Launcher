@@ -35,4 +35,7 @@ void performUpdate(Stream &updateSource, size_t updateSize, int command);
 void updateFromSD(String path);
 
 bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label = "vfs");
+
+bool clearCoredump();
+
 #endif
