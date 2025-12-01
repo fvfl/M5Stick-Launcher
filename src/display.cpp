@@ -832,8 +832,10 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
             if (bright) { setBrightness(100 * (numOpt - index) / numOpt, false); }
             redraw = false;
         }
-        String txt = options[index].label;
-        displayScrollingText(txt, coord);
+        if (index >= 0 && index < static_cast<int>(options.size())) {
+            String txt = options[index].label;
+            displayScrollingText(txt, coord);
+        }
 
 #if defined(T_EMBED) || defined(HAS_TOUCH) || defined(HAS_KEYBOARD)
 #if defined(HAS_TOUCH)

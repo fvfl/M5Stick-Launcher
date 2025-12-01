@@ -167,7 +167,7 @@ void ota_function() {
             }
             options.push_back({"Main Menu", [=]() { returnToMenu = true; }, ALCOLOR});
             idx = loopOptions(options, false, FGCOLOR, BGCOLOR, false, idx);
-            if (!returnToMenu) goto RELOAD;
+            if (!returnToMenu && idx != -1) goto RELOAD;
         } else {
             if (GetJsonFromLauncherHub()) loopFirmware();
         }
@@ -534,14 +534,13 @@ bool installExtFirmware(String url) {
 bool clearOnlineCoredump() {
     const esp_partition_t *partition =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "coredump");
-        Serial.printf("Coredump partition address: 0x%08X\n", partition ? partition->address : 0);
+    Serial.printf("Coredump partition address: 0x%08X\n", partition ? partition->address : 0);
     if (!partition) {
         Serial.println("Failed to find coredump partition");
         log_e("Failed to find coredump partition");
         return false;
     }
-    log_i("Erasing coredump partition at address 0x%08X, size %d bytes",
-          partition->address, partition->size);
+    log_i("Erasing coredump partition at address 0x%08X, size %d bytes", partition->address, partition->size);
 
     // erase all coredump partition
     esp_err_t err = esp_flash_erase_region(NULL, partition->address, partition->size);
