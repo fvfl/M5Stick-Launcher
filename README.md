@@ -84,6 +84,8 @@ Things that needs to be done in next updates
 
 
 ## Latest Changelog
+* 2.6.5:
+     * [x] Added possibility to order by "Latest update"
 * 2.6.4:
      * [x] Fixed CYD 3243S035R touchscreen rotation
      * [x] Fixed Marauder V7 screen issues
