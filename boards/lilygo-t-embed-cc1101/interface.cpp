@@ -69,8 +69,7 @@ void _setup_gpio() {
         PPM.enableCharge();
     }
     if (bq.getDesignCap() != BATTERY_DESIGN_CAPACITY) { bq.setDesignCap(BATTERY_DESIGN_CAPACITY); }
-#else
-    pinMode(BAT_PIN, INPUT); // Battery value
+
 #endif
 
 #ifdef T_EMBED_1101
