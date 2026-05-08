@@ -86,21 +86,19 @@ void InputHandler(void) {
     bool s = digitalRead(SEL_BTN);
 
     if (s == BTN_ACT || u == BTN_ACT || d == BTN_ACT || r == BTN_ACT || l == BTN_ACT) {
+        tm = millis();
         if (!wakeUpScreen()) AnyKeyPress = true;
         else return;
     } else return;
+    if (l == BTN_ACT && r == BTN_ACT) {
+        EscPress = true;
+        return;
+    }
     if (l == BTN_ACT) { PrevPress = true; }
     if (r == BTN_ACT) { NextPress = true; }
     if (u == BTN_ACT) { UpPress = true; }
     if (d == BTN_ACT) { DownPress = true; }
     if (s == BTN_ACT) { SelPress = true; }
-    // Press Left and Right trigger EscPress
-    if (PrevPress && NextPress) {
-        PrevPress = false;
-        NextPress = false;
-        EscPress = true;
-    }
-    tm = millis();
 }
 
 /*********************************************************************

@@ -374,10 +374,11 @@ void setup() {
 #endif
         // Direct input check for startup - bypass check() function to avoid task suspension
 #if defined(HAS_1_BUTTON)
-        if (check(SelPress) || check(NextPress) || check(EscPress) || check(AnyKeyPress)) {
+        if (check(SelPress) || check(NextPress))
 #else
-        if (check(SelPress)) {
+        if (check(SelPress))
 #endif
+        {
             tft->fillScreen(BGCOLOR);
             goto Launcher;
         }
@@ -386,11 +387,11 @@ void setup() {
         keyStroke key = _getKeyPress();
         if (key.pressed && !key.enter)
 #elif defined(HAS_1_BUTTON)
-        if (false)
+        if (check(EscPress))
 #elif defined(STICK_C_PLUS2) || defined(STICK_C_PLUS)
-    if (NextPress)
+        if (check(NextPress))
 #else
-    if (check(AnyKeyPress))
+        if (check(AnyKeyPress))
 #endif
         {
             if (!bootToApp) goto Launcher;

@@ -909,11 +909,7 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
             break;
         }
 
-#if defined(T_EMBED) || defined(HAS_TOUCH) || defined(HAS_KEYBOARD)
         if (check(EscPress) || returnToMenu || exit) return -1;
-#else
-        if (exit) break;
-#endif
     }
     if (border) tft->fillScreen(BGCOLOR);
 #if defined(HAS_TOUCH)
@@ -996,7 +992,6 @@ void loopVersions(String _fid) {
             redraw = true;
         }
 
-        if (check(EscPress)) { goto SAIR; }
 #else // Esc logic is holding previous btn fot 1 second +-
         if (LongPress || PrevPress) {
             if (!LongPress) {
@@ -1040,6 +1035,7 @@ void loopVersions(String _fid) {
         }
 
 #endif
+        if (check(EscPress)) { goto SAIR; }
 
         /* Select to install */
         if (check(SelPress)) {

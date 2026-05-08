@@ -65,6 +65,10 @@ void InputHandler(void) {
         if (!wakeUpScreen()) AnyKeyPress = true;
         else return;
     }
+    if (l == BTN_ACT && r == BTN_ACT) {
+        EscPress = true;
+        return;
+    }
     if (l == BTN_ACT) PrevPress = true;
     if (r == BTN_ACT) NextPress = true;
     if (u == BTN_ACT) UpPress = true;
