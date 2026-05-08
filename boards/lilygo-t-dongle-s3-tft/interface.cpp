@@ -1,15 +1,6 @@
 #include "powerSave.h"
-#include <Button.h>
 #include <SD_MMC.h>
 #include <interface.h>
-volatile bool nxtPress = false;
-volatile bool prvPress = false;
-volatile bool slPress = false;
-static void onButtonSingleClickCb1(void *button_handle, void *usr_data) { nxtPress = true; }
-static void onButtonDoubleClickCb1(void *button_handle, void *usr_data) { prvPress = true; }
-static void onButtonHoldCb1(void *button_handle, void *usr_data) { slPress = true; }
-
-Button *btn1;
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -17,31 +8,28 @@ Button *btn1;
 ** Description:   initial setup for the device
 ***************************************************************************************/
 void _setup_gpio() {
+#ifdef SOC_SDMMC_HOST_SUPPORTED
+    /* T-DONGLE S3 */
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3);
-    //  PWM backlight setup
-    //  setup buttons
     gpio_pulldown_dis(GPIO_NUM_21);
     gpio_pullup_dis(GPIO_NUM_21);
     gpio_pulldown_dis(GPIO_NUM_17);
     gpio_pullup_dis(GPIO_NUM_17);
-    button_config_t bt1 = {
-        .type = BUTTON_TYPE_GPIO,
-        .long_press_time = 600,
-        .short_press_time = 120,
-        .gpio_button_config = {
-                               .gpio_num = GPIO_NUM_0,
-                               .active_level = 0,
-                               },
-    };
+    // Turn off LED
+    pinMode(39, OUTPUT);
+    digitalWrite(39, LOW);
+    pinMode(40, OUTPUT);
+    digitalWrite(40, LOW);
+#else
+    /* T-DONGLE C5 */
+    // turn off LED
+    pinMode(4, OUTPUT);
+    digitalWrite(4, LOW);
+    pinMode(5, OUTPUT);
+    digitalWrite(5, LOW);
+#endif
 
-    pinMode(GPIO_NUM_0, INPUT_PULLUP);
-
-    btn1 = new Button(bt1);
-
-    // btn->attachPressDownEventCb(&onButtonPressDownCb, NULL);
-    btn1->attachSingleClickEventCb(&onButtonSingleClickCb1, NULL);
-    btn1->attachDoubleClickEventCb(&onButtonDoubleClickCb1, NULL);
-    btn1->attachLongPressStartEventCb(&onButtonHoldCb1, NULL);
+    pinMode(SEL_BTN, INPUT_PULLUP);
 }
 
 /***************************************************************************************
@@ -90,21 +78,95 @@ void _setBrightness(uint8_t brightval) {
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
-    static bool btn_pressed = false;
-    if (nxtPress || prvPress || slPress) btn_pressed = true;
+    static unsigned long tm = 0;
+    constexpr unsigned long kInputDebounceMs = 75;
+    if (millis() - tm < kInputDebounceMs && !LongPress) return;
 
-    bool anyPressed = nxtPress || prvPress || slPress;
-    if (anyPressed && wakeUpScreen()) return;
+    checkPowerSaveTime();
 
-    AnyKeyPress = anyPressed;
-    SelPress = slPress;
-    NextPress = nxtPress;
-    PrevPress = prvPress;
+    static bool buttonWasDown = false;
+    static unsigned long buttonDownAt = 0;
+    static uint8_t drawn = 2;
+    constexpr unsigned long kSelectPressMs = 550;
+    constexpr unsigned long kBackPressMs = 1200;
+    constexpr unsigned long kDoublePressIntervalMs = 300;
 
-    if (btn_pressed) {
-        btn_pressed = false;
-        nxtPress = false;
-        prvPress = false;
-        slPress = false;
+    // Variables for double press detection
+    static unsigned long lastButtonReleaseTime = 0;
+    static int clickCount = 0;
+    static bool pendingNextPress = false;
+    static unsigned long pendingTime = 0;
+
+    // Check for pending NextPress timeout
+    if (pendingNextPress && millis() - pendingTime > kDoublePressIntervalMs) {
+        NextPress = true;
+        pendingNextPress = false;
+    }
+
+    bool buttonDown = (digitalRead(SEL_BTN) == LOW);
+
+    if (buttonDown && !buttonWasDown) {
+        buttonWasDown = true;
+        buttonDownAt = millis();
+        tm = millis();
+        AnyKeyPress = true;
+        LongPress = false;
+        if (wakeUpScreen()) return;
+    }
+
+    if (buttonDown) {
+        AnyKeyPress = true;
+        if (millis() - buttonDownAt >= kSelectPressMs) {
+            LongPress = true;
+            if (drawn > 1) {
+                tft->fillRect(tftWidth - 3, 0, 3, tftHeight, GREENYELLOW);
+                tft->fillRect(0, tftHeight - 3, tftWidth, 3, GREENYELLOW);
+                drawn = 1;
+            }
+        }
+        if (millis() - buttonDownAt >= kBackPressMs && drawn > 0) {
+            tft->fillRect(tftWidth - 3, 0, 3, tftHeight, RED);
+            tft->fillRect(0, tftHeight - 3, tftWidth, 3, RED);
+            drawn = 0;
+        }
+        return;
+    }
+
+    if (buttonWasDown) {
+        buttonWasDown = false;
+        unsigned long heldMs = millis() - buttonDownAt;
+        tft->fillRect(tftWidth - 3, 0, 3, tftHeight, BGCOLOR);
+        tft->fillRect(0, tftHeight - 3, tftWidth, 3, BGCOLOR);
+        drawn = 2;
+
+        // Reset click count if more than 300ms has passed since last release
+        if (millis() - lastButtonReleaseTime > kDoublePressIntervalMs) { clickCount = 0; }
+
+        if (heldMs >= kBackPressMs) {
+            EscPress = true;
+            pendingNextPress = false; // Cancel any pending actions
+        } else if (heldMs >= kSelectPressMs) {
+            SelPress = true;
+            pendingNextPress = false; // Cancel any pending actions
+        } else {
+            // Short click - handle double press detection
+            clickCount++;
+            lastButtonReleaseTime = millis();
+
+            if (clickCount >= 2) {
+                PrevPress = true;
+                clickCount = 0;
+                pendingNextPress = false; // Cancel any pending NextPress
+                AnyKeyPress = true;
+                LongPress = false;
+                return;
+            } else {
+                // First click - wait for potential double click
+                pendingNextPress = true;
+                pendingTime = millis();
+            }
+        }
+        AnyKeyPress = true;
+        LongPress = false;
     }
 }

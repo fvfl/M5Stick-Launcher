@@ -57,6 +57,7 @@
             - { env: "CYD-3248W535C"              }
             - { env: "CYD-4827S043R"              }
             - { env: "lilygo-t-dongle-s3-tft"     }
+            - { env: "lilygo-t-dongle-c5-tft"     }
             - { env: "lilygo-t-display-S3-touch"  }
             - { env: "lilygo-t-display-S3-pro"    }
             - { env: "lilygo-t-embed"             }

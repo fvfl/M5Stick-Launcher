@@ -92,6 +92,7 @@ Things that needs to be done in next updates
      * [X] Port to [NM-CYD-C5](https://www.nmminer.com/product/nm-cyd-c5/)
      * [x] Port to [3248W535C](https://www.displaysmodule.com/sale-51335661-jc3248w535c-i-y-lcd-display-module-with-320-480-pixel-resolution-and-effective-display-area-73-4-49-.html)
      * [x] Port to [Waveshare-ESP32-S3-LCD-1.47](https://www.waveshare.com/wiki/ESP32-S3-LCD-1.47)
+     * [x] Port to [T-Dongle-C5 (tft)](https://lilygo.cc/products/t-dongle-c5?bg_ref=sDI8Bh4HmO)
      * [x] Fix issue where brightness wasnt being saved
      * [x] Fix issue where custom "downloads" folder wasn't being used
      * [x] Fix issue where some fimware downloads waren't working due to prohibited characters on firmware name

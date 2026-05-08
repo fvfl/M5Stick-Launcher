@@ -373,7 +373,7 @@ void setup() {
         }
 #endif
         // Direct input check for startup - bypass check() function to avoid task suspension
-#if defined(WAVESHARE_ESP32_S3_LCD_147)
+#if defined(HAS_1_BUTTON)
         if (check(SelPress) || check(NextPress) || check(EscPress) || check(AnyKeyPress)) {
 #else
         if (check(SelPress)) {
@@ -385,12 +385,12 @@ void setup() {
 #if defined(HAS_KEYBOARD)
         keyStroke key = _getKeyPress();
         if (key.pressed && !key.enter)
-#elif defined(WAVESHARE_ESP32_S3_LCD_147)
+#elif defined(HAS_1_BUTTON)
         if (false)
 #elif defined(STICK_C_PLUS2) || defined(STICK_C_PLUS)
-        if (NextPress)
+    if (NextPress)
 #else
-        if (check(AnyKeyPress))
+    if (check(AnyKeyPress))
 #endif
         {
             if (!bootToApp) goto Launcher;

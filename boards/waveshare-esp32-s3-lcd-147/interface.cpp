@@ -75,16 +75,24 @@ void InputHandler(void) {
 
     static bool buttonWasDown = false;
     static unsigned long buttonDownAt = 0;
+    static uint8_t drawn = 2;
     constexpr unsigned long kSelectPressMs = 550;
     constexpr unsigned long kBackPressMs = 1200;
+    constexpr unsigned long kDoublePressIntervalMs = 300;
 
-    PrevPress = false;
-    NextPress = false;
-    SelPress = false;
-    EscPress = false;
-    AnyKeyPress = false;
+    // Variables for double press detection
+    static unsigned long lastButtonReleaseTime = 0;
+    static int clickCount = 0;
+    static bool pendingNextPress = false;
+    static unsigned long pendingTime = 0;
 
-    bool buttonDown = (digitalRead(SEL_BTN) == BTN_ACT);
+    // Check for pending NextPress timeout
+    if (pendingNextPress && millis() - pendingTime > kDoublePressIntervalMs) {
+        NextPress = true;
+        pendingNextPress = false;
+    }
+
+    bool buttonDown = (digitalRead(SEL_BTN) == LOW);
 
     if (buttonDown && !buttonWasDown) {
         buttonWasDown = true;
@@ -96,10 +104,19 @@ void InputHandler(void) {
     }
 
     if (buttonDown) {
-        tm = millis();
         AnyKeyPress = true;
         if (millis() - buttonDownAt >= kSelectPressMs) {
             LongPress = true;
+            if (drawn > 1) {
+                tft->fillRect(tftWidth - 3, 0, 3, tftHeight, GREENYELLOW);
+                tft->fillRect(0, tftHeight - 3, tftWidth, 3, GREENYELLOW);
+                drawn = 1;
+            }
+        }
+        if (millis() - buttonDownAt >= kBackPressMs && drawn > 0) {
+            tft->fillRect(tftWidth - 3, 0, 3, tftHeight, RED);
+            tft->fillRect(0, tftHeight - 3, tftWidth, 3, RED);
+            drawn = 0;
         }
         return;
     }
@@ -107,12 +124,36 @@ void InputHandler(void) {
     if (buttonWasDown) {
         buttonWasDown = false;
         unsigned long heldMs = millis() - buttonDownAt;
+        tft->fillRect(tftWidth - 3, 0, 3, tftHeight, BGCOLOR);
+        tft->fillRect(0, tftHeight - 3, tftWidth, 3, BGCOLOR);
+        drawn = 2;
+
+        // Reset click count if more than 300ms has passed since last release
+        if (millis() - lastButtonReleaseTime > kDoublePressIntervalMs) { clickCount = 0; }
+
         if (heldMs >= kBackPressMs) {
             EscPress = true;
+            pendingNextPress = false; // Cancel any pending actions
         } else if (heldMs >= kSelectPressMs) {
             SelPress = true;
+            pendingNextPress = false; // Cancel any pending actions
         } else {
-            NextPress = true;
+            // Short click - handle double press detection
+            clickCount++;
+            lastButtonReleaseTime = millis();
+
+            if (clickCount >= 2) {
+                PrevPress = true;
+                clickCount = 0;
+                pendingNextPress = false; // Cancel any pending NextPress
+                AnyKeyPress = true;
+                LongPress = false;
+                return;
+            } else {
+                // First click - wait for potential double click
+                pendingNextPress = true;
+                pendingTime = millis();
+            }
         }
         AnyKeyPress = true;
         LongPress = false;

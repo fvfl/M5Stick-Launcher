@@ -4,6 +4,12 @@
 #include "settings.h"
 #include <globals.h>
 
+#ifndef HAS_1_BUTTON // if not defined, use 0 for calculations
+#define HAS_1_BUTTON 0
+#else
+#undef HAS_1_BUTTON    // make sure it is 1 when defined
+#define HAS_1_BUTTON 1 // make sure it is 1 when defined
+#endif
 int max_FM_size = (tftWidth - RES) / (LW * FM) - 1;
 int max_FP_size = (tftWidth - RES) / (LW)-2;
 
@@ -176,8 +182,8 @@ enum KeyboardAction { KEYBOARD_CONTINUE, KEYBOARD_OK, KEYBOARD_CANCEL, KEYBOARD_
 
 /// Handles keyboard selection logic for regular keyboard
 KeyboardAction handleKeyboardSelection(
-    int &x, int &y, String &current_text, bool &caps, int &cursor_x, int &cursor_y, const int max_size,
-    char character
+    int &x, int &y, String &current_text, bool &caps, bool &direction, int &cursor_x, int &cursor_y,
+    const int max_size, char character
 ) {
     tft->setCursor(cursor_x, cursor_y);
 
@@ -197,6 +203,11 @@ KeyboardAction handleKeyboardSelection(
             case 4: // BACK button
                 current_text = KEY_ESCAPE;
                 return KEYBOARD_CANCEL;
+#if HAS_1_BUTTON
+            case 5: // Direction button
+                direction = !direction;
+                return KEYBOARD_REDRAW;
+#endif
             default: break;
         }
 
@@ -224,12 +235,10 @@ String generalKeyboard(
 
     /* SUPPORT VARIABLES */
     bool caps = false;
+    bool last_caps = false;
     bool selection_made = false; // used for detecting if an key or a button was selected
     bool redraw = true;
     long last_input_time = millis(); // used for input debouncing
-    unsigned long pending_next_at = 0;
-    bool pending_next = false;
-    constexpr unsigned long kDoubleTapWindowMs = 275;
     // cursor coordinates: kep track of where the next character should be printed (in screen pixels)
     int cursor_x = 0;
     int cursor_y = 0;
@@ -242,8 +251,11 @@ String generalKeyboard(
     //       on keyboard screen
 
     /*====================Initial Setup====================*/
-
-    int buttons_number = 5;
+    const int counter_height = (TFT_WIDTH > 90) && (TFT_HEIGHT > 90) ? LH * FP : 0;
+    bool direction = true; // for auto navigation, true is forward, false is backward, usend on HAS_1_BUTTON
+    bool last_dir = true;  // to keep track of the last direction when auto navigating, used for better
+                           // handling of direction changes on HAS_1_BUTTON
+    int buttons_number = 5 + HAS_1_BUTTON;
 
     /*-----------------------------HOW btns_layout IS CALCULATED-----------------------------*/
     // const char *buttons_strings[] = {"OK", "aa", "<-", "[_]", "Esc"};
@@ -281,12 +293,15 @@ String generalKeyboard(
     // { x coord of btn border, btn width, x coord of the inside text }
     // 12 px = 10 px + 2 of padding between the letters -> refer to the section above to better understand
     // ((12px * n_letters) - 2px ) + 9*2px = width
-    const int btns_layout[5][3] = {
+    const int btns_layout[][3] = {
         {1 * PAD + 0 * LW * FM + RES,  3 * LW * FM, 1 * PAD + 0 * LW * FM + LW * FM / 2 + RES }, // OK
         {2 * PAD + 3 * LW * FM + RES,  3 * LW * FM, 2 * PAD + 3 * LW * FM + LW * FM / 2 + RES }, // ab (Caps)
         {3 * PAD + 6 * LW * FM + RES,  3 * LW * FM, 3 * PAD + 6 * LW * FM + LW * FM / 2 + RES }, // <- (DEL)
         {4 * PAD + 9 * LW * FM + RES,  4 * LW * FM, 4 * PAD + 9 * LW * FM + LW * FM / 2 + RES }, // [_] (SPACE)
         {5 * PAD + 13 * LW * FM + RES, 4 * LW * FM, 5 * PAD + 13 * LW * FM + LW * FM / 2 + RES}, // Esc
+#if HAS_1_BUTTON
+        {6 * PAD + 17 * LW * FM + RES, 4 * LW * FM, 6 * PAD + 17 * LW * FM + LW * FM / 2 + RES}, // R/D or L/U
+#endif
     };
 
     const int key_width = tftWidth / KeyboardWidth;
@@ -349,7 +364,9 @@ String generalKeyboard(
             tft->setTextSize(FM);
 
             // Draw the top row buttons_strings
-            if (y < 0 || old_y < 0) {
+            if (y < 0 || old_y < 0 || direction != last_dir || caps != last_caps) {
+                last_dir = direction;
+                last_caps = caps;
                 tft->fillRect(0, 1, tftWidth, KBLH, BGCOLOR);
                 // Draw the buttons_strings borders
                 for (int i = 0; i < buttons_number; ++i) {
@@ -376,11 +393,10 @@ String generalKeyboard(
                 } else if (caps) {
                     tft->fillRect(btns_layout[1][0], 2, btns_layout[1][1], KBLH, DARKGREY);
                     tft->setTextColor(getComplementaryColor(BGCOLOR), DARKGREY);
-                    tft->drawString("ab", btns_layout[1][2], 5);
                 } else {
                     tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
-                    tft->drawString("A@", btns_layout[1][2], 5);
                 }
+                tft->drawString(caps ? "ab" : "A@", btns_layout[1][2], 5);
 
                 // DEL
                 if (x == 2 && y == -1) {
@@ -399,58 +415,79 @@ String generalKeyboard(
                 } else tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
                 tft->drawString("[_]", btns_layout[3][2], 5);
                 //   BACK
-                if (x > 3 && y == -1) {
+                if (((x >= 4 && !HAS_1_BUTTON) || (x == 4 && HAS_1_BUTTON)) && y == -1) {
                     tft->setTextColor(BGCOLOR, getComplementaryColor(BGCOLOR));
                     tft->fillRect(
                         btns_layout[4][0], 2, btns_layout[4][1], KBLH, getComplementaryColor(BGCOLOR)
                     );
                 } else tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
                 tft->drawString("Esc", btns_layout[4][2], 5);
+#if HAS_1_BUTTON
+                //   >v or <^ direction
+                if (x >= 5 && y == -1) {
+                    tft->setTextColor(BGCOLOR, getComplementaryColor(BGCOLOR));
+                    tft->fillRect(
+                        btns_layout[5][0], 2, btns_layout[5][1], KBLH, getComplementaryColor(BGCOLOR)
+                    );
+                } else if (direction == false) { // highlight the button when in backward direction
+                    tft->fillRect(btns_layout[5][0], 2, btns_layout[5][1], KBLH, DARKGREY);
+                    tft->setTextColor(getComplementaryColor(BGCOLOR), DARKGREY);
+                } else tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
+                tft->drawString(direction ? "R/D" : "L/U", btns_layout[5][2], 5);
+#endif
+                tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
             }
 
             // Prints the chars counter
-            tft->setTextSize(FP);
-            String chars_counter = String(current_text.length()) + "/" + String(max_size);
-            tft->fillRect(
-                tftWidth - ((chars_counter.length() * LW * FP) + 20) - RES / 2, // 6px per char + 1 padding
-                KBLH + 4,
-                (chars_counter.length() * LW * FP) + 20,
-                7,
-                BGCOLOR
-            ); // clear previous text
-            tft->drawString(
-                chars_counter, tftWidth - ((chars_counter.length() * LW * FP) + 10) - RES / 2, KBLH + 4
-            );
+            if (counter_height > 0) {
+                tft->setTextSize(FP);
+                String chars_counter = String(current_text.length()) + "/" + String(max_size);
+                tft->fillRect(
+                    tftWidth - ((chars_counter.length() * LW * FP) + 20) -
+                        RES / 2, // 6px per char + 1 padding
+                    KBLH + 4,
+                    (chars_counter.length() * LW * FP) + 20,
+                    7,
+                    BGCOLOR
+                ); // clear previous text
+                tft->drawString(
+                    chars_counter, tftWidth - ((chars_counter.length() * LW * FP) + 10) - RES / 2, KBLH + 4
+                );
 
-            tft->drawString(
-                textbox_title.substring(0, max_FP_size - chars_counter.length() - 1), 3 + RES / 2, KBLH + 4
-            );
+                tft->drawString(
+                    textbox_title.substring(0, max_FP_size - chars_counter.length() - 1),
+                    3 + RES / 2,
+                    KBLH + 4
+                );
+            }
             // Drawing the textbox and the currently typed string
             tft->setTextSize(FM);
             // reset the text box if needed
             if (current_text.length() == (max_FM_size) || current_text.length() == (max_FM_size + 1) ||
                 current_text.length() == (max_FP_size) || current_text.length() == (max_FP_size + 1))
-                tft->fillRect(3 + RES / 2, KBLH + LH * FP + 4, tftWidth - 3 - RES, KBLH, BGCOLOR);
+                tft->fillRect(3 + RES / 2, KBLH + counter_height + 4, tftWidth - 3 - RES, KBLH, BGCOLOR);
             // typed string border
-            tft->drawRect(3 + RES / 2, KBLH + LH * FP + 4, tftWidth - 3 - RES, KBLH, FGCOLOR);
+            tft->drawRect(3 + RES / 2, KBLH + counter_height + 4, tftWidth - 3 - RES, KBLH, FGCOLOR);
             // write the text
             if (current_text.length() >
                 max_FM_size) { // if the text is too long, we try to set the smaller font
                 tft->setTextSize(FP);
                 if (current_text.length() >
                     max_FP_size) { // if its still too long, we divide it into two lines
-                    tft->drawString(current_text.substring(0, max_FP_size), 5 + RES / 2, KBLH + LH * FP + 6);
+                    tft->drawString(
+                        current_text.substring(0, max_FP_size), 5 + RES / 2, KBLH + counter_height + 6
+                    );
                     tft->drawString(
                         current_text.substring(max_FP_size, current_text.length()),
                         5 + RES / 2,
-                        KBLH + 2 * LH * FP + 6
+                        KBLH + LH * FP + counter_height + 6
                     );
                 } else {
-                    tft->drawString(current_text, 5 + RES / 2, KBLH + LH * FP + 6);
+                    tft->drawString(current_text, 5 + RES / 2, KBLH + counter_height + 6);
                 }
             } else {
                 // else if it fits, just draw the text
-                tft->drawString(current_text, 5 + RES / 2, KBLH + LH * FP + 6);
+                tft->drawString(current_text, 5 + RES / 2, KBLH + counter_height + 6);
             }
 
             tft->setTextSize(FM);
@@ -459,7 +496,7 @@ String generalKeyboard(
                 for (int j = 0; j < KeyboardWidth; j++) {
                     // key coordinates
                     int key_x = j * key_width;
-                    int key_y = i * key_height + KBLH * 2 + LH * FP + 6;
+                    int key_y = i * key_height + KBLH * 2 + counter_height + 6;
 
                     // Use the previous coordinates to redraw only the previous letter
                     if (old_x == j && old_y == i) {
@@ -512,14 +549,14 @@ String generalKeyboard(
         if (current_text.length() > max_FM_size) {
             tft->setTextSize(FP);
             if (current_text.length() > (max_FP_size)) {
-                cursor_y = KBLH + 2 * LH * FP + 6;
+                cursor_y = KBLH + LH * FP + counter_height + 6;
                 cursor_x = 5 + RES / 2 + (current_text.length() - max_FP_size) * LW * FP;
             } else {
-                cursor_y = KBLH + LH * FP + 6;
+                cursor_y = KBLH + counter_height + 6;
                 cursor_x = 5 + RES / 2 + current_text.length() * LW * FP;
             }
         } else {
-            cursor_y = KBLH + LH * FP + 6;
+            cursor_y = KBLH + counter_height + 6;
             cursor_x = 5 + RES / 2 + current_text.length() * LW * FM;
         }
 
@@ -588,7 +625,7 @@ String generalKeyboard(
             }
 #endif
 
-#if defined(WAVESHARE_ESP32_S3_LCD_147)
+#if HAS_1_BUTTON // T-Dongle, Waveshare LCD 1.47
             auto moveKeyboardCursorNext = [&]() {
                 if (y < 0) {
                     x++;
@@ -610,6 +647,7 @@ String generalKeyboard(
             auto moveKeyboardCursorPrev = [&]() {
                 if (y < 0) {
                     x--;
+                    if (x >= buttons_number) x = buttons_number - 2;
                     if (x < 0) {
                         y = KeyboardHeight - 1;
                         x = KeyboardWidth - 1;
@@ -629,29 +667,24 @@ String generalKeyboard(
                 redraw = true;
             };
 
-            if (pending_next && millis() - pending_next_at > kDoubleTapWindowMs) {
-                pending_next = false;
-                moveKeyboardCursorNext();
-                last_input_time = millis();
-            }
-
             if (check(EscPress)) {
-                pending_next = false;
-                current_text = KEY_ESCAPE;
-                break;
+                direction = !direction;
+                redraw = true;
             }
             if (check(SelPress)) {
-                pending_next = false;
                 selection_made = true;
             } else if (check(NextPress)) {
-                if (pending_next && millis() - pending_next_at <= kDoubleTapWindowMs) {
-                    pending_next = false;
-                    moveKeyboardCursorPrev();
-                    last_input_time = millis();
+                if (direction) moveKeyboardCursorNext();
+                else moveKeyboardCursorPrev();
+            } else if (check(PrevPress)) {
+                if (direction) {
+                    y++;
+                    if (y >= KeyboardHeight) { y = -1; }
                 } else {
-                    pending_next = true;
-                    pending_next_at = millis();
+                    y--;
+                    if (y < -1) y = KeyboardHeight - 1;
                 }
+                redraw = true;
             }
 #elif defined(HAS_3_BUTTONS) // StickCs and Core
             if (check(SelPress)) {
@@ -817,7 +850,8 @@ String generalKeyboard(
                 selection_made = true;
             } else {
                 /* NEXT "Btn" to move forward on th X axis (to the right) */
-                // if ESC is pressed while NEXT or PREV is received, then we navigate on the Y axis instead
+                // if ESC is pressed while NEXT or PREV is received, then we navigate on the Y axis
+                // instead
                 if (check(NextPress) && touchPoint.pressed == false) {
                     if (EscPress) {
                         y++;
@@ -830,10 +864,10 @@ String generalKeyboard(
                     if (y >= KeyboardHeight)
                         y = -1; // if we are at the end of the keyboard, then return to the top
 
-                    // If we move to a new line using the ESC-press navigation and the previous x coordinate
-                    // is greater than the number of available buttons_strings on the new line, reset x to
-                    // avoid out-of-bounds behavior, this can only happen when switching to the first line, as
-                    // the others have all the same number of keys
+                    // If we move to a new line using the ESC-press navigation and the previous x
+                    // coordinate is greater than the number of available buttons_strings on the new line,
+                    // reset x to avoid out-of-bounds behavior, this can only happen when switching to the
+                    // first line, as the others have all the same number of keys
                     if (y == -1 && x >= buttons_number) x = 0;
 
                     redraw = true;
@@ -869,7 +903,7 @@ String generalKeyboard(
             if (selected_char == '\0') { continue; } // if we selected a key which have the value of
 
             KeyboardAction action = handleKeyboardSelection(
-                x, y, current_text, caps, cursor_x, cursor_y, max_size, selected_char
+                x, y, current_text, caps, direction, cursor_x, cursor_y, max_size, selected_char
             );
 
             if (action == KEYBOARD_OK) { // OK BTN
