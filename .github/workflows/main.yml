@@ -273,7 +273,7 @@
             generate_release_notes: false
 
         - name: Trigger WebPage deploy (workflow_dispatch)
-          if: ${{ success() }}
+          if:  github.ref_type != 'tag'
           env:
             GH_TOKEN: ${{ github.token }}
           run: |
@@ -326,4 +326,11 @@
             --user "$M5BURNER_USER" \
             --password "$M5BURNER_PWD" \
             --tag "${{ steps.launcher_version.outputs.version }}"
+
+      - name: Trigger WebPage deploy (workflow_dispatch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow list
+          gh workflow run .github/workflows/deploy.yml --ref WebPage
 
