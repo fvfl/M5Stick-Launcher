@@ -5,12 +5,32 @@
     pull_request:
       branches:
         - main
+      paths:
+        - "**.h"
+        - "**.cpp"
+        - "**.py"
+        - "**.html"
+        - "**.css"
+        - "**.js"
+        - "**.ini"
+        - "**.json"
+        - "**.csv"
     push:
       branches:
         - main
         - dev
       tags:
         - "*"
+      paths:
+        - "**.h"
+        - "**.cpp"
+        - "**.py"
+        - "**.html"
+        - "**.css"
+        - "**.js"
+        - "**.ini"
+        - "**.json"
+        - "**.csv"
     workflow_dispatch:
 
   jobs:

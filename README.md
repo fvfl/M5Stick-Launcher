@@ -85,9 +85,14 @@ Things that needs to be done in next updates
 
 
 ## Latest Changelog
-* 2.6.x:
+* 2.7.x:
      * [ ] Custom partition builder (no more hardcoded partition lists)
+     * [ ] Optimize Storage functions to save Flash
+     * [ ] Optimize WiFi/WebUI functions to save Flash
+     * [ ] Optimize Settings functions to save flash
 
+* 2.6.10:
+     * [x] Fixed Navigation on 3 Buttons-devices that were triggering EscPress when pressin Next or Prev buttons.
 * 2.6.9:
      * [X] Port to [NM-CYD-C5](https://www.nmminer.com/product/nm-cyd-c5/)
      * [x] Port to [3248W535C](https://www.displaysmodule.com/sale-51335661-jc3248w535c-i-y-lcd-display-module-with-320-480-pixel-resolution-and-effective-display-area-73-4-49-.html)
@@ -104,6 +109,9 @@ Things that needs to be done in next updates
      * [x] Centralized Main libraries, using git submodules, so it doesn't download many copies of the same library to the `.pio/libdeps/**/` folder
      * [x] Speed up workflow, using Github cache for framwork and libs
 
+<details>
+  <summary><h2>Older Changelogs</h2></summary>
+
 * 2.6.8:
      * [x] Increased Gamestation Partitions sizes. https://github.com/bmorcelli/Launcher/issues/299
      * [x] Added option to erase App Partition
@@ -115,8 +123,6 @@ Things that needs to be done in next updates
      * [x] New Device: [Lilygo T-Watch-Ultra] (https://lilygo.cc/products/t-watch-ultra?bg_ref=sDI8Bh4HmO)
      * [x] New Device: [Lilygo E-Paper S3 Pro H752-x] (https://lilygo.cc/products/t5-e-paper-s3-pro?bg_ref=sDI8Bh4HmO)
 
-<details>
-  <summary><h2>Older Changelogs</h2></summary>
 
 * 2.6.7:
      * [x] Restablished Tab5 SdCard on SPI for WiFi compatibility and refactored reboot process to powercycle the SDCard, resetting the Sdcard communication bus.
