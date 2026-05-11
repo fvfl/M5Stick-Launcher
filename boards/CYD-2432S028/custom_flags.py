@@ -99,6 +99,7 @@ def generate_build_flags(board_config):
 
     elif any("DISPLAY_AXS15231B_QSPI" in flag for flag in extra_flags):
         flags.append("-DAXS15231B_QSPI=1")
+        flags.append("-DTFT_QSPI=1")
         flags.append("-DTFT_MISO=-1")
         flags.append("-DTFT_MOSI=-1")
         flags.append("-DTFT_D0=AXS15231B_SPI_BUS_DATA0")

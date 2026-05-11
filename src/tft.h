@@ -577,7 +577,12 @@ public:
 #define _TFT_DRVF(a, b, c, d, e, f, g, h, i, j) Arduino_CO5300(a, b, c, e, f, g, h, i, j)
 #elif DRIVER_RM67162
 #define _TFT_DRV Arduino_RM67162
+#if defined(TFT_QSPI)
 #define _TFT_DRVF(a, b, c, d, e, f, g, h, i, j) Arduino_RM67162(a, b, c, d)
+#else
+#define _TFT_DRVF(a, b, c, d, e, f, g, h, i, j)                                                              \
+    Arduino_RM67162(a, b, c, d, rm67162_spi_init_operations, sizeof(rm67162_spi_init_operations))
+#endif
 #else
 // CYD Default to not shoot errors on screen
 #define _TFT_DRV Arduino_ILI9341

@@ -53,7 +53,7 @@
             - { env: "CYD-3248S035C"              }
             - { env: "CYD-8048S043C"              }
             - { env: "CYD-8048W550C"              }
-            - { env: "NM-CYD-C5"                 }
+            - { env: "NM-CYD-C5"                  }
             - { env: "CYD-3248W535C"              }
             - { env: "CYD-4827S043R"              }
             - { env: "lilygo-t-dongle-s3-tft"     }
@@ -68,7 +68,8 @@
             - { env: "lilygo-t-deck-pro"          }
             - { env: "lilygo-t5-epaper-s3-pro"    }
             - { env: "lilygo-t-hmi"               }
-            #- { env: "lilygo-t-display-S3-amoled" }
+            - { env: "lilygo-t-display-S3-amoled" }
+            - { env: "lilygo-t-display-S3-amoled-plus" }
             - { env: "lilygo-t-watch-s3"          }
             - { env: "lilygo-t-watch-ultra"       }
             - { env: "smoochiee-board"            }
@@ -285,6 +286,8 @@
       needs: [compile_sketch]
       if: github.ref_type == 'tag'
       steps:
+      - uses: actions/checkout@v4
+
       - id: launcher_version
         name: Get Version
         run: |
@@ -292,17 +295,18 @@
           version=${{ github.ref_name }}
           echo "version=${version}" > $GITHUB_OUTPUT
 
+      - name: setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.13"
+
+      - name: Install M5Burner post dependencies
+        run: |
+          pip install requests
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
-
-      - name: List all files
-        if: always()
-        run: |
-          set -x
-          pwd
-          ls -all
-          tree
 
       - name: Create Release ${{ steps.launcher_version.outputs.version }}
         uses: softprops/action-gh-release@v1
@@ -312,3 +316,14 @@
           generate_release_notes: true
           files: |
             Launcher-*.bin
+
+      - name: Upload and publish on M5Burner
+        env:
+          M5BURNER_USER: ${{ secrets.M5BURNER_USER }}
+          M5BURNER_PWD: ${{ secrets.M5BURNER_PWD }}
+        run: |
+          python support_files/m5burner_post.py \
+            --user "$M5BURNER_USER" \
+            --password "$M5BURNER_PWD" \
+            --tag "${{ steps.launcher_version.outputs.version }}"
+
