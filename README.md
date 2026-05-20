@@ -92,8 +92,8 @@ Things that needs to be done in next updates
      * [x] Encrypted Wifi passwords within config.conf and NVS
      * [x] Remoddeled WebUI, adding possibility to edit text files and NVS fields saved in memory
      * [x] Changed items on CFG for better understanding
-     * [-] Optimize Settings functions to save flash
      * [x] Optimize WiFi/WebUI functions to save Flash
+     * [-] Optimize Settings functions to save flash
      * [ ] Optimize Storage functions to save Flash
 
 * 2.6.10:
