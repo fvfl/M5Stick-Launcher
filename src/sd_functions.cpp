@@ -1,78 +1,22 @@
 #include "sd_functions.h"
+#include "app_registry.h"
 #include "display.h"
 #include "esp_log.h"
+#include "idf/idf_update.h"
+#include "idf/launcher_platform.h"
 #include "mykeyboard.h"
+#include "partition_install_layout.h"
+#include "partition_table_model.h"
 #include "settings.h"
-#include <algorithm> // for std::sort
-#include <esp_flash.h>
-#include <esp_ota_ops.h>
-#include <esp_partition.h>
+#include <algorithm>
+#include <esp_app_format.h>
+#include <esp_image_format.h>
 #include <globals.h>
+#include <memory>
 SPIClass sdcardSPI;
 String fileToCopy;
 String fileToUse;
 
-/***************************************************************************************
-** Function name: eraseAppPartition
-** Description:   erase OTA_0 app partition
-***************************************************************************************/
-bool eraseAppPartition() {
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    if (!partition) {
-        displayRedStripe("OTA partition not found");
-        delay(2000);
-        return false;
-    }
-    displayRedStripe("Erasing, please wait...");
-    esp_flash_erase_region(NULL, partition->address, partition->size);
-
-    lastInstalledApp = "";
-    saveIntoNVS();
-    return true;
-}
-
-#ifndef PART_04MB
-/***************************************************************************************
-** Function name: eraseFAT
-** Description:   erase FAT partition to micropython compatibilities
-***************************************************************************************/
-bool eraseFAT() {
-    esp_err_t err;
-
-    // Find FAT partition with its name
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "vfs");
-    if (!partition) {
-        // log_e("Failed to find partition");
-        return false;
-    }
-
-    // erase all FAT partition
-    err = esp_flash_erase_region(NULL, partition->address, partition->size);
-    if (err != ESP_OK) {
-        // log_e("Failed to erase partition: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    // Find FAT partition with its name
-    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "sys");
-    if (!partition) {
-        // log_e("Failed to find partition");
-        goto Exit;
-    }
-
-    // erase all FAT partition
-    err = esp_flash_erase_region(NULL, partition->address, partition->size);
-    if (err != ESP_OK) { return false; }
-Exit:
-    return true;
-}
-#endif
-/***************************************************************************************
-** Function name: setupSdCard
-** Description:   Start SD Card
-***************************************************************************************/
 bool setupSdCard() {
 #if !defined(SDM_SD) // fot Lilygo T-Display S3 with lilygo shield
 #if defined(USE_SD_MMC) && defined(PIN_SD_CLK) && defined(PIN_SD_CMD) && defined(PIN_SD_D0)
@@ -87,7 +31,7 @@ bool setupSdCard() {
     if (!SDM.begin(_cs)) // https://github.com/Bodmer/TFT_eSPI/discussions/2420
 #elif defined(HEADLESS)
     if (_sck == 0 && _miso == 0 && _mosi == 0 && _cs == 0) {
-        Serial.println("SdCard pins not set");
+        launcherConsolePrintln("SdCard pins not set");
         return false;
     }
 
@@ -109,11 +53,11 @@ bool setupSdCard() {
 #endif
     {
         // sdcardSPI.end(); // Closes SPI connections and release pin header.
-        Serial.println("Failed to mount SDCARD");
+        launcherConsolePrintln("Failed to mount SDCARD");
         sdcardMounted = false;
         return false;
     } else {
-        Serial.println("SDCARD mounted successfully");
+        launcherConsolePrintln("SDCARD mounted successfully");
         sdcardMounted = true;
         return true;
     }
@@ -140,15 +84,14 @@ bool deleteFromSd(String path) {
     bool success = true;
 
     bool isDir;
-    String fileName = dir.getNextFileName(&isDir);
-    while (fileName != "") {
-        String fullPath = path + "/" + fileName;
+    String fullPath = dir.getNextFileName(&isDir);
+    while (fullPath != "") {
         if (isDir) {
             success &= deleteFromSd(fullPath);
         } else {
             success &= SDM.remove(fullPath.c_str());
         }
-        fileName = dir.getNextFileName(&isDir);
+        fullPath = dir.getNextFileName(&isDir);
     }
 
     dir.close();
@@ -195,6 +138,7 @@ bool copyFile(String path) {
         return true;
     } else {
         displayRedStripe("Cannot copy Folder");
+        launcherDelayMs(2000);
         file.close();
         return false;
     }
@@ -264,6 +208,7 @@ bool createFolder(String path) {
     if (path != "/") path += "/";
     if (!SDM.mkdir(path + foldername)) {
         displayRedStripe("Couldn't create folder");
+        launcherDelayMs(2000);
         return false;
     }
     return true;
@@ -378,8 +323,8 @@ RESTART:
 #ifndef E_PAPER_DISPLAY
     LongPress = true;
     SelPress = true; // it was just pressed
-    LongPressTmp = millis();
-    while (millis() - LongPressTmp < 300 && SelPress) {
+    LongPressTmp = launcherMillis();
+    while (launcherMillis() - LongPressTmp < 300 && SelPress) {
         check(AnyKeyPress);
         vTaskDelay(20 / portTICK_PERIOD_MS);
     }
@@ -397,7 +342,9 @@ RESTART:
         if (!LongPressDetected) {
             PreFolder = Folder;
             Folder = fileToUse;
-            Serial.printf("Going : Folder    = %s\nPreFolder = %s\n", Folder, PreFolder);
+            launcherConsolePrintf(
+                "Going : Folder    = %s\nPreFolder = %s\n", Folder.c_str(), PreFolder.c_str()
+            );
             goto RESTART;
         }
 
@@ -431,7 +378,9 @@ RESTART:
             if (PreFolder != "/") PreFolder = PreFolder.substring(0, PreFolder.lastIndexOf('/'));
             if (PreFolder == "") PreFolder = "/";
             if (_Folder == PreFolder) returnToMenu = true;
-            Serial.printf("Backing: Folder    = %s\nPreFolder = %s\n", Folder, PreFolder);
+            launcherConsolePrintf(
+                "Backing: Folder    = %s\nPreFolder = %s\n", Folder.c_str(), PreFolder.c_str()
+            );
         }
     } else {
         std::vector<Option> opt = {
@@ -458,84 +407,254 @@ RESTART:
 ** Description:   this function performs the update
 ***************************************************************************************/
 bool performUpdate(Stream &updateSource, size_t updateSize, int command) {
-    // command = U_FAT_vfs = 300
-    // command = U_FAT_sys = 400
-    // command = U_SPIFFS = 100
-    // command = U_FLASH = 0
-
     bool success = false;
     tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
     progressHandler(0, 500);
 
     vTaskSuspend(xHandle);
-    if (Update.begin(updateSize, command)) {
-        int written = 0;
-        uint8_t buf[1024];
-        int bytesRead;
-
-        prog_handler = 0; // Install flash update
-        if (command == U_SPIFFS || command == U_FAT_vfs || command == U_FAT_sys)
-            prog_handler = 1; // Install flash update
+    LauncherUpdateTarget target;
+    if (launcherUpdateTargetFromCommand(command, target)) {
+        prog_handler = target == LAUNCHER_UPDATE_APP ? 0 : 1;
         log_i("updateSize = %d", updateSize);
-        while (written < updateSize) { // updateSource.available() > 0 &&
-            bytesRead = updateSource.readBytes(buf, sizeof(buf));
-            written += Update.write(buf, bytesRead);
-            progressHandler(written, updateSize);
-        }
-        if (Update.end()) {
-            if (Update.isFinished()) {
-                log_i("Update successfully completed. Rebooting.");
-                displayRedStripe("Removing coredump (if any)...");
-                clearCoredump();
-                success = true;
-            } else log_i("Update not finished? Something went wrong!");
+        if (launcherUpdateStream(updateSource, updateSize, target, progressHandler) &&
+            launcherUpdateIsFinished()) {
+            log_i("Update successfully completed. Rebooting.");
+            displayRedStripe("Post Install Cleanup");
+            launcherClearCoredump();
+            success = true;
         } else {
-            log_i("Error Occurred. Error #: %s", String(Update.getError()));
+            log_i("Error Occurred. Error #: %d", launcherUpdateLastError());
         }
     } else {
-        uint8_t error = Update.getError();
+        uint8_t error = launcherUpdateLastError();
         displayRedStripe("E:" + String(error) + "-Wrong Partition Scheme");
-        delay(2500);
+        launcherDelayMs(2500);
     }
     vTaskResume(xHandle);
     return success;
 }
+static String installedAppNameFromPath(const String &path) { return launcherAppNameFromFile(path); }
 
-static String installedAppNameFromPath(const String &path) {
-    int slash = path.lastIndexOf('/');
-    String fileName = slash >= 0 ? path.substring(slash + 1) : path;
-    int dot = fileName.lastIndexOf('.');
-    if (dot > 0) fileName = fileName.substring(0, dot);
-    return fileName;
+static bool flashRawFromSd(
+    File &file, uint32_t sourceOffset, size_t imageSize, const LauncherPartitionEntry &target, bool appImage
+) {
+    if (!file.seek(sourceOffset)) return false;
+    progressHandler(0, imageSize);
+    if (!launcherRawUpdateBegin(target.offset, target.size, imageSize, appImage)) return false;
+
+    constexpr size_t bufferSize = 4096;
+    std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[bufferSize]);
+    if (!buf) {
+        launcherRawUpdateEnd();
+        return false;
+    }
+
+    size_t written = 0;
+    while (written < imageSize) {
+        size_t toRead = min(bufferSize, imageSize - written);
+        int bytesRead = file.readBytes(reinterpret_cast<char *>(buf.get()), toRead);
+        if (bytesRead <= 0) {
+            launcherRawUpdateEnd();
+            return false;
+        }
+        if (launcherRawUpdateWrite(buf.get(), bytesRead) != static_cast<size_t>(bytesRead)) return false;
+        written += bytesRead;
+        progressHandler(written, imageSize);
+        launcherDelayMs(1);
+    }
+    return launcherRawUpdateEnd();
 }
 
-/***************************************************************************************
- ** Function name: clearCoredump
- ** Description:   As some programs may generate core dumps,
-                   and others try to report them thinking that they wrote it,
-                   this function will clear it to avoid confusion.
-****************************************************************************************/
-bool clearCoredump() {
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "coredump");
-    Serial.printf("Coredump partition address: 0x%08X\n", partition ? partition->address : 0);
-    if (!partition) {
-        Serial.println("Failed to find coredump partition");
-        log_e("Failed to find coredump partition");
-        return false;
-    }
-    log_i("Erasing coredump partition at address 0x%08X, size %d bytes", partition->address, partition->size);
+static bool readSdBytes(File &file, uint32_t offset, void *buffer, size_t len) {
+    if (!file.seek(offset)) return false;
+    return file.readBytes(reinterpret_cast<char *>(buffer), len) == len;
+}
 
-    // erase all coredump partition
-    esp_err_t err = esp_flash_erase_region(NULL, partition->address, partition->size);
-    if (err != ESP_OK) {
-        Serial.println("Failed to erase coredump partition");
-        log_e("Failed to erase coredump partition: %s", esp_err_to_name(err));
+static uint32_t readLe32(const uint8_t *bytes) {
+    return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
+           (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
+}
+
+static String readPartitionLabel(const uint8_t *entry) {
+    char label[17] = {0};
+    memcpy(label, entry + 12, 16);
+    label[16] = '\0';
+    return String(label);
+}
+
+static uint32_t
+boundedSdPartitionPayload(File &file, uint32_t offset, uint32_t declaredSize, uint32_t maxSize) {
+    if (offset == 0 || file.size() <= offset || declaredSize == 0) return 0;
+    uint32_t availableSize = file.size() - offset;
+    return launcherPartitionBoundedPayloadSize(declaredSize, 0, maxSize, availableSize);
+}
+
+static bool measureSdEspImage(File &file, uint32_t imageOffset, uint32_t &imageSize) {
+    esp_image_header_t header;
+    if (!readSdBytes(file, imageOffset, &header, sizeof(header))) return false;
+    if (header.magic != ESP_IMAGE_HEADER_MAGIC || header.segment_count == 0 ||
+        header.segment_count > ESP_IMAGE_MAX_SEGMENTS) {
         return false;
     }
-    Serial.println("Coredump partition cleared successfully");
-    log_e("Coredump partition cleared successfully");
+
+    uint32_t cursor = imageOffset + sizeof(header);
+    const uint32_t fileSize = file.size();
+    if (cursor > fileSize) return false;
+
+    for (uint8_t i = 0; i < header.segment_count; ++i) {
+        uint8_t segmentHeader[sizeof(esp_image_segment_header_t)];
+        if (!readSdBytes(file, cursor, segmentHeader, sizeof(segmentHeader))) return false;
+        const uint32_t segmentSize = readLe32(segmentHeader + 4);
+        cursor += sizeof(segmentHeader);
+        if (segmentSize > fileSize || cursor > fileSize - segmentSize) return false;
+        cursor += segmentSize;
+    }
+
+    uint32_t end = launcherAlignUp(cursor, 16) + 1;
+    if (header.hash_appended) end += ESP_IMAGE_HASH_LEN;
+    end = launcherAlignUp(end, 16);
+    if (end <= imageOffset || end > fileSize) return false;
+
+    imageSize = end - imageOffset;
     return true;
+}
+
+static uint32_t effectiveSdAppSize(File &file, uint32_t appOffset, uint32_t fallbackSize) {
+    uint32_t measuredSize = 0;
+    if (measureSdEspImage(file, appOffset, measuredSize)) {
+        if (fallbackSize == 0 || measuredSize < fallbackSize) {
+            launcherConsolePrintf(
+                "Measured SD app image at 0x%06X: 0x%06X (%u bytes), fallback was 0x%06X\n",
+                appOffset,
+                measuredSize,
+                measuredSize,
+                fallbackSize
+            );
+            return measuredSize;
+        }
+    }
+    return fallbackSize;
+}
+
+static bool installFromSdDynamic(
+    File &file, const String &path, uint32_t appSize, uint32_t appOffset, bool spiffs, uint32_t spiffsOffset,
+    uint32_t spiffsSize, uint32_t spiffsCopySize, std::vector<LauncherInstallFatPartition> &fatPartitions
+) {
+    String error;
+    LauncherPartitionTable table;
+    if (!launcherPartitionReadCurrent(table, &error)) {
+        displayRedStripe(error.length() ? error : "Partition read failed");
+        launcherDelayMs(2000);
+        return false;
+    }
+
+    if (appSize == 0 || appOffset + appSize > file.size()) {
+        displayRedStripe("Invalid app image");
+        launcherDelayMs(2000);
+        return false;
+    }
+
+    String appLabel = launcherPartitionNextAppLabel(table, installedAppNameFromPath(path));
+    LauncherPartitionEntry appEntry;
+    LauncherPartitionEntry spiffsEntry;
+    bool hasSpiffsEntry = false;
+
+    if (!launcherSelectInstallLayout(
+            table,
+            appSize,
+            appLabel,
+            spiffs,
+            spiffsSize,
+            fatPartitions,
+            appEntry,
+            spiffsEntry,
+            hasSpiffsEntry,
+            error
+        )) {
+        launcherConsolePrintf("SD install layout failed: %s\n", error.c_str());
+        displayRedStripe(error.length() ? error : "No install space");
+        launcherDelayMs(2000);
+        return false;
+    }
+    if (!launcherPartitionValidate(table, &error)) {
+        displayRedStripe(error.length() ? error : "Invalid table");
+        launcherDelayMs(2000);
+        return false;
+    }
+
+    vTaskSuspend(xHandle);
+    bool success = false;
+    displayRedStripe("Installing APP");
+    prog_handler = 0;
+    if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
+        displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    if (hasSpiffsEntry && spiffsCopySize > 0) {
+        const uint32_t copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
+        displayRedStripe("Installing SPIFFS");
+        prog_handler = 1;
+        if (!flashRawFromSd(file, spiffsOffset, copySize, spiffsEntry, false)) {
+            displayRedStripe(String("SPIFFS: ") + launcherUpdateLastErrorName());
+            launcherDelayMs(2000);
+            goto DONE;
+        }
+    }
+
+    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
+        if (!fatPartition.hasEntry || fatPartition.copySize == 0) continue;
+        displayRedStripe(String("Installing ") + fatPartition.label);
+        prog_handler = 1;
+        if (!flashRawFromSd(
+                file, fatPartition.sourceOffset, fatPartition.copySize, fatPartition.entry, false
+            )) {
+            displayRedStripe(String("FAT: ") + launcherUpdateLastErrorName());
+            launcherDelayMs(2000);
+            goto DONE;
+        }
+    }
+
+    displayRedStripe("Writing table");
+    if (!launcherPartitionWriteGeneratedTable(table, &error)) {
+        displayRedStripe(error.length() ? error : "Table failed");
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    displayRedStripe("Setting boot");
+    if (!launcherPartitionSetOtaBoot(table, appEntry.subtype, &error)) {
+        displayRedStripe(error.length() ? error : "Boot failed");
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    {
+        String installedLabel = String(appEntry.label);
+        for (const LauncherAppMetadata &registeredApp : launcherLoadAppRegistry()) {
+            if (!launcherPartitionFindByLabel(table, registeredApp.label.c_str())) {
+                launcherRemoveAppMetadata(registeredApp.label.c_str());
+            }
+        }
+
+        LauncherAppMetadata metadata;
+        metadata.name = installedAppNameFromPath(path);
+        if (metadata.name.isEmpty()) metadata.name = installedLabel;
+        metadata.label = installedLabel;
+        for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
+            if (fatPartition.hasEntry) metadata.fatLabels.push_back(String(fatPartition.entry.label));
+        }
+        launcherSaveAppMetadata(metadata);
+        lastInstalledApp = metadata.name;
+        saveIntoNVS();
+    }
+
+    success = true;
+
+DONE:
+    vTaskResume(xHandle);
+    return success;
 }
 
 /***************************************************************************************
@@ -543,103 +662,121 @@ bool clearCoredump() {
 ** Description:   this function analyse the .bin and calls performUpdate
 ***************************************************************************************/
 void updateFromSD(String path) {
-    uint8_t firstThreeBytes[16];
+    uint8_t partitionEntry[LAUNCHER_PARTITION_ENTRY_SIZE];
     uint32_t spiffs_offset = 0;
     uint32_t spiffs_size = 0;
+    uint32_t spiffs_copy_size = 0;
     uint32_t app_size = 0;
     uint32_t app_offset = 0;
     bool spiffs = false;
-    uint32_t fat_offset_sys = 0;
-    uint32_t fat_size_sys = 0;
-    uint32_t fat_offset_vfs = 0;
-    uint32_t fat_size_vfs = 0;
-    bool fat = false;
+    std::vector<LauncherInstallFatPartition> fatPartitions;
 
     File file = SDM.open(path);
 
     if (!file) goto Exit;
     if (!file.seek(0x8000)) goto Exit;
-    file.read(firstThreeBytes, 16);
+    file.read(partitionEntry, 16);
 
-    if (firstThreeBytes[0] != 0xAA || firstThreeBytes[1] != 0x50 || firstThreeBytes[2] != 0x01) {
-        if (!file.seek(0x0)) goto Exit;
-        if (!performUpdate(file, file.size(), U_FLASH)) goto Exit;
-        lastInstalledApp = installedAppNameFromPath(path);
-        saveIntoNVS();
+    if (partitionEntry[0] != 0xAA || partitionEntry[1] != 0x50 || partitionEntry[2] != 0x01) {
+        app_size = effectiveSdAppSize(file, 0, file.size());
+        std::vector<LauncherInstallFatPartition> fatPartitions;
+        if (!installFromSdDynamic(file, path, app_size, 0, false, 0, 0, 0, fatPartitions)) { goto Exit; }
         file.close();
         tft->fillScreen(BGCOLOR);
         FREE_TFT
         reboot();
     } else {
         if (!file.seek(0x8000)) goto Exit;
-        for (int i = 0; i < 0x0A0; i += 0x20) {
+        for (int i = 0; i < LAUNCHER_PARTITION_TABLE_SIZE; i += LAUNCHER_PARTITION_ENTRY_SIZE) {
             if (!file.seek(0x8000 + i)) goto Exit;
-            file.read(firstThreeBytes, 16);
+            if (file.read(partitionEntry, LAUNCHER_PARTITION_ENTRY_SIZE) != LAUNCHER_PARTITION_ENTRY_SIZE)
+                goto Exit;
+            if (partitionEntry[0] == 0xEB && partitionEntry[1] == 0xEB) break;
+            if (partitionEntry[0] == 0xFF && partitionEntry[1] == 0xFF) break;
 
-            if ((firstThreeBytes[0x03] == 0x00 || firstThreeBytes[0x03] == 0x10 ||
-                 firstThreeBytes[0x03] == 0x20) &&
+            if (partitionEntry[0x02] == 0x00 &&
+                (partitionEntry[0x03] == 0x00 || partitionEntry[0x03] == 0x10 ||
+                 partitionEntry[0x03] == 0x20) &&
                 app_size == 0) {
-                app_size = (firstThreeBytes[0x0A] << 16) | (firstThreeBytes[0x0B] << 8) | 0x00;
-                app_offset = (firstThreeBytes[0x06] << 16) | (firstThreeBytes[0x07] << 8) | 0x00;
-                if (file.size() < (app_size + app_offset)) app_size = file.size() - app_offset;
-                else if (app_size > MAX_APP) app_size = MAX_APP;
-            }
-
-            if (firstThreeBytes[3] == 0x82) {
-                spiffs_offset =
-                    (firstThreeBytes[0x06] << 16) | (firstThreeBytes[0x07] << 8) | firstThreeBytes[0x08];
-                spiffs_size = (firstThreeBytes[0x0A] << 16) | (firstThreeBytes[0x0B] << 8) | 0x00;
-                if (file.size() < spiffs_offset) spiffs = false;
-                else if (spiffs_size > MAX_SPIFFS) {
-                    spiffs_size = MAX_SPIFFS;
-                    spiffs = true;
+                uint32_t declared_app_size = readLe32(partitionEntry + 0x08);
+                app_offset = readLe32(partitionEntry + 0x04);
+                if (file.size() < (declared_app_size + app_offset)) {
+                    app_size = file.size() - app_offset;
+                    launcherConsolePrintf(
+                        "Using SD app tail size at 0x%06X: 0x%06X (%u bytes), declared partition was "
+                        "0x%06X\n",
+                        app_offset,
+                        app_size,
+                        app_size,
+                        declared_app_size
+                    );
+                } else {
+                    app_size = declared_app_size;
+                    app_size = effectiveSdAppSize(file, app_offset, app_size);
                 }
-                if (spiffs && file.size() < (spiffs_offset + spiffs_size))
-                    spiffs_size = file.size() - spiffs_offset;
             }
 
-            if (firstThreeBytes[3] == 0x81 && firstThreeBytes[0x0C] == 0x73) {
-                fat_offset_sys =
-                    (firstThreeBytes[0x06] << 16) | (firstThreeBytes[0x07] << 8) | firstThreeBytes[0x08];
-                fat_size_sys = (firstThreeBytes[0x0A] << 16) | (firstThreeBytes[0x0B] << 8) | 0x00;
-                if (file.size() < fat_offset_sys) fat = false;
-                else fat = true;
-                if (fat && fat_size_sys > MAX_FAT_sys) fat_size_sys = MAX_FAT_sys;
-                if (fat && file.size() < (fat_offset_sys + fat_size_sys))
-                    fat_size_sys = file.size() - fat_offset_sys;
+            if (partitionEntry[0x02] == 0x01 && partitionEntry[3] == 0x82) {
+                spiffs_offset = readLe32(partitionEntry + 0x04);
+                const uint32_t declaredSpiffsSize = readLe32(partitionEntry + 0x08);
+                spiffs_size = declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
+                                  ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
+                                  : LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                spiffs_copy_size = boundedSdPartitionPayload(
+                    file,
+                    spiffs_offset,
+                    declaredSpiffsSize,
+                    spiffs_size == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE ? declaredSpiffsSize
+                                                                              : spiffs_size
+                );
+                spiffs = true;
+                if (file.size() < spiffs_offset) {
+                    spiffs_copy_size = 0;
+                    launcherConsolePrintf(
+                        "Found SPIFFS table entry without payload: create 0x%06X, copy 0\n", spiffs_size
+                    );
+                }
             }
 
-            if (firstThreeBytes[3] == 0x81 && firstThreeBytes[0x0C] == 0x76) {
-                fat_offset_vfs =
-                    (firstThreeBytes[0x06] << 16) | (firstThreeBytes[0x07] << 8) | firstThreeBytes[0x08];
-                fat_size_vfs = (firstThreeBytes[0x0A] << 16) | (firstThreeBytes[0x0B] << 8) | 0x00;
-                if (file.size() < fat_offset_vfs) fat = false;
-                else fat = true;
-                if (fat && fat_size_vfs > MAX_FAT_vfs) fat_size_vfs = MAX_FAT_vfs;
-                if (fat && file.size() < (fat_offset_vfs + fat_size_vfs))
-                    fat_size_vfs = file.size() - fat_offset_vfs;
+            if (partitionEntry[0x02] == 0x01 && partitionEntry[3] == 0x81) {
+                LauncherInstallFatPartition fatPartition;
+                fatPartition.label = readPartitionLabel(partitionEntry);
+                uint32_t declaredSize = readLe32(partitionEntry + 0x08);
+                fatPartition.sourceOffset = readLe32(partitionEntry + 0x04);
+                if (fatPartition.label.isEmpty()) {
+                    fatPartition.label = fatPartitions.empty() ? "sys" : "vfs";
+                }
+                uint32_t offset = fatPartition.sourceOffset;
+                uint32_t availableSize = offset != 0 && file.size() > offset ? file.size() - offset : 0;
+                LauncherPartitionPayloadPlan payload = launcherPartitionFatPayloadPlan(
+                    fatPartition.label.c_str(), declaredSize, 0, availableSize
+                );
+                fatPartition.partitionSize = payload.partitionSize;
+                fatPartition.copySize = payload.copySize;
+                fatPartitions.push_back(fatPartition);
+                launcherConsolePrintf(
+                    "Found FAT %s at 0x%06X: create 0x%06X, copy 0x%06X of declared 0x%06X\n",
+                    fatPartition.label.c_str(),
+                    offset,
+                    payload.partitionSize,
+                    payload.copySize,
+                    declaredSize
+                );
             }
         }
 
         // log_i("Appsize: %d", app_size);
         // log_i("Spiffsize: %d", spiffs_size);
-        // log_i("FATsize[0]: %d - max: %d at offset: %d", fat_size_sys, MAX_FAT_sys, fat_offset_sys);
-        // log_i("FATsize[1]: %d - max: %d at offset: %d", fat_size_vfs, MAX_FAT_vfs, fat_offset_vfs);
-        // log_i("FAT: %d", fat);
+        // log_i("FAT count: %d", fatPartitions.size());
         // log_i("------------------------");
 
-        if (!fat) {
-            fat_size_sys = 0;
-            fat_size_vfs = 0;
-            fat_offset_sys = 0;
-            fat_offset_vfs = 0;
-        }
-
         prog_handler = 0; // Install flash update
-        if (spiffs && askSpiffs) {
+        if (askSpiffs == false) spiffs_copy_size = 0;
+        if (spiffs && askSpiffs && spiffs_copy_size > 0) {
+            bool copySpiffs = true;
             options = {
-                {"SPIFFS No",  [&]() { spiffs = false; }     },
-                {"SPIFFS Yes", [&]() { spiffs = true; }      },
+                {"SPIFFS No",  [&]() { copySpiffs = false; } },
+                {"SPIFFS Yes", [&]() { copySpiffs = true; }  },
                 {"Cancel",     [&]() { returnToMenu = true; }}
             };
             if (loopOptions(options) < 0 || returnToMenu) {
@@ -647,109 +784,53 @@ void updateFromSD(String path) {
                 tft->fillScreen(BGCOLOR);
                 return;
             }
+            if (!copySpiffs) spiffs_copy_size = 0;
             tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
         }
 
         log_i("Appsize: %d", app_size);
         log_i("Spiffsize: %d", spiffs_size);
-        log_i("FATsize[0]: %d - max: %d at offset: %d", fat_size_sys, MAX_FAT_sys, fat_offset_sys);
-        log_i("FATsize[1]: %d - max: %d at offset: %d", fat_size_vfs, MAX_FAT_vfs, fat_offset_vfs);
+        log_i("FAT count: %d", fatPartitions.size());
 
-        if (!file.seek(app_offset)) goto Exit;
-        if (!performUpdate(file, app_size, U_FLASH)) goto Exit;
-
-        prog_handler = 1; // Install SPIFFS update
-        if (spiffs) {
-            if (!file.seek(spiffs_offset)) goto Exit;
-            if (!performUpdate(file, spiffs_size, U_SPIFFS)) goto Exit;
+        if (!installFromSdDynamic(
+                file,
+                path,
+                app_size,
+                app_offset,
+                spiffs,
+                spiffs_offset,
+                spiffs_size,
+                spiffs_copy_size,
+                fatPartitions
+            )) {
+            goto Exit;
         }
-
-        if (fat) {
-            displayRedStripe("Formating FAT");
-            if (fat_size_sys > 0) {
-                if (!file.seek(fat_offset_sys)) goto Exit;
-                if (!performFATUpdate(file, fat_size_sys, "sys")) goto Exit;
-                else displayRedStripe("sys FAT complete");
-            }
-            displayRedStripe("Formating FAT");
-            if (fat_size_vfs > 0) {
-                if (!file.seek(fat_offset_vfs)) goto Exit;
-                if (!performFATUpdate(file, fat_size_vfs, "vfs")) goto Exit;
-                else displayRedStripe("vfs FAT complete");
-            }
-        }
-        lastInstalledApp = installedAppNameFromPath(path);
-        saveIntoNVS();
         displayRedStripe("Complete");
-        delay(1000);
+        launcherDelayMs(1000);
         FREE_TFT
         reboot();
     }
 Exit:
     displayRedStripe("Update Error.");
-    delay(2500);
+    launcherDelayMs(2500);
 }
 
 /***************************************************************************************
 ** Function name: performFATUpdate
 ** Description:   this function performs the update
 ***************************************************************************************/
-uint8_t buffer2[1024];
-
 bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label) {
-    // Preencher o buffer com 0xFF
-    memset(buffer2, 0x00, sizeof(buffer2));
-    const esp_partition_t *partition;
-    esp_err_t error;
-    size_t paroffset = 0;
-    int written = 0;
-    int bytesRead = 0;
-    error = esp_flash_set_chip_write_protect(NULL, false);
-
-    if (error != ESP_OK) {
-        log_i("Protection error: %d", error);
-        // return false;
-    }
-
-    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, label);
-    if (!partition) {
-        error = UPDATE_ERROR_NO_PARTITION;
-        return false;
-    }
-
-    log_i("Start updating: %s", partition->label);
-    paroffset = partition->address;
-    log_i("Erasing updating: %s from: %d with size: %d", label, paroffset, updateSize);
-
-    error = esp_flash_erase_region(NULL, partition->address, updateSize);
-    if (error != ESP_OK) {
-        log_i("Erase error %d", error);
-        return false;
-    }
-
     progressHandler(0, 500);
     displayRedStripe("Updating FAT");
-    log_i("Updating updating: %s", label);
+    log_i("Updating FAT partition: %s", label);
 
-    while (written < updateSize) { // updateSource.available() &&
-        bytesRead = updateSource.readBytes(buffer2, sizeof(buffer2));
-        error = esp_flash_write(NULL, buffer2, paroffset, bytesRead);
-        if (error != ESP_OK) {
-            log_i("[FLASH] Failed to write to flash (0x%x)", error);
-            return false;
-        }
-        if (bytesRead == 0) break; // Evitar loop infinito se não houver bytes para ler
-        paroffset += bytesRead;
-        written += bytesRead;
-        progressHandler(written, updateSize);
-    }
-
-    if (written == updateSize) {
-        log_i("Success updating %s", label);
-    } else {
+    LauncherUpdateTarget target =
+        strcmp(label, "sys") == 0 ? LAUNCHER_UPDATE_FAT_SYS : LAUNCHER_UPDATE_FAT_VFS;
+    if (!launcherUpdateStream(updateSource, updateSize, target, progressHandler)) {
         log_i("FAIL updating %s", label);
         return false;
     }
 
+    log_i("Success updating %s", label);
     return true;
 }

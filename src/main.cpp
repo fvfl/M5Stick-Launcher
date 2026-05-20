@@ -1,14 +1,13 @@
 #include <globals.h>
 
-#include <HTTPClient.h>
-#include <WiFi.h>
-// #include <M5-HTTPUpdate.h>
 #if defined(HEADLESS)
 #include <VectorDisplay.h>
 #else
 #include <tft.h>
 #endif
 #include "esp_ota_ops.h"
+#include "idf/idf_wifi.h"
+#include "idf/launcher_platform.h"
 #include "nvs_flash.h"
 #if CONFIG_IDF_TARGET_ESP32P4
 #include "nvs.h"
@@ -22,6 +21,10 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#if defined(SET_LOOP_TASK_STACK_SIZE)
+SET_LOOP_TASK_STACK_SIZE(16384)
+#endif
 
 // Public Globals
 uint32_t MAX_SPIFFS = 0;
@@ -70,15 +73,15 @@ volatile uint16_t tftHeight = TFT_WIDTH;
 volatile uint16_t tftWidth = TFT_HEIGHT;
 TaskHandle_t xHandle;
 void __attribute__((weak)) taskInputHandler(void *parameter) {
-    auto timer = millis();
+    auto timer = launcherMillis();
     while (true) {
         checkPowerSaveTime();
-        if (!AnyKeyPress || millis() - timer > 75) {
+        if (!AnyKeyPress || launcherMillis() - timer > 75) {
             resetGlobals();
 #ifndef DONT_USE_INPUT_TASK
             InputHandler();
 #endif
-            timer = millis();
+            timer = launcherMillis();
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -121,6 +124,7 @@ std::vector<Option> options;
 const int bufSize = 1024;
 uint8_t buff[1024] = {0};
 
+#include "app_registry.h"
 #include "display.h"
 #include "massStorage.h"
 #include "mykeyboard.h"
@@ -147,7 +151,7 @@ void get_partition_sizes() {
         }
         it = esp_partition_next(it);
     }
-    esp_partition_iterator_release(it);
+    if (it != NULL) esp_partition_iterator_release(it);
 
     // Iterar sobre as partições do tipo DATA
     it = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
@@ -164,7 +168,7 @@ void get_partition_sizes() {
         }
         it = esp_partition_next(it);
     }
-    esp_partition_iterator_release(it);
+    if (it != NULL) esp_partition_iterator_release(it);
     if (MAX_SPIFFS == 0 && askSpiffs) askSpiffs = false;
 
     // Logar os tamanhos das partições
@@ -172,54 +176,6 @@ void get_partition_sizes() {
     ESP_LOGI("Partition Sizes", "MAX_SPIFFS: %d", MAX_SPIFFS);
     ESP_LOGI("Partition Sizes", "MAX_FAT_sys: %d", MAX_FAT_sys);
     ESP_LOGI("Partition Sizes", "MAX_FAT_vfs: %d", MAX_FAT_vfs);
-
-    // #if defined(HEADLESS)
-    //     // This piece of the code is supposed to handle the absence of APP partition tables
-    //     // if it doent's find App partition, means that the ESP32 can be 4, 8 or 16Mb, that must be set in
-    //     platformio.ini
-    //     // and the partition size will be discovered using esp_flash_get_physical_size function
-    //     uint32_t __size;  // Variable to store the flash size from flash ID
-    //     //esp_err_t result = esp_flash_get_physical_size(NULL,&__size); // This guy reads the FlashID size,
-    //     won't work for now, that is the true size of the chip
-    //                                                                     // if flashing with a 4Mb
-    //                                                                     bootloader and installing 8Mb
-    //                                                                     partition scheme, it breakes
-    //                                                                     (bootloop) probably in this
-    //                                                                     function:
-    //                                                                     //
-    //                                                                     https://github.com/bmorcelli/esp-idf/blob/621a7fa1208ce44dbf1e0038c43587a1dc362319/components/spi_flash/esp_flash_spi_init.c#L282
-    //                                                                     // If i set a chip size greater
-    //                                                                     than the one I have, I fall in this
-    //                                                                     error:
-    //                                                                     //
-    //                                                                     https://github.com/bmorcelli/esp-idf/blob/621a7fa1208ce44dbf1e0038c43587a1dc362319/components/spi_flash/esp_flash_spi_init.c#L317
-    //                                                                     // maybe commenting it in a custom
-    //                                                                     fw can solve it, but will add lots
-    //                                                                     of issues due to size changings and
-    //                                                                     sets in this same function
-
-    //     esp_err_t result = esp_flash_get_size(NULL,&__size);
-    //     if (result == ESP_OK) {
-    //         Serial.print("Flash size: ");
-    //         Serial.println(__size, HEX);  // Prints value in hex
-    //     } else {
-    //         Serial.print("Error: ");
-    //         Serial.println(result);  // Prints the errors, if any
-    //     }
-    //     if(MAX_APP==0) {
-    //       // Makes the arrangements
-
-    //       //partitionSetter(def_part, sizeof(def_part));
-    //       if(__size==0x400000) { partitionSetter(def_part, sizeof(def_part)); }
-    //       if(__size==0x800000) { partitionSetter(def_part8, sizeof(def_part8));}
-    //       if(__size==0x1000000) { partitionSetter(def_part16, sizeof(def_part16)); }
-    //       while(1) {
-    //         Serial.println("Turn Off and On again to apply partition changes.");
-    //         delay(2500);
-    //       }
-    //     }
-
-    //   #endif
 }
 /*********************************************************************
 **  Function: _setup_gpio()
@@ -245,9 +201,6 @@ void setup() {
     ensureM5StackUiFlowNVSDefaults();
 
 #if CONFIG_IDF_TARGET_ESP32P4
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    esp_ota_set_boot_partition(partition);
     esp_err_t nve;
     std::unique_ptr<nvs::NVSHandle> nvsHandle = nvs::open_nvs_handle("launcher", NVS_READWRITE, &nve);
     bool init = false;
@@ -270,8 +223,8 @@ void setup() {
 // Setup GPIOs and stuff
 #if defined(HEADLESS)
 #if LED > 0
-    pinMode(LED, OUTPUT); // Set pin to to recognize if launcher is starting or not, and connectiong or not
-    digitalWrite(LED, LED_ON); // keeps on until exit
+    launcherGpioOutput(LED);        // Set pin to recognize if launcher is starting or connecting
+    launcherGpioWrite(LED, LED_ON); // keeps on until exit
 #endif
 #endif
 
@@ -320,12 +273,6 @@ void setup() {
     partitionCrawler();
     // Checks the size of partitions and take actions to find the best options (in HEADLESS environment)
     get_partition_sizes();
-    // Checks if the fw in the OTA partition is valid. reading the firstByte looking for 0xE9
-    const esp_partition_t *ota_partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    uint8_t firstByte;
-    esp_partition_read(ota_partition, 0, &firstByte, 1);
-
     // Init post setup GPIO before SD Card initializes
     _post_setup_gpio();
 
@@ -349,14 +296,14 @@ void setup() {
     );
 
     // Start Bootscreen timer
-    int i = millis();
+    int i = launcherMillis();
     int j = 0;
     LongPress = true;
-    while (millis() < i + (5000 - bootToApp * 3000)) { // increased from 2500 to 5000
-        initDisplay();                                 // Inicia o display
+    while (launcherMillis() < i + (5000 - bootToApp * 3000)) { // increased from 2500 to 5000
+        initDisplay();                                         // Inicia o display
 
-        if (millis() > (i + j * 500)) { // Serial message each ~500ms
-            Serial.println("Press the button to enter the Launcher!");
+        if (launcherMillis() > (i + j * 500)) { // Serial message each ~500ms
+            launcherConsolePrintln("Press the button to enter the Launcher!");
             j++;
         }
 #if defined(HAS_TOUCH)
@@ -394,28 +341,19 @@ void setup() {
         if (check(AnyKeyPress))
 #endif
         {
-            if (!bootToApp) goto Launcher;
-            tft->fillScreen(BLACK);
-            FREE_TFT
-            reboot();
+            launcherBootInstalledAppOrShowMenu();
+            goto Launcher;
         }
     }
 
-    // If nothing is done, check if there are any app installed in the ota partition, if it does, restart
-    // device to start installed App.
-    if (firstByte == 0xE9) {
-        if (!bootToApp) goto Launcher;
-        tft->fillScreen(BLACK);
-        FREE_TFT
-        reboot();
-    } else goto Launcher;
+    goto Launcher;
 
 // If M5 or Enter button is pressed, continue from here
 Launcher:
     LongPress = false;
     tft->fillScreen(BGCOLOR);
 #if LED > 0 && defined(HEADLESS)
-    digitalWrite(LED, LED_ON ? LOW : HIGH); // turn off the LED
+    launcherGpioWrite(LED, LED_ON ? LOW : HIGH); // turn off the LED
 #endif
 }
 
@@ -471,11 +409,20 @@ void loop() {
                     tft->fillScreen(BGCOLOR);
                 } else {
                     displayRedStripe("Insert SD Card");
-                    delay(2000);
+                    launcherDelayMs(2000);
                 }
             }, sdcardMounted
         },
 #endif
+        {
+#if TFT_HEIGHT < 135
+         "PM"
+#else
+            "PMan"
+#endif
+            ,
+         "Partition Manager.", [=]() { partList(); }
+        },
         {
 #if TFT_HEIGHT < 135
          "CFG", "Change Settings.",
@@ -487,8 +434,23 @@ void loop() {
         }
     };
 
-    if (!lastInstalledApp.isEmpty()) {
-        menuItems.push_back({"APP", lastInstalledApp, [=]() { reboot(); }});
+    for (const LauncherAppMetadata &app : launcherListInstalledApps()) {
+        String appLabel = app.label;
+        String appName = app.name.isEmpty() ? app.label : app.name;
+        String appIcon = app.name.substring(0, 5);
+        appIcon.toUpperCase();
+        menuItems.push_back(
+            {appIcon,
+             appName,
+             [appLabel]() { launcherShowAppActions(appLabel.c_str()); },
+             true,
+             false,
+             0,
+             0,
+             0,
+             0,
+             ALCOLOR}
+        );
     }
 
 #if !defined(CARDPUTER)
@@ -524,7 +486,7 @@ void loop() {
             tft->display(false);
             if (first_loop) {
                 first_loop = false;
-                delay(350);
+                launcherDelayMs(350);
                 resetGlobals(); // avoid leaking command after menu is shown
             }
         }
@@ -548,7 +510,7 @@ void loop() {
 #endif
                     returnToMenu = false;
                     redraw = true;
-                    break;
+                    goto END;
                 }
                 i++;
             }
@@ -578,7 +540,7 @@ void loop() {
             pass_by = 0;
             returnToMenu = false;
             redraw = true;
-            break;
+            goto END;
         }
         checkReboot();
 #if defined(HAS_RESISTIVE_TOUCH)
@@ -587,17 +549,20 @@ void loop() {
             msg.trim();
 
             if (msg == "calibrate") {
-                Serial.println("Starting calibration..");
+                launcherConsolePrintln("Starting calibration..");
                 calibrateTouch();
             }
         }
 #endif
     }
+
+END:
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 #else
 void loop() { // Start SD card, If there's no SD Card installed, see if there's ssid saved on memory,
-    Serial.print(
+    launcherConsolePrint(
         "     _                            _               \n"
         "    | |                          | |              \n"
         "    | |     __ _ _   _ _ __   ___| |__   ___ _ __ \n"
@@ -614,52 +579,59 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
     );
 
     getConfigs();
-    Serial.println("Scanning networks...");
-    int nets = WiFi.scanNetworks();
+    launcherConsolePrintln("Scanning networks...");
+    std::vector<LauncherWifiAp> networks;
+    int nets = launcherWifiScan(networks);
     bool mode_ap = true;
 
     if (sdcardMounted) {
         JsonObject setting = settings[0];
         JsonArray WifiList = setting["wifi"].as<JsonArray>();
         for (int i = 0; i < nets; i++) {
+            String networkSsid = networks[i].ssid.c_str();
             for (auto wifientry : WifiList) {
-                Serial.println("Target: " + ssid + " Network: " + WiFi.SSID(i));
-                if (WiFi.SSID(i) == wifientry["ssid"].as<String>()) {
+                launcherConsolePrintf("Target: %s Network: %s\n", ssid.c_str(), networkSsid.c_str());
+                if (networkSsid == wifientry["ssid"].as<String>()) {
                     ssid = wifientry["ssid"].as<String>();
                     pwd = wifientry["pwd"].as<String>();
-                    WiFi.begin(ssid, pwd);
                     int count = 0;
-                    Serial.println("Connecting to " + ssid);
-                    while (WiFi.status() != WL_CONNECTED) {
+                    launcherConsolePrintf("Connecting to %s\n", ssid.c_str());
+                    bool connected = false;
+                    while (!connected) {
+                        connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
+                        if (connected) break;
                         vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
-                        digitalWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
+                        launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
-                        Serial.print(".");
+                        launcherConsolePrint(".");
                         count++;
                         if (count > 10) { // try for 5 seconds
                             break; // stops trying this network, will try the others, if there are some other
                                    // with same SSID
                         }
                     }
-                    if (WiFi.status() != WL_CONNECTED) { saveIntoNVS(); }
+                    if (!launcherWifiIsConnected()) { saveIntoNVS(); }
                 }
             }
         }
     } else if (ssid != "") { // will try to connect to a saved network
         for (int i = 0; i < nets; i++) {
-            Serial.println("Target: " + ssid + " Network: " + WiFi.SSID(i));
-            if (ssid == WiFi.SSID(i)) {
-                Serial.println("Network matches the SSID, starting connection\n");
-                WiFi.begin(ssid, pwd);
+            String networkSsid = networks[i].ssid.c_str();
+            launcherConsolePrintf("Target: %s Network: %s\n", ssid.c_str(), networkSsid.c_str());
+            if (ssid == networkSsid) {
+                launcherConsolePrintln("Network matches the SSID, starting connection\n");
                 int count = 0;
-                Serial.println("Connecting to " + ssid);
-                while (WiFi.status() != WL_CONNECTED) {
+                launcherConsolePrintf("Connecting to %s\n", ssid.c_str());
+                bool connected = false;
+                while (!connected) {
+                    connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
+                    if (connected) break;
                     vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
-                    digitalWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
+                    launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
-                    Serial.print(".");
+                    launcherConsolePrint(".");
                     count++;
                     if (count > 6) { // try for 3 seconds
                         break; // stops trying this network, will try the others, if there are some other with
@@ -669,7 +641,7 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
             }
         }
     } else {
-        Serial.println(
+        launcherConsolePrintln(
             "Couldn't find SD Card and SSID Saved,\n"
             "you can configure it on the WEB Ui,\n\n"
             "Starting the Launcher in Access point mode\n"
@@ -679,7 +651,7 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
     }
 
     // if there's no network information, open in Access Point Mode
-    if (WiFi.status() == WL_CONNECTED) mode_ap = false;
+    if (launcherWifiIsConnected()) mode_ap = false;
 
     startWebUi("", 0, mode_ap);
 

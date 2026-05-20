@@ -1,6 +1,6 @@
 #ifndef __KEYBOARD_H
 #define __KEYBOARD_H
-#include <Arduino.h>
+#include <WString.h>
 #include <globals.h>
 
 String keyboard(String mytext, int maxSize = 76, String msg = "Type your message:");

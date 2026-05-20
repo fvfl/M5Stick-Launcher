@@ -2,7 +2,7 @@
 #define __SD_FUNCTIONS_H
 #include <globals.h>
 
-#include <CustomUpdate.h>
+#include "idf/idf_update.h"
 #include <SPI.h>
 
 #include <FFat.h>
@@ -12,10 +12,7 @@
 #include <SD_MMC.h>
 #endif
 extern SPIClass sdcardSPI;
-bool eraseAppPartition();
-#ifndef PART_04MB
-bool eraseFAT();
-#endif
+
 bool setupSdCard();
 
 bool deleteFromSd(String path);
@@ -39,7 +36,5 @@ bool performUpdate(Stream &updateSource, size_t updateSize, int command);
 void updateFromSD(String path);
 
 bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label = "vfs");
-
-bool clearCoredump();
 
 #endif

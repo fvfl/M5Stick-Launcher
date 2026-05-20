@@ -1,6 +1,7 @@
+#include "idf/idf_wifi.h"
+#include "idf/launcher_platform.h"
 #include "powerSave.h"
 #include <M5Unified.h>
-#include <WiFi.h>
 #include <interface.h>
 
 /***************************************************************************************
@@ -11,13 +12,7 @@
 void _setup_gpio() {
 
     M5.begin();
-    WiFi.setPins(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST);
-    // Start hosted Wifi and do an async scan to trigger firmware loading and initialization of the WiFi
-    // subsystem
-    hostedInitWiFi(); // ESP-IDF function to initialize the WiFi driver in hosted mode
-    WiFi.setAutoReconnect(false);
-    WiFi.disconnect(false);
-    WiFi.scanNetworks(true);
+    launcherWifiInitHostedSdio(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST);
 }
 
 /***************************************************************************************
@@ -50,16 +45,16 @@ void _setBrightness(uint8_t brightval) { M5.Display.setBrightness(brightval); }
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
-    static long tm = millis();
-    if (millis() - tm > 200 || LongPress) {
+    static long tm = launcherMillis();
+    if (launcherMillis() - tm > 200 || LongPress) {
         M5.update();
         auto t = M5.Touch.getDetail();
         if (t.isPressed() || t.isHolding()) {
-            // Serial.printf("x1=%d, y1=%d, ", t.x, t.y);
-            tm = millis();
+            // launcherConsolePrintf("x1=%d, y1=%d, ", t.x, t.y);
+            tm = launcherMillis();
             if (!wakeUpScreen()) AnyKeyPress = true;
             else return;
-            // Serial.printf("x2=%d, y2=%d, rot=%d\n", t.x, t.y, rotation);
+            // launcherConsolePrintf("x2=%d, y2=%d, rot=%d\n", t.x, t.y, rotation);
 
             // Touch point global variable
             touchPoint.x = t.x;
@@ -140,7 +135,7 @@ static bool tab5_is_leap_year(uint16_t year_full) {
 void reboot() {
     auto &ioe = M5.getIOExpander(1);
     if (M5.Rtc.isEnabled()) {
-        Serial.println("reboot: RTC alarm");
+        launcherConsolePrintf("%s\n", String("reboot: RTC alarm").c_str());
         M5.Rtc.clearIRQ();
         auto now = M5.Rtc.getDateTime();
 
@@ -186,8 +181,8 @@ void reboot() {
     }
     for (int i = 0; i < 3; ++i) {
         ioe.digitalWrite(4, HIGH);
-        delay(100);
+        launcherDelayMs(100);
         ioe.digitalWrite(4, LOW);
-        delay(100);
+        launcherDelayMs(100);
     }
 }

@@ -1,19 +1,18 @@
 #ifndef __ONLINELAUNCHER_H
 #define __ONLINELAUNCHER_H
 
+#include "partition_install_layout.h"
 #include <ArduinoJson.h>
-#include <HTTPClient.h>
-#include <M5-HTTPUpdate.h>
 #include <SPIFFS.h>
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
 
 bool installExtFirmware(String url);
 
 void installFirmware(
     String fid, String file, uint32_t app_size, uint32_t app_offset, bool spiffs, uint32_t spiffs_offset,
-    uint32_t spiffs_size, bool nb, bool fat, uint32_t fat_offset[2], uint32_t fat_size[2], String installedName = ""
+    uint32_t spiffs_size, bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions,
+    String installedName = ""
 );
+void installFirmwareFromManifest(String fid, String version, String installedName = "");
 
 void connectWifi();
 
@@ -29,8 +28,6 @@ bool GetJsonFromLauncherHub(
 
 JsonDocument getVersionInfo(String fid);
 
-bool installFAT_OTA(WiFiClientSecure *client, String file, uint32_t offset, uint32_t size, const char *label);
-
-bool clearOnlineCoredump();
+bool installFAT_OTA(String file, uint32_t offset, uint32_t size, const char *label);
 
 #endif

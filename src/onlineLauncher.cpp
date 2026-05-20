@@ -1,9 +1,17 @@
 #include "onlineLauncher.h"
+#include "app_registry.h"
 #include "display.h"
+#include "idf/idf_http_client.h"
+#include "idf/idf_update.h"
+#include "idf/idf_wifi.h"
+#include "idf/launcher_platform.h"
 #include "mykeyboard.h"
+#include "partition_install_layout.h"
+#include "partition_table_model.h"
 #include "powerSave.h"
 #include "sd_functions.h"
 #include "settings.h"
+#include <esp_ota_ops.h>
 #include <globals.h>
 
 #define M5_SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
@@ -22,9 +30,9 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         if (getWifiCredential(ssid, knownPwd)) {
             pwd = knownPwd;
             found = true;
-            Serial.printf("Found SSID: %s\n", ssid.c_str());
+            launcherConsolePrintf("Found SSID: %s\n", ssid.c_str());
         }
-        Serial.printf("sdcardMounted: %d\n", sdcardMounted);
+        launcherConsolePrintf("sdcardMounted: %d\n", sdcardMounted);
 
     Retry:
         if (!found || wrongPass) {
@@ -39,35 +47,33 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
             if (!found) {
                 if (setWifiCredential(ssid, pwd)) {
                     found = true;
-                    Serial.printf("wifiConnect: ssid->%s, pwd->%s\n", ssid.c_str(), pwd.c_str());
+                    launcherConsolePrintf("wifiConnect: ssid->%s, pwd->%s\n", ssid.c_str(), pwd.c_str());
                     saveConfigs();
                 } else {
-                    Serial.println("wifiConnect: failed to store new WiFi entry");
+                    launcherConsolePrintln("wifiConnect: failed to store new WiFi entry");
                 }
             } else if (wrongPass) {
                 if (setWifiCredential(ssid, pwd)) {
-                    Serial.printf("Mudou pwd de SSID: %s\n", ssid.c_str());
+                    launcherConsolePrintf("Mudou pwd de SSID: %s\n", ssid.c_str());
                     saveConfigs();
                 }
             }
         }
-
-        WiFi.mode(WIFI_STA);
-        WiFi.setSleep(false);
-        WiFi.begin(ssid.c_str(), pwd.c_str());
 
         resetTftDisplay(10, 10, FGCOLOR, FP);
         tft->fillScreen(BGCOLOR);
         tftprint("Connecting to: " + ssid + ".", 10);
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
 
-        // Simulação da função de desenho no display TFT
         int count = 0;
-        while (WiFi.status() != WL_CONNECTED) {
+        bool connected = false;
+        while (!connected) {
+            connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
+            if (connected) break;
             vTaskDelay(500 / portTICK_PERIOD_MS);
             tftprint(".", 10);
             count++;
-            if (count > 20) {
+            if (count > 10) {
                 wrongPass = true;
                 options = {
                     {"Retry",     [&]() { yield(); }            },
@@ -80,37 +86,31 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
             tft->display(false);
         }
     } else { // Running in Access point mode
-        IPAddress AP_GATEWAY(172, 0, 0, 1);
 #if !CONFIG_ESP_HOSTED_ENABLED
-        WiFi.softAPdisconnect(true);
-        WiFi.disconnect(true, true);
+        launcherWifiStop();
         vTaskDelay(50 / portTICK_PERIOD_MS);
 #endif
-        WiFi.mode(WIFI_AP);
-        WiFi.setSleep(false);
-        WiFi.softAPConfig(AP_GATEWAY, AP_GATEWAY, IPAddress(255, 255, 255, 0));
-        WiFi.softAP("Launcher", "", 6, 0, 4, false);
+        launcherWifiStartAp("Launcher", "", 6, 4);
         vTaskDelay(250 / portTICK_PERIOD_MS);
-        Serial.print("IP: ");
-        Serial.println(WiFi.softAPIP());
+        launcherConsolePrintf("IP: %s\n", launcherWifiApIp().c_str());
     }
 END:
-    delay(0);
+    launcherDelayMs(0);
 }
 void connectWifi() {
-    int nets = 0;
-    WiFi.mode(WIFI_MODE_STA);
     displayRedStripe("Scanning...");
 #if CONFIG_ESP_HOSTED_ENABLED
-    WiFi.setAutoReconnect(false);
-    WiFi.disconnect(false);
+    launcherWifiStop();
 #endif
-    nets = WiFi.scanNetworks();
+    std::vector<LauncherWifiAp> networks;
+    int nets = launcherWifiScan(networks);
+    // Serial.printf("connectWifi: scan returned %d networks\n", nets);
     options = {};
     for (int i = 0; i < nets; i++) {
-        options.push_back({WiFi.SSID(i).c_str(), [=]() {
-                               wifiConnect(WiFi.SSID(i).c_str(), int(WiFi.encryptionType(i)));
-                           }});
+        String networkSsid = networks[i].ssid.c_str();
+        if (networkSsid.isEmpty()) continue;
+        int authMode = static_cast<int>(networks[i].authmode);
+        options.push_back({networkSsid, [=]() { wifiConnect(networkSsid, authMode); }});
     }
     options.push_back({"Hidden SSID", [=]() {
                            String __ssid = keyboard("", 32, "Your SSID");
@@ -126,8 +126,8 @@ void connectWifi() {
 void ota_function() {
 #ifndef DISABLE_OTA
     bool fav = false;
-    if (WiFi.status() != WL_CONNECTED) connectWifi();
-    if (WiFi.status() == WL_CONNECTED) {
+    if (!launcherWifiIsConnected()) connectWifi();
+    if (launcherWifiIsConnected()) {
         // Debug
         // Serial.printf("Favorite size: %d\n", favorite.size());
         // serializeJsonPretty(favorite, Serial);
@@ -188,7 +188,7 @@ void ota_function() {
 ***************************************************************************************/
 String replaceChars(String input) {
     // Define os caracteres que devem ser substituídos
-    const char charsToReplace[] = {'<', '>', ':', '\"', '/', '\\', '|', '?', '*', '\'', '`'};
+    const char charsToReplace[] = {'<', '>', ':', '\"', '/', '\\', '|', '?', '*', '\'', '`', '&'};
     // Define o caractere de substituição (neste exemplo, usamos um espaço)
     const char replacementChar = '_';
 
@@ -209,12 +209,335 @@ String replaceChars(String input) {
     return input;
 }
 
+struct RangeBufferContext {
+    uint8_t *buffer;
+    size_t capacity;
+    size_t written;
+};
+
+bool rangeBufferCb(const uint8_t *data, size_t len, void *ctx) {
+    RangeBufferContext *range = static_cast<RangeBufferContext *>(ctx);
+    if (!range || !range->buffer || range->written + len > range->capacity) return false;
+    memcpy(range->buffer + range->written, data, len);
+    range->written += len;
+    return true;
+}
+
+static uint8_t inputHandlerPauseDepth = 0;
+
+void pauseInputHandlerTask() {
+    if (!xHandle) return;
+    if (inputHandlerPauseDepth++ == 0) vTaskSuspend(xHandle);
+}
+
+void resumeInputHandlerTask() {
+    if (!xHandle || inputHandlerPauseDepth == 0) return;
+    inputHandlerPauseDepth--;
+    if (inputHandlerPauseDepth == 0) vTaskResume(xHandle);
+}
+
+bool discardHttpCb(const uint8_t *, size_t, void *) { return true; }
+
+bool parseContentRangeTotal(const char *contentRange, size_t &total) {
+    if (!contentRange) return false;
+    String range = contentRange;
+    int slash = range.lastIndexOf('/');
+    if (slash < 0 || slash + 1 >= range.length()) return false;
+    total = range.substring(slash + 1).toInt();
+    return total > 0;
+}
+
+bool getRemoteFileSize(const String &url, size_t &size, const char *hwid = nullptr) {
+    LauncherHttpResponse response;
+    if (!launcherHttpGetRange(url.c_str(), 0, 1, discardHttpCb, nullptr, &response, hwid)) return false;
+    if (response.status != 206) return false;
+    return parseContentRangeTotal(response.content_range, size);
+}
+
+struct FileDownloadContext {
+    File *file;
+    size_t downloaded;
+    size_t expected;
+    long progressTick;
+    LauncherHttpResponse *response; // back-pointer to get content_length once headers arrive
+};
+
+bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
+    FileDownloadContext *download = static_cast<FileDownloadContext *>(ctx);
+    if (!download || !download->file) return false;
+
+    // On the first chunk, content_length is already populated by fetch_headers.
+    // Use it to initialize the progress bar with the real file size.
+    if (download->expected == 0 && download->response && download->response->content_length > 0) {
+        download->expected = static_cast<size_t>(download->response->content_length);
+        progressHandler(0, download->expected);
+    }
+
+    size_t wrote = download->file->write(data, len);
+    if (wrote != len) return false;
+    download->downloaded += wrote;
+
+    if (download->expected > 0) {
+        if (download->progressTick >= 10) {
+            tft->drawPixel(0, 0, 0);
+            progressHandler(download->downloaded, download->expected);
+            download->progressTick = 0;
+        } else {
+            download->progressTick++;
+        }
+    }
+    return true;
+}
+
+struct HttpUpdateContext {
+    LauncherUpdateTarget target;
+    size_t expected;
+    size_t written;
+    bool started;
+};
+
+struct RawHttpUpdateContext {
+    uint32_t address;
+    size_t partitionSize;
+    size_t expected;
+    size_t written;
+    bool appImage;
+    bool started;
+};
+
+bool launcherUpdateHttpCb(const uint8_t *data, size_t len, void *ctx) {
+    HttpUpdateContext *updateCtx = static_cast<HttpUpdateContext *>(ctx);
+    if (!updateCtx) return false;
+    if (!updateCtx->started) {
+        if (!launcherUpdateBegin(updateCtx->target, updateCtx->expected)) return false;
+        updateCtx->started = true;
+        progressHandler(0, updateCtx->expected);
+    }
+    const size_t remaining =
+        updateCtx->written < updateCtx->expected ? updateCtx->expected - updateCtx->written : 0;
+    const size_t writeLen = len > remaining ? remaining : len;
+    if (writeLen == 0) return true;
+    size_t wrote = launcherUpdateWrite(data, writeLen);
+    if (wrote != writeLen) { return false; }
+    updateCtx->written += wrote;
+    progressHandler(updateCtx->written, updateCtx->expected);
+    return true;
+}
+
+bool launcherRawUpdateHttpCb(const uint8_t *data, size_t len, void *ctx) {
+    RawHttpUpdateContext *updateCtx = static_cast<RawHttpUpdateContext *>(ctx);
+    if (!updateCtx) return false;
+    if (!updateCtx->started) {
+        if (!launcherRawUpdateBegin(
+                updateCtx->address, updateCtx->partitionSize, updateCtx->expected, updateCtx->appImage
+            )) {
+            return false;
+        }
+        updateCtx->started = true;
+        progressHandler(0, updateCtx->expected);
+    }
+    const size_t remaining =
+        updateCtx->written < updateCtx->expected ? updateCtx->expected - updateCtx->written : 0;
+    const size_t writeLen = len > remaining ? remaining : len;
+    if (writeLen == 0) return true;
+    size_t wrote = launcherRawUpdateWrite(data, writeLen);
+    if (wrote != writeLen) { return false; }
+    updateCtx->written += wrote;
+    progressHandler(updateCtx->written, updateCtx->expected);
+    return true;
+}
+
+bool flashRawRangeFromHttp(
+    const String &url, uint32_t sourceOffset, size_t imageSize, const LauncherPartitionEntry &target,
+    bool appImage, const char *hwid = nullptr
+) {
+    pauseInputHandlerTask();
+    RawHttpUpdateContext update = {target.offset, target.size, imageSize, 0, appImage, false};
+    bool httpOk = false;
+    LauncherHttpResponse response;
+    constexpr uint8_t maxAttempts = 24;
+    for (uint8_t attempt = 0; update.written < imageSize && attempt < maxAttempts; ++attempt) {
+        size_t before = update.written;
+        const uint32_t requestOffset = sourceOffset + update.written;
+        const size_t remaining = imageSize - update.written;
+        response = LauncherHttpResponse();
+        httpOk = launcherHttpGetRange(
+            url.c_str(), requestOffset, remaining, launcherRawUpdateHttpCb, &update, &response, hwid
+        );
+        if (httpOk && update.written == imageSize) break;
+        if (update.written == before) break;
+        launcherDelayMs(500);
+    }
+    bool complete = update.written == imageSize;
+    bool endOk = complete && launcherRawUpdateEnd();
+    bool ok = complete && endOk;
+    resumeInputHandlerTask();
+    return ok;
+}
+
+bool installFirmwareDynamic(
+    const String &fileAddr, const String &file, uint32_t appSize, uint32_t appPartitionSize,
+    uint32_t appOffset, bool spiffs, uint32_t spiffsOffset, uint32_t spiffsSize, uint32_t spiffsCopySize,
+    bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions, const String &installedName
+) {
+    String error;
+    LauncherPartitionTable table;
+    if (!launcherPartitionReadCurrent(table, &error)) {
+        displayRedStripe(error.length() ? error : "Partition read failed");
+        launcherDelayMs(2000);
+        return false;
+    }
+
+    size_t updateSize = appSize;
+    String hwid = String(launcherWifiMac().c_str());
+    if (updateSize == 0) {
+        size_t remoteSize = 0;
+        if (!getRemoteFileSize(fileAddr, remoteSize, hwid.c_str())) {
+            displayRedStripe("Size failed");
+            launcherDelayMs(2000);
+            return false;
+        }
+        if (nb) {
+            updateSize = remoteSize;
+        } else {
+            if (appOffset >= remoteSize) {
+                displayRedStripe("Bad app offset");
+                launcherDelayMs(2000);
+                return false;
+            }
+            updateSize = remoteSize - appOffset;
+        }
+    }
+    if (updateSize == 0) {
+        displayRedStripe("Invalid app size");
+        launcherDelayMs(2000);
+        return false;
+    }
+    if (appPartitionSize == 0 || appPartitionSize < updateSize) appPartitionSize = updateSize;
+
+    String labelSource = installedName;
+    if (labelSource.isEmpty()) labelSource = launcherAppNameFromFile(file);
+    String appLabel = launcherPartitionNextAppLabel(table, labelSource);
+    LauncherPartitionEntry appEntry;
+    LauncherPartitionEntry spiffsEntry;
+    bool hasSpiffsEntry = false;
+
+    if (!launcherSelectInstallLayout(
+            table,
+            appPartitionSize,
+            appLabel,
+            spiffs,
+            spiffsSize,
+            fatPartitions,
+            appEntry,
+            spiffsEntry,
+            hasSpiffsEntry,
+            error
+        )) {
+        displayRedStripe(error.length() ? error : "No install space");
+        launcherDelayMs(2000);
+        return false;
+    }
+
+    pauseInputHandlerTask();
+    bool success = false;
+    displayRedStripe("Installing APP");
+    prog_handler = 0;
+    progressHandler(0, updateSize);
+    if (!flashRawRangeFromHttp(fileAddr, nb ? 0 : appOffset, updateSize, appEntry, true, hwid.c_str())) {
+        displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    if (hasSpiffsEntry) {
+        if (spiffsCopySize > 0) {
+            const uint32_t copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
+            if (copySize > 0) {
+                displayRedStripe("Installing SPIFFS");
+                prog_handler = 1;
+                progressHandler(0, copySize);
+                if (!flashRawRangeFromHttp(
+                        fileAddr, spiffsOffset, copySize, spiffsEntry, false, hwid.c_str()
+                    )) {
+                    displayRedStripe(String("SPIFFS: ") + launcherUpdateLastErrorName());
+                    launcherDelayMs(2000);
+                    goto DONE;
+                }
+            }
+        }
+    }
+
+    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
+        if (!fatPartition.hasEntry) continue;
+        if (fatPartition.copySize == 0) continue;
+        displayRedStripe("Installing FAT");
+        prog_handler = 1;
+        progressHandler(0, fatPartition.copySize);
+        if (!flashRawRangeFromHttp(
+                fileAddr,
+                fatPartition.sourceOffset,
+                fatPartition.copySize,
+                fatPartition.entry,
+                false,
+                hwid.c_str()
+            )) {
+            displayRedStripe(String("FAT: ") + launcherUpdateLastErrorName());
+            launcherDelayMs(2000);
+            goto DONE;
+        }
+    }
+
+    displayRedStripe("Writing table");
+    if (!launcherPartitionWriteGeneratedTable(table, &error)) {
+        displayRedStripe(error.length() ? error : "Table failed");
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    displayRedStripe("Setting boot");
+    if (!launcherPartitionSetOtaBoot(table, appEntry.subtype, &error)) {
+        displayRedStripe(error.length() ? error : "Boot failed");
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    {
+        String installedLabel = String(appEntry.label);
+        for (const LauncherAppMetadata &registeredApp : launcherLoadAppRegistry()) {
+            if (!launcherPartitionFindByLabel(table, registeredApp.label.c_str())) {
+                launcherRemoveAppMetadata(registeredApp.label.c_str());
+            }
+        }
+
+        LauncherAppMetadata metadata;
+        metadata.name = installedName;
+        if (metadata.name.isEmpty()) metadata.name = launcherAppNameFromFile(file);
+        if (metadata.name.isEmpty()) metadata.name = installedLabel;
+        metadata.label = installedLabel;
+        for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
+            if (fatPartition.hasEntry) metadata.fatLabels.push_back(String(fatPartition.entry.label));
+        }
+        launcherSaveAppMetadata(metadata);
+        lastInstalledApp = metadata.name;
+    }
+
+    saveIntoNVS();
+    success = true;
+
+DONE:
+    resumeInputHandlerTask();
+    if (success) {
+        displayRedStripe("Restarting");
+        launcherDelayMs(500);
+        reboot();
+    }
+    return success;
+}
+
 bool getInfo(String serverUrl, JsonDocument &_doc) {
-    if (WiFi.status() == WL_CONNECTED) {
-        vTaskSuspend(xHandle);
-        WiFiClientSecure *client = new WiFiClientSecure();
-        client->setInsecure();
-        HTTPClient http;
+    if (launcherWifiIsConnected()) {
+        pauseInputHandlerTask();
         resetTftDisplay();
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
         tft->drawCentreString("Getting info from", tftWidth / 2, tftHeight / 3, 1);
@@ -223,37 +546,26 @@ bool getInfo(String serverUrl, JsonDocument &_doc) {
         tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
         const uint8_t maxAttempts = 5;
         for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {
-            if (!http.begin(*client, serverUrl)) {
-                Serial.printf("[GetInfo] Unable to reach %s\n", serverUrl);
-                break;
-            }
-            http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-            http.useHTTP10(true);
-            int httpResponseCode = http.GET();
-            if (httpResponseCode == HTTP_CODE_OK) {
-                String payload = http.getString();
-                http.end();
+            String payload;
+            if (launcherHttpGetToString(serverUrl.c_str(), payload)) {
                 _doc.clear();
                 DeserializationError error = deserializeJson(_doc, payload);
                 if (error) {
-                    Serial.printf("[GetInfo] Failed to parse JSON: %s\n", error.c_str());
                     displayRedStripe("JSON Parse Failed");
                     vTaskDelay(1500 / portTICK_PERIOD_MS);
                     _doc.clear();
-                    vTaskResume(xHandle);
+                    resumeInputHandlerTask();
                     return false;
                 }
-                Serial.printf("[GetInfo] Downloaded and parsed json with size: %d\n", _doc.size());
-                vTaskResume(xHandle);
+                resumeInputHandlerTask();
                 return true;
             }
 
-            Serial.printf("[GetInfo] HTTP error: %d\n", httpResponseCode);
             tftprint(".", 10);
-            http.end();
+            vTaskDelay(pdTICKS_TO_MS(500));
         }
     }
-    vTaskResume(xHandle);
+    resumeInputHandlerTask();
     return false;
 }
 
@@ -275,7 +587,6 @@ bool GetJsonFromLauncherHub(uint8_t page, String order, bool star, String query)
         total_firmware = doc["total"].as<int>();
         num_pages = doc["total"].as<int>() / doc["page_size"].as<int>();
         current_page = page;
-        Serial.printf("GetJsonFromLauncherHub> Loaded %d firmwares\n", total_firmware);
         return true;
     }
     displayRedStripe("Firmware list fetch Failed");
@@ -291,11 +602,125 @@ JsonDocument getVersionInfo(String fid) {
     }
     return versions;
 }
+
+String encodeQueryValue(const String &value) {
+    String encoded;
+    for (size_t i = 0; i < value.length(); ++i) {
+        char c = value[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+            c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned char>(c));
+            encoded += hex;
+        }
+    }
+    return encoded;
+}
+
+void installFirmwareFromManifest(String fid, String version, String installedName) {
+    displayRedStripe("Getting install info");
+
+    JsonDocument detail;
+    String serverUrl =
+        "https://api.launcherhub.net/firmwares?fid=" + fid + "&version=" + encodeQueryValue(version);
+    if (!getInfo(serverUrl, detail)) {
+        displayRedStripe("Install info failed");
+        launcherDelayMs(2000);
+        return;
+    }
+
+    JsonObject versionObj = detail["version"].as<JsonObject>();
+    JsonObject install = versionObj["install"].as<JsonObject>();
+    JsonObject app = install["app"].as<JsonObject>();
+    JsonArray partitions = install["partitions"].as<JsonArray>();
+    String file = versionObj["file"].as<String>();
+    if (file.isEmpty() || app.isNull()) {
+        displayRedStripe("Bad install info");
+        launcherDelayMs(2000);
+        return;
+    }
+
+    uint32_t appOffset = app["source_offset"] | 0;
+    uint32_t appCopySize = app["image_size"] | 0;
+    uint32_t appPartitionSize = appCopySize;
+    bool nb = appOffset == 0;
+
+    bool spiffs = false;
+    uint32_t spiffsOffset = 0;
+    uint32_t spiffsSize = 0;
+    uint32_t spiffsCopySize = 0;
+
+    std::vector<LauncherInstallFatPartition> fatPartitions;
+
+    for (JsonObject part : partitions) {
+        String type = part["type"].as<String>();
+        String subtype = part["subtype"].as<String>();
+        if (type == "app" && subtype == "ota") {
+            appOffset = part["source_offset"] | appOffset;
+            appCopySize = part["copy_size"] | appCopySize;
+            appPartitionSize = appCopySize;
+            nb = appOffset == 0;
+        } else if (type == "data" && subtype == "spiffs") {
+            spiffs = true;
+            uint32_t declaredSize = part["size"] | 0;
+            spiffsOffset = part["source_offset"] | 0;
+            spiffsCopySize = part["copy_size"] | 0;
+            spiffsSize = declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
+                             ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
+                             : LAUNCHER_DEFAULT_SPIFFS_SIZE;
+        } else if (type == "data" && subtype == "fat") {
+            LauncherInstallFatPartition fatPartition;
+            fatPartition.label = part["label"].as<String>();
+            if (fatPartition.label.isEmpty()) { fatPartition.label = fatPartitions.empty() ? "sys" : "vfs"; }
+            uint32_t declaredSize = part["size"] | 0;
+            fatPartition.sourceOffset = part["source_offset"] | 0;
+            uint32_t requestedCopySize = part["copy_size"] | 0;
+            LauncherPartitionPayloadPlan payload =
+                launcherPartitionFatPayloadPlan(fatPartition.label.c_str(), declaredSize, requestedCopySize);
+            fatPartition.partitionSize = payload.partitionSize;
+            fatPartition.copySize = payload.copySize;
+            fatPartitions.push_back(fatPartition);
+        }
+    }
+
+    if (appCopySize == 0 || appPartitionSize == 0) {
+        displayRedStripe("Invalid app size");
+        launcherDelayMs(2000);
+        return;
+    }
+
+    if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
+    String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
+    if (fid == "") fileAddr = file;
+
+    String manifestName = detail["name"].as<String>();
+    if (!manifestName.isEmpty()) installedName = manifestName;
+
+    if (!installFirmwareDynamic(
+            fileAddr,
+            file,
+            appCopySize,
+            appPartitionSize,
+            appOffset,
+            spiffs,
+            spiffsOffset,
+            spiffsSize,
+            spiffsCopySize,
+            nb,
+            fatPartitions,
+            installedName
+        )) {
+        launcherDelayMs(2500);
+    }
+}
 /***************************************************************************************
 ** Function name: downloadFirmware
 ** Description:   Downloads the firmware and save into the SDCard
 ***************************************************************************************/
 void downloadFirmware(String fid, String file_url, String fileName, String folder) { // Adicionar "fid"
+    displayRedStripe("Preparing..");
     if (!file_url.startsWith("https://")) file_url = M5_SERVER_PATH + file_url;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file_url;
     if (fid == "") fileAddr = file_url;
@@ -304,7 +729,7 @@ void downloadFirmware(String fid, String file_url, String fileName, String folde
     prog_handler = 2;
     if (!setupSdCard()) {
         displayRedStripe("SDCard Not Found");
-        delay(2500);
+        launcherDelayMs(2500);
         return;
     }
     log_i("Download folder before checks: '%s'", folder.c_str());
@@ -317,115 +742,49 @@ void downloadFirmware(String fid, String file_url, String fileName, String folde
             if (!SDM.mkdir(folder_name)) {
                 log_i("Download: Couldn't create folder '%s'\n", folder_name.c_str());
                 displayRedStripe("Can't create: '" + folder_name + "'");
-                delay(2000);
+                launcherDelayMs(2000);
                 return;
             }
         }
     }
     String filePath = folder + fileName + ".bin";
-
-    tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
-    displayRedStripe("Connecting FW");
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure();
     File file;
 retry:
     file = SDM.open(filePath, FILE_WRITE);
     if (!file) {
         log_i("Download: Couldn't create file %s", filePath.c_str());
         displayRedStripe("Fail creating file.");
-        delay(2000);
+        launcherDelayMs(2000);
         return;
     }
-    if (client) {
-        HTTPClient http;
-        int httpResponseCode = -1;
+    LauncherHttpResponse response;
+    prog_handler = 2;
+    pauseInputHandlerTask();
+    FileDownloadContext download = {&file, 0, 0, 0, &response};
+    bool ok = launcherHttpGetStream(
+        fileAddr.c_str(), fileDownloadCb, &download, &response, "HWID", launcherWifiMac().c_str()
+    );
+    file.flush();
+    file.close();
+    resumeInputHandlerTask();
 
-        while (httpResponseCode < 0) {
-            http.begin(*client, fileAddr);
-            http.addHeader("HWID", WiFi.macAddress());
-            http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
-            http.useHTTP10(true);
-            httpResponseCode = http.GET();
-            if (httpResponseCode > 0) {
-                vTaskDelay(pdMS_TO_TICKS(2));
-                size_t size = http.getSize();
-                displayRedStripe("Downloading FW");
-                vTaskSuspend(xHandle);
-                size_t downloaded = 0;
-                WiFiClient *stream = http.getStreamPtr();
-                int len = size;
-
-                prog_handler = 2; // Download handler
-
-                // Ler dados enquanto disponível
-                progressHandler(downloaded, size);
-                long print_at_5 = 0;
-                while (http.connected() && (len > 0 || len == -1)) {
-                    // Ler dados em partes
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                    int size_av = stream->available();
-                    if (size_av) {
-                        size_t c = stream->readBytes(buff, size_av < bufSize ? size_av : bufSize);
-                        vTaskDelay(pdMS_TO_TICKS(2)); // time to C5 move info from one task to another
-                        if (c <= 0) continue;
-                        size_t wrote = file.write(buff, c);
-                        if (wrote != c) {
-                            log_i(
-                                "Download> write failed after %lu bytes (wrote %lu out of %lu)",
-                                downloaded,
-                                wrote,
-                                c
-                            );
-                            break;
-                        }
-
-                        if (len > 0) { len -= c; }
-
-                        downloaded += c;
-                        if (print_at_5 >= 10) {
-                            tft->drawPixel(0, 0, 0);
-                            progressHandler(downloaded, size); // Chama a função de progresso
-                            print_at_5 = 0;
-                        } else print_at_5 = print_at_5 + 1;
-                    }
-                }
-                file.flush();
-                file.close();
-                vTaskResume(xHandle);
-
-                // Checks if the file was preatically not downloaded and try one more time (size <=
-                // bufSize)
-                vTaskDelay(pdTICKS_TO_MS(50));
-                file = SDM.open(filePath, FILE_READ);
-                size_t sdSize = file ? file.size() : 0;
-                if (file) file.close();
-                if (sdSize <= bufSize && tries < 1) {
-                    tries++;
-                    SDM.remove(filePath);
-                    http.end();
-                    goto retry;
-                }
-                // Checks if the file was completely downloaded
-                Serial.printf("File size in get() = %d\nFile size in SD    = %d\n", size, sdSize);
-                if (sdSize != size) {
-                    SDM.remove(filePath);
-                    displayRedStripe("Download FAILED");
-                    while (!check(SelPress)) yield();
-                } else {
-                    Serial.printf("File successfully downloaded..\n");
-                    displayRedStripe(" Downloaded ");
-                    while (!check(SelPress)) yield();
-                }
-                break;
-            } else {
-                http.end();
-                vTaskDelay(pdTICKS_TO_MS(500));
-            }
-        }
-        http.end();
+    vTaskDelay(pdTICKS_TO_MS(50));
+    file = SDM.open(filePath, FILE_READ);
+    size_t sdSize = file ? file.size() : 0;
+    if (file) file.close();
+    if ((!ok || sdSize <= bufSize) && tries < 1) {
+        tries++;
+        SDM.remove(filePath);
+        goto retry;
+    }
+    if (!ok || (response.content_length > 0 && sdSize != (size_t)response.content_length)) {
+        SDM.remove(filePath);
+        displayRedStripe("Download FAILED");
+        while (!check(SelPress)) yield();
     } else {
-        displayRedStripe("Couldn't Connect");
+        launcherConsolePrintln("File successfully downloaded..");
+        displayRedStripe(" Downloaded ");
+        while (!check(SelPress)) yield();
     }
     wakeUpScreen();
 }
@@ -438,137 +797,74 @@ bool installExtFirmware(String url) {
     bool spiffs = 0;
     uint32_t spiffs_offset = 0;
     uint32_t spiffs_size = 0;
-    bool nb = 1; // File without bootloader an partitions
-    bool fat = 0;
-    uint32_t fat_offset[2] = {0};
-    uint32_t fat_size[2] = {0};
+    bool nb = 1;
+    std::vector<LauncherInstallFatPartition> fatPartitions;
     uint8_t bytes[16];
     if (!url.startsWith("https://")) {
         displayRedStripe("Invalid link");
+        launcherDelayMs(2000);
         return false;
     }
     displayRedStripe("Getting file info");
-    WiFiClientSecure *client = new WiFiClientSecure;
-    client->setInsecure();
-    if (!client) return false;
-
-    HTTPClient http;
-    http.begin(*client, url);
-    http.addHeader("Range", "bytes=32768-33183");          // Get the partition table
-    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
-    http.useHTTP10(true);
-    const char *headerKeys[] = {"Content-Range"};
-    const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
-    http.collectHeaders(headerKeys, headerKeysCount);
-    if (http.GET() != 206) {
+    LauncherHttpResponse response;
+    RangeBufferContext range = {buff, bufSize, 0};
+    if (!launcherHttpGetRange(url.c_str(), 32768, 416, rangeBufferCb, &range, &response) ||
+        response.status != 206) {
         displayRedStripe("File not found");
-        http.end();
+        launcherDelayMs(2000);
         return false;
     }
-    String _fileSize = http.header("Content-Range");
-    _fileSize = _fileSize.substring(_fileSize.lastIndexOf("/") + 1);
-    file_size = _fileSize.toInt();
+    if (!parseContentRangeTotal(response.content_range, file_size)) return false;
 
-    WiFiClient *stream = http.getStreamPtr();
-    int size_av = stream->available();
-    stream->readBytes(buff, size_av < bufSize ? size_av : bufSize);
-    http.end();
-    // Check if it is a valid partition table
     size_t PartitionSize = 0;
     size_t PartitionOffset = 0x10000;
     if (buff[0] == 0xAA) {
-        nb = 0;                                    // File with bootloader an partitions
-        for (int i = 0x0; i <= 0x1A0; i += 0x20) { // Partition
+        nb = 0;
+        for (int i = 0x0; i <= 0x1A0; i += 0x20) {
             memcpy(bytes, &buff[i], 16);
 
-            // https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/partition-tables.html
-            // -> spiffs (0x82) is for SPIFFS Filesystem.
-
-            // if (bytes[3] == 0xFF) Serial.println(": ------- END of Table ------- |");
             if (bytes[3] == 0x00 || (bytes[3] >= 0x10 && bytes[3] <= 0x1F)) {
-                Serial.println(": Ota or Factory partition |");
                 if (bytes[0x0A] > 0 && PartitionSize == 0) {
-                    PartitionSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) |
-                                    bytes[0x0C]; // Write the size of app0 partition
-                    PartitionOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) |
-                                      bytes[0x08]; // Write the offset of app0 partition
+                    PartitionSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
+                    PartitionOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 }
             }
-            // if (bytes[3] == 0x01) Serial.println(": PHY inicialization partition |");
-            //  if (bytes[3] == 0x02) Serial.println(": NVS partition                |");
-            //  if (bytes[3] == 0x03) Serial.println(": Coredump partition           |");
-            //  if (bytes[3] == 0x04) Serial.println(": NVSkeys partition            |");
-            //  if (bytes[3] == 0x05) Serial.println(": Efuse partition              |");
-            //  if (bytes[3] == 0x06) Serial.println(": Undefined partition          |");
-            // if (bytes[3] >= 0x10 && bytes[3] <= 0x1F)
-            //     Serial.println(": OTA partition                |");
-            // if (bytes[3] == 0x20) Serial.println(": TEST partition               |");
             if (bytes[3] == 0x81) {
-                Serial.println(": FAT partition                |");
-                int a = 0;
-                if (fat_offset[0] != 0) a = 1;
-                fat_offset[a] = (bytes[0x06] << 16) | (bytes[0x07] << 8) |
-                                bytes[0x08]; // Write the offset of FAT partition
+                LauncherInstallFatPartition fatPartition;
+                if (fatPartitions.empty()) fatPartition.label = "sys";
+                else if (fatPartitions.size() == 1) fatPartition.label = "vfs";
+                else fatPartition.label = String("fat") + String(fatPartitions.size());
+                fatPartition.sourceOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 bytes[0x0C] = 0;
-                fat_size[a] =
-                    (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C]; // Write the size of FAT partition
+                uint32_t declaredSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
+                LauncherPartitionPayloadPlan payload =
+                    launcherPartitionFatPayloadPlan(fatPartition.label.c_str(), declaredSize, declaredSize);
+                fatPartition.partitionSize = payload.partitionSize;
+                fatPartition.copySize = payload.copySize;
+                fatPartitions.push_back(fatPartition);
             }
             if (bytes[3] == 0x82 || bytes[3] == 0x83) {
-                Serial.println(": Spiffs/LittleFs partition    |");
-                spiffs_offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) |
-                                bytes[0x08]; // Write the offset of spiffs partition
+                spiffs = true;
+                spiffs_offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 bytes[0x0C] = 0;
-                spiffs_size = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) |
-                              bytes[0x0C]; // Write the size of spiffs partition
+                spiffs_size = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
             }
         }
         size_t temp_size = 0;
         if (file_size < MAX_APP || PartitionSize <= MAX_APP) {
             temp_size = PartitionSize;
             temp_size += PartitionOffset;
-            if (file_size <= temp_size) {         // Check if the file is smaller than the app0 partition
-                PartitionSize = file_size;        // gets file size
-                PartitionSize -= PartitionOffset; // subtracts bootloader, partitions and other junks
-            } else {
-                PartitionSize = PartitionSize; // if file is greater then app0 partition+junk, it will
-                                               // limit to app0 partition size
+            if (file_size <= temp_size) {
+                PartitionSize = file_size;
+                PartitionSize -= PartitionOffset;
             }
         }
-        // Check if there is room for spiffs in the file
-        if (file_size < spiffs_offset) {
-            Serial.printf(
-                "\nError: file doesn't reach spiffs offset %d, to read spiffs.", spiffs_offset, HEX
-            );
-        } else {
-            Serial.println("Preparing to copy spiffs...");
-            // check size of the Spiffs Partition, if it fits in the launcher
-            // If it is larger the the Launcher Spiffs Partition, cut it to the limit
-            if (spiffs_size > MAX_SPIFFS) {
-                spiffs_size = MAX_SPIFFS;
-                temp_size = spiffs_offset + spiffs_size;
-                if (file_size <= temp_size) { spiffs_size = file_size - spiffs_offset; }
-                Serial.print("\nTotal spiffs size after crop: ");
-                Serial.println(spiffs_size, HEX);
-            }
+        if (file_size >= spiffs_offset && spiffs_size > MAX_SPIFFS) {
+            spiffs_size = MAX_SPIFFS;
+            temp_size = spiffs_offset + spiffs_size;
+            if (file_size <= temp_size) { spiffs_size = file_size - spiffs_offset; }
         }
     }
-    Serial.printf(
-        "url: %s"
-        "\nPartitionSize: 0x%x, PartitionOffset: 0x%x,"
-        "\nspiffs: %d, spiffs_offset: 0x%x, spiffs_size: 0x%x, "
-        "\nnb: %d,"
-        "\nfat: %d, fat_offset: 0x%x, fat_size: 0x%x",
-        url.c_str(),
-        PartitionSize,
-        PartitionOffset,
-        spiffs,
-        spiffs_offset,
-        spiffs_size,
-        nb,
-        fat,
-        fat_offset,
-        fat_size
-    );
     installFirmware(
         "",
         url,
@@ -578,41 +874,9 @@ bool installExtFirmware(String url) {
         spiffs_offset,
         spiffs_size,
         nb,
-        fat,
-        fat_offset,
-        fat_size,
+        fatPartitions,
         "External OTA"
     );
-    return true;
-}
-
-/***************************************************************************************
- ** Function name: clearCoredump
- ** Description:   As some programs may generate core dumps,
-                   and others try to report them thinking that they wrote it,
-                   this function will clear it to avoid confusion.
-****************************************************************************************/
-#include <esp_flash.h>
-bool clearOnlineCoredump() {
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "coredump");
-    Serial.printf("Coredump partition address: 0x%08X\n", partition ? partition->address : 0);
-    if (!partition) {
-        Serial.println("Failed to find coredump partition");
-        log_e("Failed to find coredump partition");
-        return false;
-    }
-    log_i("Erasing coredump partition at address 0x%08X, size %d bytes", partition->address, partition->size);
-
-    // erase all coredump partition
-    esp_err_t err = esp_flash_erase_region(NULL, partition->address, partition->size);
-    if (err != ESP_OK) {
-        Serial.println("Failed to erase coredump partition");
-        log_e("Failed to erase coredump partition: %s", esp_err_to_name(err));
-        return false;
-    }
-    Serial.println("Coredump partition cleared successfully");
-    log_e("Coredump partition cleared successfully");
     return true;
 }
 
@@ -622,57 +886,83 @@ bool clearOnlineCoredump() {
 ***************************************************************************************/
 void installFirmware( // adicionar "fid"
     String fid, String file, uint32_t app_size, uint32_t app_offset, bool spiffs, uint32_t spiffs_offset, uint32_t spiffs_size, bool nb,
-    bool fat, uint32_t fat_offset[2], uint32_t fat_size[2], String installedName
+    std::vector<LauncherInstallFatPartition> &fatPartitions, String installedName
 ) {
     if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
     if (fid == "") fileAddr = file;
 
+    uint32_t spiffsCopySize = spiffs_size;
+
     // Release RAM Memory from Json Objects
-    if (spiffs && askSpiffs) {
+    if (askSpiffs == false) spiffsCopySize = 0;
+    if (spiffs && askSpiffs && spiffsCopySize > 0) {
+        bool copySpiffs = true;
         options = {
-            {"SPIFFS No",  [&]() { spiffs = false; }},
-            {"SPIFFS Yes", [&]() { spiffs = true; } },
+            {"SPIFFS No",  [&]() { copySpiffs = false; }},
+            {"SPIFFS Yes", [&]() { copySpiffs = true; } },
         };
         loopOptions(options);
+        if (!copySpiffs) spiffsCopySize = 0;
     }
 
     if (spiffs && spiffs_size > MAX_SPIFFS) spiffs_size = MAX_SPIFFS;
     if (app_size > MAX_APP) app_size = MAX_APP;
     if (app_size > MAX_APP) app_size = MAX_APP;
 
-    if (fat && fat_size[0] > MAX_FAT_vfs && fat_size[1] == 0) fat_size[0] = MAX_FAT_vfs;
-    else if (fat && fat_size[0] > MAX_FAT_sys) fat_size[0] = MAX_FAT_sys;
-    if (fat && fat_size[1] > MAX_FAT_vfs) fat_size[1] = MAX_FAT_vfs;
-
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FW");
 
-    WiFiClientSecure *client = new WiFiClientSecure;
+    if (!installFirmwareDynamic(
+            fileAddr,
+            file,
+            app_size,
+            app_size,
+            app_offset,
+            spiffs,
+            spiffs_offset,
+            spiffs_size,
+            spiffsCopySize,
+            nb,
+            fatPartitions,
+            installedName
+        )) {
+        launcherDelayMs(2500);
+    }
+    return;
 
-    client->setInsecure();
-    httpUpdate.rebootOnUpdate(false);
-    httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS); // Github links need it
     /* Install App */
     prog_handler = 0;
     tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
     progressHandler(0, 500);
-    httpUpdate.onProgress(progressHandler);
-    httpUpdate.setLedPin(LED, LED_ON);
-    vTaskSuspend(xHandle);
+    pauseInputHandlerTask();
+    size_t updateSize = app_size;
+    HttpUpdateContext appUpdate = {LAUNCHER_UPDATE_APP, updateSize, 0, false};
     bool success = false;
-    if (nb) success = httpUpdate.update(*client, fileAddr);
-    else success = httpUpdate.updateFromOffset(*client, fileAddr, app_offset, app_size);
-    if (!client) {
-        displayRedStripe("Couldn't Connect to server");
-        goto SAIR;
-    }
+    String hwid = String(launcherWifiMac().c_str());
+    if (nb && updateSize == 0 && !getRemoteFileSize(fileAddr, updateSize, hwid.c_str())) goto SAIR;
+    appUpdate.expected = updateSize;
+    success =
+        nb ? launcherHttpGetRange(
+                 fileAddr.c_str(), 0, updateSize, launcherUpdateHttpCb, &appUpdate, nullptr, hwid.c_str()
+             )
+           : launcherHttpGetRange(
+                 fileAddr.c_str(),
+                 app_offset,
+                 updateSize,
+                 launcherUpdateHttpCb,
+                 &appUpdate,
+                 nullptr,
+                 hwid.c_str()
+             );
+    if (success) success = launcherUpdateEnd();
     if (!success) {
-        displayRedStripe("Instalation Failed");
+        displayRedStripe(String("OTA: ") + launcherUpdateLastErrorName());
+        launcherDelayMs(2000);
         goto SAIR;
     }
-    displayRedStripe("Removing Coredump");
-    clearOnlineCoredump();
+    displayRedStripe("Post Install Cleanup");
+    launcherClearCoredump();
 
     // Do not request to api.launcherhub.net a second time, go straight to the file
     // Requests must be done to "file" link directly
@@ -685,7 +975,7 @@ void installFirmware( // adicionar "fid"
         // Format Spiffs partition
         if (!SPIFFS.begin(true)) {
             displayRedStripe("Fail to start SPIFFS");
-            delay(2500);
+            launcherDelayMs(2500);
         } else {
             displayRedStripe("Formatting SPIFFS");
             SPIFFS.format();
@@ -695,32 +985,25 @@ void installFirmware( // adicionar "fid"
 
         // Install Spiffs
         progressHandler(0, 500);
-        httpUpdate.onProgress(progressHandler);
-
-        if (!httpUpdate.updateSpiffsFromOffset(*client, file, spiffs_offset, spiffs_size)) {
+        HttpUpdateContext spiffsUpdate = {LAUNCHER_UPDATE_SPIFFS, spiffs_size, 0, false};
+        bool spiffsOk = launcherHttpGetRange(
+                            file.c_str(), spiffs_offset, spiffs_size, launcherUpdateHttpCb, &spiffsUpdate
+                        ) &&
+                        launcherUpdateEnd();
+        if (!spiffsOk) {
             displayRedStripe("SPIFFS Failed");
-            delay(2500);
+            launcherDelayMs(2500);
         }
     }
 
 #if !defined(PART_04MB)
-    if (fat) {
-        // eraseFAT();
-        int FAT = U_FAT_vfs;
-        if (fat_size[1] > 0) FAT = U_FAT_sys;
-        for (int i = 0; i < 2; i++) {
-            if (fat_size[i] > 0) {
-                if ((FAT - i * 100) == 400) {
-                    if (!installFAT_OTA(client, file, fat_offset[i], fat_size[i], "sys")) {
-                        displayRedStripe("FAT Failed");
-                        delay(2500);
-                    }
-                } else {
-                    if (!installFAT_OTA(client, file, fat_offset[i], fat_size[i], "vfs")) {
-                        displayRedStripe("FAT Failed");
-                        delay(2500);
-                    }
-                }
+    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
+        if (fatPartition.copySize > 0) {
+            if (!installFAT_OTA(
+                    file, fatPartition.sourceOffset, fatPartition.copySize, fatPartition.label.c_str()
+                )) {
+                displayRedStripe("FAT Failed");
+                launcherDelayMs(2500);
             }
         }
     }
@@ -735,48 +1018,30 @@ Sucesso:
 
 // Só chega aqui se der errado
 SAIR:
-    vTaskResume(xHandle);
-    delay(2000);
+    resumeInputHandlerTask();
+    launcherDelayMs(2000);
 }
 
 /***************************************************************************************
 ** Function name: installFAT_OTA
 ** Description:   install FAT partition OverTheAir
 ***************************************************************************************/
-bool installFAT_OTA(
-    WiFiClientSecure *client, String file, uint32_t offset, uint32_t size, const char *label
-) {
+bool installFAT_OTA(String file, uint32_t offset, uint32_t size, const char *label) {
     prog_handler = 1; // review
 
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FAT");
 
-    if (client) {
-        HTTPClient http;
-        int httpResponseCode = -1;
-        http.begin(*client, file);
-        http.addHeader("Range", "bytes=" + String(offset) + "-" + String(offset + size - 1));
-        http.useHTTP10(true);
-
-        while (httpResponseCode < 0) {
-            httpResponseCode = http.GET();
-            vTaskDelay(500 / portTICK_PERIOD_MS);
-        }
-        if (httpResponseCode > 0) {
-            int size = http.getSize();
-            displayRedStripe("Installing FAT");
-            WiFiClient *stream = http.getStreamPtr();
-            prog_handler = 1; // Download handler
-            performFATUpdate(*stream, size, label);
-        }
-        http.end();
-        vTaskDelay(pdTICKS_TO_MS(500));
-        return true;
-    } else {
-        displayRedStripe("Couldn't Connect");
-        delay(2000);
-        return false;
-    }
+    LauncherUpdateTarget target =
+        strcmp(label, "sys") == 0 ? LAUNCHER_UPDATE_FAT_SYS : LAUNCHER_UPDATE_FAT_VFS;
+    HttpUpdateContext fatUpdate = {target, size, 0, false};
+    displayRedStripe("Installing FAT");
+    pauseInputHandlerTask();
+    bool ok = launcherHttpGetRange(file.c_str(), offset, size, launcherUpdateHttpCb, &fatUpdate) &&
+              launcherUpdateEnd();
+    resumeInputHandlerTask();
+    vTaskDelay(pdTICKS_TO_MS(500));
+    return ok;
 }
 
 #endif

@@ -1,4 +1,6 @@
 #include "display.h"
+#include "app_registry.h"
+#include "idf/launcher_platform.h"
 #include "mykeyboard.h"
 #include "onlineLauncher.h"
 #include "powerSave.h"
@@ -14,9 +16,15 @@ SerialDisplayClass *tft = new SerialDisplayClass();
 Ard_eSPI *tft = new Ard_eSPI();
 #else
 #ifdef TFT_PARALLEL_8_BIT
+#ifdef TFT_PARALLEL_8_BIT_MIXED_GPIO
+Arduino_DataBus *bus = new Arduino_ESP32PAR8(
+    TFT_DC, TFT_CS, TFT_WR, TFT_RD, TFT_D0, TFT_D1, TFT_D2, TFT_D3, TFT_D4, TFT_D5, TFT_D6, TFT_D7
+);
+#else
 Arduino_DataBus *bus = new Arduino_ESP32PAR8Q(
     TFT_DC, TFT_CS, TFT_WR, TFT_RD, TFT_D0, TFT_D1, TFT_D2, TFT_D3, TFT_D4, TFT_D5, TFT_D6, TFT_D7
 );
+#endif
 #elif RGB_PANEL // 16-par connections
 Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
 #if defined(DISPLAY_ST7262_PAR)
@@ -78,6 +86,11 @@ void displayScrollingText(const String &text, Opt_Coord &coord) {
     static String displayText = "";
     static int i = 0;
     static long _lastmillis = 0;
+#if defined(E_PAPER_DISPLAY)
+    const int deadTime = 1500;
+#else
+    const int deadTime = 200;
+#endif
     if (!displayText.startsWith(text)) i = 0;
     displayText = text + "        "; // Add spaces for smooth looping
     int scrollLen = len + 8;         // Full text plus space buffer
@@ -85,7 +98,7 @@ void displayScrollingText(const String &text, Opt_Coord &coord) {
     if (len < coord.size) {
         // Text fits within limit, no scrolling needed
         return;
-    } else if (millis() > _lastmillis + 200) {
+    } else if (launcherMillis() > _lastmillis + deadTime) {
         String scrollingPart =
             displayText.substring(i, i + (coord.size - 1)); // Display charLimit characters at a time
         tft->fillRect(
@@ -95,9 +108,9 @@ void displayScrollingText(const String &text, Opt_Coord &coord) {
         tft->setCursor(coord.x, coord.y);
         tft->print(scrollingPart);
         if (i >= scrollLen - coord.size) i = -1; // Loop back
-        _lastmillis = millis();
+        _lastmillis = launcherMillis();
         i++;
-        if (i == 1) _lastmillis = millis() + 1000;
+        if (i == 1) _lastmillis = launcherMillis() + 1000;
         tft->display(false);
     }
 }
@@ -157,7 +170,7 @@ void TouchFooter2(uint16_t color) {
 ***************************************************************************************/
 void initDisplay(bool doAll) {
 #ifndef HEADLESS
-    static uint8_t _name = random(0, 3);
+    static uint8_t _name = launcherRandom(0, 3);
     String name = "@Pirata";
     String txt;
     int cor, _x, _y, show;
@@ -165,10 +178,12 @@ void initDisplay(bool doAll) {
 #ifdef E_PAPER_DISPLAY // epaper display draws only once
     static bool runOnce = false;
     static long lastMillis = 0;
-    if (runOnce && millis() - lastMillis < 5000) goto END;
-    else {
+    if (runOnce && launcherMillis() - lastMillis < 5000) {
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+        return;
+    } else {
         runOnce = true;
-        lastMillis = millis();
+        lastMillis = launcherMillis();
     }
 #endif
 
@@ -178,14 +193,14 @@ void initDisplay(bool doAll) {
     tft->setTextSize(FP);
     tft->setCursor(10, 10);
     cor = 0;
-    show = random(0, 40);
+    show = launcherRandom(0, 40);
     _x = tft->getCursorX();
     _y = tft->getCursorY();
 
     while (tft->getCursorY() < (tftHeight - (LH + 4))) {
-        cor = random(0, 11);
+        cor = launcherRandom(0, 11);
         tft->setTextSize(FP);
-        show = random(0, 40);
+        show = launcherRandom(0, 40);
         if (show == 0 || doAll) {
             if (cor == 10) {
                 txt = " ";
@@ -237,12 +252,18 @@ void initDisplay(bool doAll) {
     tft->setTextSize(FG);
     tft->setTextColor(FGCOLOR);
 
+    String selectedAppName = launcherSelectedBootAppName();
+    if (!selectedAppName.isEmpty()) {
+        tft->setTextSize(FM);
+        tft->setTextColor(FGCOLOR, BGCOLOR);
+        int appTextY = tftHeight - (1.5 * (FM * LH) + 10);
+        tft->drawCentreString(" " + selectedAppName + " ", tftWidth / 2, appTextY, 1);
+    }
+
 #ifdef E_PAPER_DISPLAY // epaper display draws only once
     TouchFooter2();
 #endif
     tft->display(false);
-
-END:
     vTaskDelay(50 / portTICK_PERIOD_MS);
 #endif
 }
@@ -380,11 +401,15 @@ void progressHandler(size_t progress, size_t total) {
 #if defined(E_PAPER_DISPLAY)
     static unsigned long lastUpdate = 0;
 #endif
+    static unsigned long lastProgressDraw = 0;
+    static size_t lastProgressBarWidth = 0;
     double fraction = (double)progress / (double)total;
     double barWidthFloat = (tftWidth - 40) * fraction;
     size_t barWidth = static_cast<size_t>(barWidthFloat);
     // Serial.printf("Total: %d, Progress: %d, Progress bar width: %d \n", total, progress, barWidth);
     if (progress == 0) {
+        lastProgressDraw = launcherMillis();
+        lastProgressBarWidth = 0;
         tft->setTextSize(FM);
         tft->setTextColor(ALCOLOR);
         tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
@@ -402,19 +427,28 @@ void progressHandler(size_t progress, size_t total) {
         String txt;
         switch (prog_handler) {
             case 0: txt = "Installing FW"; break;
-            case 1: txt = "Installing SPIFFS"; break;
+            case 1: txt = "Copying Data"; break;
             case 2: txt = "Downloading"; break;
         }
         displayRedStripe(txt);
+    }
+    if (progress > 0 && progress < total) {
+        unsigned long now = launcherMillis();
+        if (barWidth == lastProgressBarWidth || now - lastProgressDraw < 80) {
+            wakeUpScreen();
+            return;
+        }
+        lastProgressDraw = now;
+        lastProgressBarWidth = barWidth;
     }
 
     if (prog_handler == 1) tft->fillRect(20, tftHeight - 26, barWidth, 13, ALCOLOR);
     else tft->fillRect(20, tftHeight - 45, barWidth, 13, FGCOLOR);
 
 #if defined(E_PAPER_DISPLAY) && (defined(GxEPD2_DISPLAY) || defined(USE_M5GFX))
-    if (millis() - lastUpdate > 2000) {
+    if (launcherMillis() - lastUpdate > 2000) {
         tft->display();
-        lastUpdate = millis();
+        lastUpdate = launcherMillis();
     }
 #else
     tft->display();
@@ -610,16 +644,12 @@ Opt_Coord drawOptions(
         int prefixWidth = 0;
         int cursorX = rowLeft;
 #ifdef HAS_TOUCH
-        bool showEscLabel = (!border && start == 0 && optionIndex == 0);
+        int escWidth = 0;
+        bool showEscLabel = (!border && i == 0);
+#endif
+#ifdef HAS_TOUCH
         if (RES && !border) {
             if (i < (RES / (LH * FM) + 1)) cursorX += RES - i * LW * FM;
-        }
-        if (showEscLabel) {
-            tft->setCursor(cursorX, rowTop);
-            tft->setTextColor(alcolor, bgcolor);
-            tft->print("[ESC]");
-            prefixWidth += (5 * charWidth + RES);
-            cursorX += (5 * charWidth);
         }
 #endif
 
@@ -638,6 +668,25 @@ Opt_Coord drawOptions(
 
         int labelX = cursorX;
         int labelWidth = lineWidth - prefixWidth;
+#ifdef HAS_TOUCH
+        if (showEscLabel) {
+            const char *escText = "[ESC]";
+            escWidth = strlen(escText) * charWidth;
+            int escX = boxX + paddingSide + lineWidth - escWidth;
+            if (escX < labelX) escX = labelX;
+            tft->setCursor(escX, rowTop);
+            tft->setTextColor(alcolor, bgcolor);
+            tft->print(escText);
+
+            MenuOptions escItem("", "ESC", nullptr, true, false);
+            escItem.setCoords(
+                escX > 4 ? escX - 4 : 0, rowTop > 2 ? rowTop - 2 : 0, escWidth + 8, lineHeight + rowSpacing
+            );
+            t_menu.push_back(escItem);
+
+            labelWidth -= escWidth + charWidth;
+        }
+#endif
         if (RES && !border) {
             if (i < (RES / (LH * FM) + 1)) { labelWidth -= RES / (i + 1); }
             if (i >= (optionCount - (RES / (LH * FM) + 1))) { labelWidth -= RES / (optionCount - i); }
@@ -701,9 +750,7 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
     int w = (tftWidth - 16) / cols;                                     // Width of each icon
     int h = (tftHeight - ((6 + 6 + FP * LH + 6) + LH * FP + 6)) / rows; // Height of each icon
 
-    int f_size = FG;
-    if (tftHeight <= 135) f_size = FM;
-    tft->setTextSize(f_size);
+    int maxIconTextSize = tftHeight <= 135 ? FM : FG;
 
     for (int i = 0; i < size; ++i) {
         int col = i % cols;
@@ -727,11 +774,25 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
         // Serial.printf("Menu Name: %s, x=%d, y=%d, w=%d, h=%d\n", opt[i].name, opt[i].x, opt[i].y, opt[i].w,
         // opt[i].h); // Debug purpose
 
+        uint16_t itemColor = opt[i].active ? opt[i].color : DARKGREY;
+        uint16_t selectedColor = opt[i].active ? opt[i].color : LIGHTGREY;
+        int f_size = maxIconTextSize;
+        const int textLimit = w - 10;
+        tft->setTextSize(f_size);
+        if (static_cast<int>(opt[i].name.length()) * LW * f_size > textLimit && f_size > FM) {
+            f_size = FM;
+            tft->setTextSize(f_size);
+        }
+        if (static_cast<int>(opt[i].name.length()) * LW * f_size > textLimit && f_size > FP) {
+            f_size = FP;
+            tft->setTextSize(f_size);
+        }
+
         if (i == index) {
             // Selected item
             tft->fillRoundRect(x + 6, y + 6, w - 6, h - 6, 5, DARKGREY);
-            tft->fillRoundRect(x, y, w - 6, h - 6, 5, opt[i].active ? FGCOLOR : LIGHTGREY);
-            tft->setTextColor(BGCOLOR, opt[i].active ? FGCOLOR : LIGHTGREY);
+            tft->fillRoundRect(x, y, w - 6, h - 6, 5, selectedColor);
+            tft->setTextColor(BGCOLOR, selectedColor);
             // Draw text in the center of the icon
             tft->drawCentreString(opt[i].name, x + (w - 6) / 2, y + (h - 6) / 2 - LH * f_size / 2, 1);
         } else {
@@ -740,8 +801,8 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
             tft->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 5, BGCOLOR);
             tft->drawRoundRect(x + 2, y + 2, w - 4, h - 4, 5, BGCOLOR);
             tft->fillRoundRect(x + 3, y + 3, w - 6, h - 6, 5, BGCOLOR);
-            tft->drawRoundRect(x + 3, y + 3, w - 6, h - 6, 5, opt[i].active ? FGCOLOR : DARKGREY);
-            tft->setTextColor(opt[i].active ? FGCOLOR : DARKGREY, BGCOLOR);
+            tft->drawRoundRect(x + 3, y + 3, w - 6, h - 6, 5, itemColor);
+            tft->setTextColor(itemColor, BGCOLOR);
             // Draw text in the center of the icon
             tft->drawCentreString(opt[i].name, x + w / 2, y + h / 2 - LH * f_size / 2, 1);
         }
@@ -759,7 +820,7 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
 #else
     tft->drawString("Launcher " + String(LAUNCHER), 12 + RES, 12);
 #endif
-    tft->setTextSize(f_size);
+    tft->setTextSize(maxIconTextSize);
     drawDeviceBorder();
     int bat = getBattery();
     if (bat > 0) drawBatteryStatus(bat);
@@ -796,7 +857,7 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
     std::vector<MenuOptions> list;
     int max_idx = 0;
     int min_idx = 255;
-    LongPressTmp = millis();
+    LongPressTmp = launcherMillis();
     while (1) {
         if (redraw) {
             list = {};
@@ -828,16 +889,21 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
 
 #if defined(T_EMBED) || defined(HAS_TOUCH) || defined(HAS_KEYBOARD)
 #if defined(HAS_TOUCH)
+        if (border == false) EscPress = false;
         if (touchPoint.pressed) {
             for (auto item : list) {
                 if (item.contain(touchPoint.x, touchPoint.y)) {
                     resetGlobals();
                     if (item.name == "") {
-                        if (item.text == "+") index = max_idx + 1;
-                        if (item.text == "-") index = min_idx - 1;
-                        if (index < 0) index = 0;
-                        // Serial.printf("\nPressed [%s], next index: %d\n",item.text,index);
-                        redraw = true;
+                        if (item.text == "ESC") {
+                            EscPress = true;
+                        } else {
+                            if (item.text == "+") index = max_idx + 1;
+                            if (item.text == "-") index = min_idx - 1;
+                            if (index < 0) index = 0;
+                            // Serial.printf("\nPressed [%s], next index: %d\n",item.text,index);
+                            redraw = true;
+                        }
                         break;
                     } else {
                         if (index == item.name.toInt()) SelPress = true;
@@ -859,9 +925,9 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
         if (LongPress || PrevPress) {
             if (!LongPress) {
                 LongPress = true;
-                LongPressTmp = millis();
+                LongPressTmp = launcherMillis();
             }
-            if (LongPress && millis() - LongPressTmp < 700) {
+            if (LongPress && launcherMillis() - LongPressTmp < 700) {
                 if (!PrevPress) {
                     AnyKeyPress = false;
                     if (index == 0) index = options.size() - 1;
@@ -869,17 +935,17 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
                     LongPress = false;
                     redraw = true;
                 }
-                if (millis() - LongPressTmp > 200)
+                if (launcherMillis() - LongPressTmp > 200)
                     tft->drawArc(
                         tftWidth / 2,
                         tftHeight / 2,
                         25,
                         15,
                         0,
-                        360 * (millis() - (LongPressTmp + 200)) / 500,
+                        360 * (launcherMillis() - (LongPressTmp + 200)) / 500,
                         FGCOLOR - 0x1111
                     );
-                if (millis() - LongPressTmp > 700) { // longpress detected to exit
+                if (launcherMillis() - LongPressTmp > 700) { // longpress detected to exit
                     LongPress = false;
                     check(PrevPress);
                     exit = true;
@@ -936,7 +1002,7 @@ void loopVersions(String _fid) {
     JsonArray versions = item["versions"];
     bool redraw = true;
 
-    LongPressTmp = millis();
+    LongPressTmp = launcherMillis();
     while (1) {
         if (returnToMenu) break; // Stops the loop to get back to Main menu
 
@@ -996,35 +1062,35 @@ void loopVersions(String _fid) {
         if (LongPress || PrevPress) {
             if (!LongPress) {
                 LongPress = true;
-                LongPressTmp = millis();
+                LongPressTmp = launcherMillis();
             }
-            if (LongPress && millis() - LongPressTmp < 800) {
+            if (LongPress && launcherMillis() - LongPressTmp < 800) {
             WAITING:
                 vTaskDelay(10 / portTICK_PERIOD_MS);
-                if (!PrevPress && millis() - LongPressTmp < 200) {
+                if (!PrevPress && launcherMillis() - LongPressTmp < 200) {
                     AnyKeyPress = false;
                     if (versionIndex == 0) versionIndex = versions.size() - 1;
                     else if (versionIndex > 0) versionIndex--;
                     LongPress = false;
                     redraw = true;
                 }
-                if (!PrevPress && millis() - LongPressTmp > 200) {
+                if (!PrevPress && launcherMillis() - LongPressTmp > 200) {
                     check(PrevPress);
                     redraw = true;
                     LongPress = false;
                     goto EXIT_CHECK;
                 }
-                if (millis() - LongPressTmp > 200)
+                if (launcherMillis() - LongPressTmp > 200)
                     tft->drawArc(
                         tftWidth / 2,
                         tftHeight / 2,
                         25,
                         15,
                         0,
-                        360 * (millis() - (LongPressTmp + 200)) / 500,
+                        360 * (launcherMillis() - (LongPressTmp + 200)) / 500,
                         FGCOLOR - 0x1111
                     );
-                if (millis() - LongPressTmp > 700) { // longpress detected to exit
+                if (launcherMillis() - LongPressTmp > 700) { // longpress detected to exit
                     returnToMenu = true;
                     check(PrevPress);
                     goto SAIR;
@@ -1043,19 +1109,8 @@ void loopVersions(String _fid) {
             // Definição da matriz "Options"
             options = {
                 {"OTA Install", [=]() {
-                     installFirmware(
-                         String(fid),
-                         String(file),
-                         app_size,
-                         app_offset,
-                         spiffs,
-                         spiffs_offset,
-                         spiffs_size,
-                         nb,
-                         fat,
-                         (uint32_t *)FAT_offset,
-                         (uint32_t *)FAT_size,
-                         String(name) + " - " + String(version)
+                     installFirmwareFromManifest(
+                         String(fid), String(version), String(name) + " - " + String(version)
                      );
                  }}
             };

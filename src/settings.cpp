@@ -1,7 +1,9 @@
 
 #include "settings.h"
+#include "wifi_crypto.h"
 #include "display.h"
 #include "esp_mac.h"
+#include "idf/launcher_platform.h"
 #include "mykeyboard.h"
 #include "nvs.h"
 #include "nvs_handle.hpp"
@@ -61,12 +63,12 @@ bool ensureStringKey(nvs::NVSHandle &handle, const char *key, const char *value)
     esp_err_t err = handle.get_string(key, buffer, sizeof(buffer));
     if (err == ESP_OK) return false;
     if (err != ESP_ERR_NVS_NOT_FOUND) {
-        Serial.printf("ensureStringKey(%s) read failed: %d", key, err);
+        launcherConsolePrintf("ensureStringKey(%s) read failed: %d", key, err);
         return false;
     }
 
     err = handle.set_string(key, value);
-    if (err != ESP_OK) { Serial.printf("ensureStringKey(%s) write failed: %d", key, err); }
+    if (err != ESP_OK) { launcherConsolePrintf("ensureStringKey(%s) write failed: %d", key, err); }
     return err == ESP_OK;
 }
 
@@ -75,12 +77,12 @@ bool ensureU8Key(nvs::NVSHandle &handle, const char *key, uint8_t value) {
     esp_err_t err = handle.get_item(key, current);
     if (err == ESP_OK) return false;
     if (err != ESP_ERR_NVS_NOT_FOUND) {
-        Serial.printf("ensureU8Key(%s) read failed: %d", key, err);
+        launcherConsolePrintf("ensureU8Key(%s) read failed: %d", key, err);
         return false;
     }
 
     err = handle.set_item(key, value);
-    if (err != ESP_OK) { Serial.printf("ensureU8Key(%s) write failed: %d", key, err); }
+    if (err != ESP_OK) { launcherConsolePrintf("ensureU8Key(%s) write failed: %d", key, err); }
     return err == ESP_OK;
 }
 } // namespace
@@ -153,10 +155,10 @@ bool ensureM5StackUiFlowNVSDefaults() {
     if (changed) {
         err = nvsHandle->commit();
         if (err != ESP_OK) {
-            Serial.printf("ensureM5StackUiFlowNVSDefaults: commit failed: %d", err);
+            launcherConsolePrintf("ensureM5StackUiFlowNVSDefaults: commit failed: %d", err);
             return false;
         }
-        Serial.printf("ensureM5StackUiFlowNVSDefaults: default UiFlow keys created");
+        launcherConsolePrint("ensureM5StackUiFlowNVSDefaults: default UiFlow keys created");
     }
 
     return true;
@@ -190,109 +192,78 @@ bool setWifiCredential(const String &ssidValue, const String &passwordValue, boo
 }
 
 void settings_menu() {
-    options = {
+    int idx = 0;
+    returnToMenu = false;
+    while (idx >= 0 && !returnToMenu) {
+        options = {
 #ifndef E_PAPER_DISPLAY
-        {"Charge Mode", [=]() { chargeMode(); }},
+            {"Charge Mode",
+                                   [=]() {
+                 chargeMode();
+                 returnToMenu = true;
+             }                                                 },
 #endif
-        {"Brightness",
-                               [=]() {
-             setBrightnessMenu();
-             saveConfigs();
-         }                                                           },
-        {"Dim time",
-                               [=]() {
-             setdimmerSet();
-             saveConfigs();
-         }                                                           },
+            {"Brightness",
+                                   [=]() {
+                 setBrightnessMenu();
+                 saveConfigs();
+             }                                                 },
+            {"Dim time",
+                                   [=]() {
+                 setdimmerSet();
+                 saveConfigs();
+             }                                                 },
 #if !defined(E_PAPER_DISPLAY)
-        {"UI Color",    [=]() {
-             setUiColor();
-             saveConfigs();
-         }                 },
+            {"UI Color",
+                                   [=]() {
+                 setUiColor();
+                 saveConfigs();
+             }                                                 },
 #endif
-    };
-    if (sdcardMounted) {
-        if (onlyBins)
-            options.push_back({"All Files", [=]() {
-                                   onlyBins = false;
-                                   saveConfigs();
-                               }});
-        else
-            options.push_back({"Only Bins", [=]() {
-                                   onlyBins = true;
-                                   saveConfigs();
-                               }});
-        if (noDotFiles)
-            options.push_back({"Show Dotfiles", [=]() {
-                                   noDotFiles = false;
-                                   saveConfigs();
-                               }});
-        else
-            options.push_back({"Hide Dotfiles", [=]() {
-                                   noDotFiles = true;
-                                   saveConfigs();
-                               }});
-    }
-
-    if (bootToApp)
-        options.push_back({"Boot to Launcher", [=]() {
-                               bootToApp = false;
-                               saveConfigs();
-                           }});
-    else
-        options.push_back({"Boot to App", [=]() {
-                               bootToApp = true;
-                               saveConfigs();
-                           }});
-    if (askSpiffs)
-        options.push_back({"Avoid Spiffs", [=]() {
-                               askSpiffs = false;
-                               saveConfigs();
-                           }});
-    else
-        options.push_back({"Ask Spiffs", [=]() {
-                               askSpiffs = true;
-                               saveConfigs();
-                           }});
 #if !defined(LYLYGO_TDECK_PRO)
-    options.push_back({"Orientation", [=]() {
-                           gsetRotation(true);
-                           saveConfigs();
-                       }});
+            {"Orientation", [=]() {
+                 gsetRotation(true);
+                 saveConfigs();
+             }}
 #endif
-#if defined(PART_08MB) && defined(M5STACK) &&                                                                \
-    (defined(ARDUINO_M5STACK_CARDPUTER) || defined(ARDUINO_M5STICK_C_PLUS2))
-    options.push_back({"Partition Change", [=]() { partitioner(); }});
-    options.push_back({"List of Partitions", [=]() { partList(); }});
-#endif
-    options.push_back({"Erase App partition", [=]() { eraseAppPartition(); }});
+        };
+        if (sdcardMounted) {
+            options.push_back({onlyBins ? "[ ] See All Files" : "[x] See All Files", [=]() {
+                                   onlyBins = !onlyBins;
+                                   saveConfigs();
+                               }});
+            options.push_back({noDotFiles ? "[ ] Show Dotfiles" : "[x] Show Dotfiles", [=]() {
+                                   noDotFiles = !noDotFiles;
+                                   saveConfigs();
+                               }});
+        }
 
-#ifndef PART_04MB
-    options.push_back({"Clear FAT", [=]() { eraseFAT(); }});
-#endif
+        options.push_back({bootToApp ? "[ ] Boot to Launcher" : "[x] Boot to Launcher", [=]() {
+                               bootToApp = !bootToApp;
+                               saveConfigs();
+                           }});
+        options.push_back({askSpiffs ? "[x] Ask to copy SPIFFS" : "[ ] Ask to copy SPIFFS", [=]() {
+                               askSpiffs = !askSpiffs;
+                               saveConfigs();
+                           }});
+        options.push_back({"Partition Manager", [=]() { partList(); }});
 
-    if (MAX_SPIFFS > 0)
-        options.push_back({"Backup SPIFFS", [=]() { dumpPartition("spiffs", "/bkp/spiffs"); }});
-    if (MAX_FAT_sys > 0 && dev_mode)
-        options.push_back({"Backup FAT sys", [=]() { dumpPartition("sys", "/bkp/FAT_sys"); }}); // Test only
-    if (MAX_FAT_vfs > 0)
-        options.push_back({"Backup FAT vfs", [=]() { dumpPartition("vfs", "/bkp/FAT_vfs"); }});
-    if (MAX_SPIFFS > 0) options.push_back({"Restore SPIFFS", [=]() { restorePartition("spiffs"); }});
-    if (MAX_FAT_sys > 0 && dev_mode)
-        options.push_back({"Restore FAT Sys", [=]() { restorePartition("sys"); }}); // Test only
-    if (MAX_FAT_vfs > 0) options.push_back({"Restore FAT Vfs", [=]() { restorePartition("vfs"); }});
-    if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
-    if (dev_mode) options.push_back({"Deactivate Dev", [=]() { dev_mode = false; }});
+        if (MAX_SPIFFS > 0)
+            options.push_back({"Backup SPIFFS", [=]() { dumpPartition("spiffs", "/bkp/spiffs"); }});
+        if (MAX_SPIFFS > 0) options.push_back({"Restore SPIFFS", [=]() { restorePartition("spiffs"); }});
+        if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
+        if (dev_mode) options.push_back({"Deactivate Dev", [=]() { dev_mode = false; }});
 #if defined(HAS_RESISTIVE_TOUCH)
-    options.push_back({"Calibrate Touch", calibrateTouch});
+        options.push_back({"Calibrate Touch", calibrateTouch});
 #endif
-    options.push_back({"Restart", [=]() { FREE_TFT reboot(); }});
+        options.push_back({"Restart", [=]() { FREE_TFT reboot(); }});
 #if !defined(CARDPUTER)
-    options.push_back({"Turn-off", [=]() { powerOff(); }});
+        options.push_back({"Turn-off", [=]() { FREE_TFT powerOff(); }});
 #endif
 
-    options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
-    loopOptions(options);
+        options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
+        idx = loopOptions(options);
+    }
     tft->drawPixel(0, 0, 0);
     tft->fillScreen(BGCOLOR);
 }
@@ -306,13 +277,7 @@ void _setBrightness(uint8_t brightval) {}
 **********************************************************************/
 void setBrightness(int brightval, bool save) {
     if (brightval > 100) brightval = 100;
-
-#if defined(HEADLESS)
-// do Nothing
-#else
     _setBrightness(brightval);
-#endif
-
     if (save) { bright = brightval; }
 }
 
@@ -323,31 +288,17 @@ void setBrightness(int brightval, bool save) {
 void getBrightness() {
     if (bright > 100) {
         bright = 100;
-
-#if defined(HEADLESS)
-// do Nothing
-#else
         _setBrightness(bright);
-#endif
         setBrightness(100);
     }
-
-#if defined(HEADLESS)
-// do Nothing
-#else
     _setBrightness(bright);
-#endif
 }
 
 /*********************************************************************
 **  Function: gsetRotation
 **  get onlyBins from EEPROM
 **********************************************************************/
-#if ROTATION == 0
-#define DRV 0
-#else
 #define DRV 1
-#endif
 int gsetRotation(bool set) {
     int result = ROTATION;
 
@@ -374,7 +325,6 @@ int gsetRotation(bool set) {
         if (rotation & 0b1) {
 #if defined(HAS_TOUCH)
             tftHeight = TFT_WIDTH - (FM * LH + 4);
-            ;
 #else
             tftHeight = TFT_WIDTH;
 #endif
@@ -504,9 +454,9 @@ void chargeMode() {
     tft->fillScreen(BGCOLOR);
     unsigned long tmp = 0;
     while (!check(SelPress)) {
-        if (millis() - tmp > 5000) {
+        if (launcherMillis() - tmp > 5000) {
             displayRedStripe(String(getBattery()) + " %");
-            tmp = millis();
+            tmp = launcherMillis();
         }
     }
 #ifndef CONFIG_IDF_TARGET_ESP32P4
@@ -578,13 +528,13 @@ bool saveIntoNVS() {
     err |= nvsHandle->set_item("cs", _cs);
 #endif
     if (err != ESP_OK) {
-        Serial.printf("Failed to store settings in NVS: %d", err);
+        launcherConsolePrintf("Failed to store settings in NVS: %d", err);
     } else {
-        Serial.printf("Settings stored in NVS successfully");
+        launcherConsolePrint("Settings stored in NVS successfully");
     }
 
     nvsHandle->commit();
-    if (!saveWifiIntoNVS()) { Serial.printf("saveIntoNVS: failed to store WiFi list"); }
+    if (!saveWifiIntoNVS()) { launcherConsolePrint("saveIntoNVS: failed to store WiFi list"); }
     return true;
 }
 
@@ -618,16 +568,18 @@ bool saveWifiIntoNVS() {
     for (JsonObject wifiObj : wifiList) {
         String ssid = wifiObj["ssid"].as<String>();
         if (ssid.isEmpty()) continue;
-        String pwd = wifiObj["pwd"].as<String>();
+        String encPwd = wifiPwdEncrypt(wifiObj["pwd"].as<String>());
         uint32_t crc = crc32(reinterpret_cast<const uint8_t *>(ssid.c_str()), ssid.length());
         String ssidKey = makeWifiKey('s', crc);
         String pwdKey = makeWifiKey('p', crc);
+        String secKey = makeWifiKey('b', crc);
 
         esp_err_t ssidErr = nvsHandle->set_string(ssidKey.c_str(), ssid.c_str());
-        esp_err_t pwdErr = nvsHandle->set_string(pwdKey.c_str(), pwd.c_str());
-        if (ssidErr != ESP_OK || pwdErr != ESP_OK) {
+        esp_err_t pwdErr = nvsHandle->set_string(pwdKey.c_str(), encPwd.c_str());
+        esp_err_t secErr = nvsHandle->set_item(secKey.c_str(), (uint8_t)1);
+        if (ssidErr != ESP_OK || pwdErr != ESP_OK || secErr != ESP_OK) {
             log_i(
-                "saveWifiIntoNVS: failed storing %s (ssid err=%d pwd err=%d)", ssid.c_str(), ssidErr, pwdErr
+                "saveWifiIntoNVS: failed storing %s (ssid=%d pwd=%d sec=%d)", ssid.c_str(), ssidErr, pwdErr, secErr
             );
         }
     }
@@ -745,11 +697,11 @@ bool getWifiFromNVS() {
     if (wifiList.isNull()) return false;
     wifiList.clear();
 
-    Serial.println("NVS: Finding keys in NVS...");
+    launcherConsolePrintln("NVS: Finding keys in NVS...");
     nvs_handle_t rawHandle;
     esp_err_t err = nvs_open("l_wifi", NVS_READONLY, &rawHandle);
     if (err != ESP_OK) {
-        Serial.printf("Error opening l_wifi: %s\n", esp_err_to_name(err));
+        launcherConsolePrintf("Error opening l_wifi: %s\n", esp_err_to_name(err));
         return false;
     }
 
@@ -760,7 +712,7 @@ bool getWifiFromNVS() {
         return true;
     }
     if (err != ESP_OK) {
-        Serial.printf("Error finding l_wifi entry, error: %s\n", esp_err_to_name(err));
+        launcherConsolePrintf("Error finding l_wifi entry, error: %s\n", esp_err_to_name(err));
         nvs_close(rawHandle);
         return false;
     }
@@ -773,13 +725,13 @@ bool getWifiFromNVS() {
             size_t ssid_size = 0;
             err = nvs_get_str(rawHandle, info.key, NULL, &ssid_size);
             if (err != ESP_OK) {
-                Serial.printf("Error %d looking for %s\n", err, info.key);
+                launcherConsolePrintf("Error %d looking for %s\n", err, info.key);
                 break;
             }
 
             char *ssidBuff = static_cast<char *>(malloc(ssid_size));
             if (!ssidBuff) {
-                Serial.println("Failed to allocate buffer for SSID");
+                launcherConsolePrintln("Failed to allocate buffer for SSID");
                 break;
             }
 
@@ -795,20 +747,25 @@ bool getWifiFromNVS() {
                         if (nvs_get_str(rawHandle, pwdKey.c_str(), pwdBuff, &pwd_size) == ESP_OK) {
                             pwdValue = String(pwdBuff);
                         } else {
-                            Serial.printf("Error retrieving pwd for key %s\n", pwdKey.c_str());
+                            launcherConsolePrintf("Error retrieving pwd for key %s\n", pwdKey.c_str());
                         }
                         free(pwdBuff);
                     } else {
-                        Serial.println("Failed to allocate buffer for password");
+                        launcherConsolePrintln("Failed to allocate buffer for password");
                     }
                 } else {
-                    Serial.printf("Password key %s not found\n", pwdKey.c_str());
+                    launcherConsolePrintf("Password key %s not found\n", pwdKey.c_str());
                 }
 
+                String secKey2 = "b_" + suffix;
+                uint8_t isSecure = 0;
+                nvs_get_u8(rawHandle, secKey2.c_str(), &isSecure);
+                if (isSecure) pwdValue = wifiPwdDecrypt(pwdValue);
+
                 setWifiCredential(String(ssidBuff), pwdValue, false);
-                Serial.printf("SSID: %s, PWD: %s\n", ssidBuff, pwdValue.c_str());
+                launcherConsolePrintf("SSID: %s\n", ssidBuff);
             } else {
-                Serial.printf("Error %d retrieving %s\n", err, info.key);
+                launcherConsolePrintf("Error %d retrieving %s\n", err, info.key);
             }
             free(ssidBuff);
         }
@@ -939,7 +896,16 @@ void getConfigs() {
                 count++;
                 log_i("Fail");
             }
-            if (!setting["wifi"].is<JsonArray>()) {
+            if (setting["wifi"].is<JsonArray>()) {
+                for (JsonObject wifiEntry : setting["wifi"].as<JsonArray>()) {
+                    if (wifiEntry["secure"].as<bool>()) {
+                        wifiEntry["pwd"] = wifiPwdDecrypt(wifiEntry["pwd"].as<String>());
+                        wifiEntry.remove("secure");
+                    } else if (!wifiEntry["ssid"].as<String>().isEmpty()) {
+                        ++count; // plain-text entry — trigger re-save with encryption
+                    }
+                }
+            } else {
                 ++count;
                 log_i("Fail");
             }
@@ -1050,9 +1016,36 @@ void saveConfigs() {
         setting["wui_pwd"] = wui_pwd;
         setting["dwn_path"] = dwn_path;
 
+        // Encrypt wifi passwords before writing to SD
+        {
+            JsonArray wl = setting["wifi"].as<JsonArray>();
+            if (!wl.isNull()) {
+                for (JsonObject e : wl) {
+                    String ssid = e["ssid"].as<String>();
+                    if (!ssid.isEmpty()) {
+                        e["pwd"] = wifiPwdEncrypt(e["pwd"].as<String>());
+                        e["secure"] = true;
+                    }
+                }
+            }
+        }
+
         size_t written = serializeJsonPretty(settings, file);
         file.flush();
         file.close();
+
+        // Restore plaintext passwords in memory immediately after write
+        {
+            JsonArray wl = setting["wifi"].as<JsonArray>();
+            if (!wl.isNull()) {
+                for (JsonObject e : wl) {
+                    if (e["secure"].as<bool>()) {
+                        e["pwd"] = wifiPwdDecrypt(e["pwd"].as<String>());
+                        e.remove("secure");
+                    }
+                }
+            }
+        }
 
         if (written < 5) {
             if (retry) {
@@ -1142,20 +1135,22 @@ bool loadTouchCalibration() {
         uint16_t parameters[5] = {x0, x1, y0, y1, rot};
         extern CYD28_TouchR touch;
         touch.setTouch(parameters);
-        Serial.printf(
+        launcherConsolePrintf(
             "loadTouchCalibration: Loaded calibration - x0:%u x1:%u y0:%u y1:%u rot:%u\n", x0, x1, y0, y1, rot
         );
         return true;
     }
 
-    Serial.printf("loadTouchCalibration: Failed to load valid calibration data: %s\n", esp_err_to_name(err));
+    launcherConsolePrintf(
+        "loadTouchCalibration: Failed to load valid calibration data: %s\n", esp_err_to_name(err)
+    );
     return false;
 }
 
 // Save touch calibration to NVS namespace "touch_cal"
 bool saveTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, uint8_t rot) {
     if (!validTouchCalibration(x0, x1, y0, y1)) {
-        Serial.printf(
+        launcherConsolePrintf(
             "saveTouchCalibration: Invalid calibration - x0:%u x1:%u y0:%u y1:%u rot:%u\n",
             x0,
             x1,
@@ -1169,7 +1164,7 @@ bool saveTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, ui
     esp_err_t err = ESP_OK;
     auto nvsHandle = openNamespace(TOUCH_CAL_NAMESPACE, NVS_READWRITE, err);
     if (!nvsHandle) {
-        Serial.printf("saveTouchCalibration: Failed to open %s namespace\n", TOUCH_CAL_NAMESPACE);
+        launcherConsolePrintf("saveTouchCalibration: Failed to open %s namespace\n", TOUCH_CAL_NAMESPACE);
         return false;
     }
 
@@ -1183,13 +1178,15 @@ bool saveTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, ui
     if (err == ESP_OK) { err = nvsHandle->commit(); }
 
     if (err == ESP_OK) {
-        Serial.printf(
+        launcherConsolePrintf(
             "saveTouchCalibration: Saved calibration - x0:%u x1:%u y0:%u y1:%u rot:%u\n", x0, x1, y0, y1, rot
         );
         return true;
     }
 
-    Serial.printf("saveTouchCalibration: Failed to save calibration data: %s\n", esp_err_to_name(err));
+    launcherConsolePrintf(
+        "saveTouchCalibration: Failed to save calibration data: %s\n", esp_err_to_name(err)
+    );
     return false;
 }
 void calibrateTouch() {
@@ -1220,7 +1217,7 @@ void calibrateTouch() {
     drawCenteredLine("Touch the screen corners", y);
     y += lineHeight;
     drawCenteredLine("indicated by the arrows", y);
-    delay(500);
+    launcherDelayMs(500);
 
     auto drawArrow = [&](uint8_t corner) {
         tft->fillRect(0, 0, 30, 30, BGCOLOR);
@@ -1245,8 +1242,8 @@ void calibrateTouch() {
     };
 
     auto readRawPoint = [&]() {
-        while (touch.touched()) { delay(10); }
-        while (!touch.touched()) { delay(10); }
+        while (touch.touched()) { launcherDelayMs(10); }
+        while (!touch.touched()) { launcherDelayMs(10); }
 
         uint32_t sx = 0;
         uint32_t sy = 0;
@@ -1255,10 +1252,10 @@ void calibrateTouch() {
             auto p = touch.getPointRaw();
             sx += p.x;
             sy += p.y;
-            delay(18);
+            launcherDelayMs(18);
         }
 
-        while (touch.touched()) { delay(10); }
+        while (touch.touched()) { launcherDelayMs(10); }
         return RawTouchPoint{uint16_t(sx / samples), uint16_t(sy / samples)};
     };
 
@@ -1305,7 +1302,7 @@ void calibrateTouch() {
     touch.setTouch(parameters);
     saveTouchCalibration(xMin, xMax, yMin, yMax, rot);
 
-    Serial.printf(
+    launcherConsolePrintf(
         "calibrateTouch: x0:%u x1:%u y0:%u y1:%u rot:%u (rot_true:%u) swap:%u invX:%u invY:%u\n",
         xMin,
         xMax,
