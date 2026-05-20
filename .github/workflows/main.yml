@@ -157,8 +157,38 @@
                 version="${GITHUB_SHA::7}"
               fi
 
-              sed -i "s/-DLAUNCHER=/-DLAUNCHER='\"$version\"' ; /g" ./platformio.ini
-              sed -i "s/-DWIFI_ENC_KEY=/-DWIFI_ENC_KEY='\"${{ secrets.WIFI_ENC_KEY }}\"' ; /g" ./platformio.ini
+              export LAUNCHER_VERSION="$version"
+
+              python - <<'PY'
+              import json
+              import os
+              import re
+              from pathlib import Path
+
+              platformio_ini = Path("platformio.ini")
+              contents = platformio_ini.read_text()
+
+              def c_string(value):
+                  return "'" + json.dumps(value) + "'"
+
+              replacements = {
+                  "LAUNCHER": c_string(os.environ["LAUNCHER_VERSION"]),
+                  "WIFI_ENC_KEY": c_string(os.environ["WIFI_ENC_KEY"]),
+              }
+
+              for name, value in replacements.items():
+                  contents = re.sub(
+                      rf"^(\s*-D{name}=).*$",
+                      rf"\g<1>{value}",
+                      contents,
+                      count=1,
+                      flags=re.MULTILINE,
+                  )
+
+              platformio_ini.write_text(contents)
+              PY
+            env:
+              WIFI_ENC_KEY: ${{ secrets.WIFI_ENC_KEY }}
 
           - name: Run Compile
             run: |
