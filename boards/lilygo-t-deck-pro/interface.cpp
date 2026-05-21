@@ -175,7 +175,6 @@ void _post_setup_gpio() {
                 io.digitalWrite(pin, HIGH);
                 delay(1);
             }
-            io.pinMode(EXPANDS_SD_PULLEN, INPUT);
         } else {
             launcherConsolePrintf("%s\n", String("Initializing expander failed").c_str());
         }
