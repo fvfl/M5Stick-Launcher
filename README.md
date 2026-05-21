@@ -93,6 +93,7 @@ Things that needs to be done in next updates
      * [x] Remoddeled WebUI, adding possibility to edit text files and NVS fields saved in memory
      * [x] Changed items on CFG for better understanding
      * [x] Optimize WiFi/WebUI functions to save Flash
+     * [x] Enabled OTA to CYD-3248S035C, CYD-3248S035R
      * [-] Optimize Settings functions to save flash
      * [ ] Optimize Storage functions to save Flash
 
