@@ -5,6 +5,10 @@
 #include <interface.h>
 TouchDrvCSTXXX touch;
 
+// GPIO expander
+#include <ExtensionIOXL9555.hpp>
+ExtensionIOXL9555 io;
+
 #include <bq27220.h>
 BQ27220 bq;
 
@@ -159,6 +163,22 @@ void _post_setup_gpio() {
     Wire.beginTransmission(0x20); // test for XL9555, MAX exclusive IC
     if (Wire.endTransmission() == 0) {
         launcherConsolePrintln("T-Deck Pro MAX detected");
+        launcherGpioOutput(9);      // Display RST Pin
+        launcherGpioWrite(9, HIGH); // Display RST Pin HIGH
+        if (io.begin(Wire, 0x20)) {
+            const uint8_t expands[] = {
+                9, // EXPANDS_KB_RST
+                2, // GPS,
+            };
+            for (auto pin : expands) {
+                io.pinMode(pin, OUTPUT);
+                io.digitalWrite(pin, HIGH);
+                delay(1);
+            }
+            io.pinMode(EXPANDS_SD_PULLEN, INPUT);
+        } else {
+            launcherConsolePrintf("%s\n", String("Initializing expander failed").c_str());
+        }
         variant = 2;
     }
     Wire.beginTransmission(0x5A); // test for DRV2605, t-deck Pro 1.1

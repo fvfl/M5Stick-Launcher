@@ -573,10 +573,26 @@ bool getInfo(String serverUrl, JsonDocument &_doc) {
 ** Function name: GetJsonFromLauncherHub
 ** Description:   Gets JSON from github server
 ***************************************************************************************/
+String encodeQueryValue(const String &value) {
+    String encoded;
+    for (size_t i = 0; i < value.length(); ++i) {
+        char c = value[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+            c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned char>(c));
+            encoded += hex;
+        }
+    }
+    return encoded;
+}
+
 bool GetJsonFromLauncherHub(uint8_t page, String order, bool star, String query) {
     String q = "&order_by=" + order;
     q += page > 1 ? "&page=" + String(page) : "";
-    q += query.length() > 0 ? "&q=" + String(query) : "";
+    q += query.length() > 0 ? "&q=" + encodeQueryValue(query) : "";
     q += star ? "&star=1" : "";
 #ifdef OTA_EXTRA
     q += OTA_EXTRA;
@@ -601,22 +617,6 @@ JsonDocument getVersionInfo(String fid) {
         vTaskDelay(1500 / portTICK_PERIOD_MS);
     }
     return versions;
-}
-
-String encodeQueryValue(const String &value) {
-    String encoded;
-    for (size_t i = 0; i < value.length(); ++i) {
-        char c = value[i];
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.' || c == '~') {
-            encoded += c;
-        } else {
-            char hex[4];
-            snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned char>(c));
-            encoded += hex;
-        }
-    }
-    return encoded;
 }
 
 void installFirmwareFromManifest(String fid, String version, String installedName) {

@@ -8,6 +8,7 @@
 #include "settings.h"
 #include <cstring>
 #include <globals.h>
+#include <vector>
 
 #if defined(HEADLESS)
 SerialDisplayClass *tft = new SerialDisplayClass();
@@ -363,20 +364,71 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
     M5.Display.setEpdMode(epd_mode_t::epd_fast);
 #endif
 
-    // stripe drwawing
-    int size;
-    if (text.length() * LW * FM < (tft->width() - 2 * FM * LW)) size = FM;
-    else size = FP;
-    tft->fillRoundRect(10, tftHeight / 2 - (FM * LH / 2 + 5), tftWidth - 20, FM * LH + 10, 7, bgcolor);
-    tft->setTextColor(fgcolor, bgcolor);
-    if (size == FM) {
-        tft->setTextSize(FM);
-        tft->setCursor(tftWidth / 2 - FM * 3 * text.length(), tftHeight / 2 - FM * LH / 2);
-    } else {
-        tft->setTextSize(FP);
-        tft->setCursor(tftWidth / 2 - FP * 3 * text.length(), tftHeight / 2 - FP * LH / 2);
+    // stripe drawing
+    int size = text.length() * LW * FM < (tft->width() - 2 * FM * LW) ? FM : FP;
+    int paddingX = 8;
+    int paddingY = 5;
+    int rectX = 10;
+    int rectW = tftWidth - 20;
+    int maxLineChars = (rectW - 2 * paddingX) / (LW * size);
+    if (maxLineChars < 1) maxLineChars = 1;
+
+    std::vector<String> lines;
+    String line;
+    String word;
+    auto appendWord = [&]() {
+        if (word.isEmpty()) return;
+
+        while (static_cast<int>(word.length()) > maxLineChars) {
+            if (!line.isEmpty()) {
+                lines.push_back(line);
+                line = "";
+            }
+            lines.push_back(word.substring(0, maxLineChars));
+            word = word.substring(maxLineChars);
+        }
+
+        int extraSpace = line.isEmpty() ? 0 : 1;
+        if (!line.isEmpty() && static_cast<int>(line.length() + extraSpace + word.length()) > maxLineChars) {
+            lines.push_back(line);
+            line = "";
+        }
+        if (!line.isEmpty()) line += " ";
+        line += word;
+        word = "";
+    };
+
+    for (size_t i = 0; i < text.length(); ++i) {
+        char c = text[i];
+        if (c == '\n') {
+            appendWord();
+            lines.push_back(line);
+            line = "";
+        } else if (c == ' ') {
+            appendWord();
+        } else {
+            word += c;
+        }
     }
-    tft->println(text);
+    appendWord();
+    if (!line.isEmpty() || lines.empty()) lines.push_back(line);
+
+    int lineHeight = size * LH;
+    int rectH = static_cast<int>(lines.size()) * lineHeight + 2 * paddingY;
+    int maxRectH = tftHeight > 20 ? tftHeight - 20 : tftHeight;
+    if (rectH > maxRectH) rectH = maxRectH;
+    int rectY = tftHeight / 2 - rectH / 2;
+    if (rectY < 0) rectY = 0;
+
+    tft->fillRoundRect(rectX, rectY, rectW, rectH, 7, bgcolor);
+    tft->setTextColor(fgcolor, bgcolor);
+    tft->setTextSize(size);
+
+    int visibleLines = (rectH - 2 * paddingY) / lineHeight;
+    int textY = rectY + (rectH - visibleLines * lineHeight) / 2;
+    for (int i = 0; i < visibleLines && i < static_cast<int>(lines.size()); ++i) {
+        tft->drawCentreString(lines[i], tftWidth / 2, textY + i * lineHeight, 1);
+    }
 
     tft->display(false);
 #if E_PAPER_DISPLAY
