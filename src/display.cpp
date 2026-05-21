@@ -797,21 +797,31 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
         displayRedStripe("No options available");
         return;
     }
-    int cols = (tftHeight > 90) ? 3 : 5;                                // Number of columns based on height
-    int rows = (size + cols - 1) / cols;                                // Calculate rows needed
+    bool compactOneLine = tftHeight <= 90;
+    int cols = compactOneLine ? 5 : 3;                                  // Number of columns based on height
+    int visibleItems = compactOneLine && size > cols ? cols : size;
+    int rows = compactOneLine ? 1 : (size + cols - 1) / cols;           // Calculate rows needed
     int w = (tftWidth - 16) / cols;                                     // Width of each icon
     int h = (tftHeight - ((6 + 6 + FP * LH + 6) + LH * FP + 6)) / rows; // Height of each icon
 
     int maxIconTextSize = tftHeight <= 135 ? FM : FG;
 
-    for (int i = 0; i < size; ++i) {
-        int col = i % cols;
-        int row = i / cols;
+    for (int i = 0; i < size; ++i) opt[i].resetCoords();
+
+    for (int slot = 0; slot < visibleItems; ++slot) {
+        int i = slot;
+        if (compactOneLine && size > cols) {
+            int centerSlot = cols / 2;
+            i = (index + slot - centerSlot + size) % size;
+        }
+
+        int col = slot % cols;
+        int row = compactOneLine ? 0 : slot / cols;
         int y = (6 + 6 + FP * LH + 8) + row * h;
         int xOffset = 0;
 
         // Última linha incompleta: centralizar
-        if (row == rows - 1 && (size % cols) != 0 && (size % cols) < cols) {
+        if (!compactOneLine && row == rows - 1 && (size % cols) != 0 && (size % cols) < cols) {
             int itemsInLastRow = size % cols;
             int totalWidthUsed = itemsInLastRow * w;
             xOffset = ((tftWidth - 16) - totalWidthUsed) / 2;
@@ -848,15 +858,29 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
             // Draw text in the center of the icon
             tft->drawCentreString(opt[i].name, x + (w - 6) / 2, y + (h - 6) / 2 - LH * f_size / 2, 1);
         } else {
+            int drawX = x;
+            int drawY = y;
+            int drawW = w;
+            int drawH = h;
+            if (compactOneLine) {
+                int insetY = h > 20 ? 4 : 2;
+                tft->fillRoundRect(x, y, w, h, 5, BGCOLOR);
+                drawY += insetY;
+                drawH -= 2 * insetY;
+                if (drawH < 8) {
+                    drawY = y;
+                    drawH = h;
+                }
+            }
             // Non-selected item
-            tft->drawRoundRect(x, y, w, h, 5, BGCOLOR);
-            tft->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 5, BGCOLOR);
-            tft->drawRoundRect(x + 2, y + 2, w - 4, h - 4, 5, BGCOLOR);
-            tft->fillRoundRect(x + 3, y + 3, w - 6, h - 6, 5, BGCOLOR);
-            tft->drawRoundRect(x + 3, y + 3, w - 6, h - 6, 5, itemColor);
+            tft->drawRoundRect(drawX, drawY, drawW, drawH, 5, BGCOLOR);
+            tft->drawRoundRect(drawX + 1, drawY + 1, drawW - 2, drawH - 2, 5, BGCOLOR);
+            tft->drawRoundRect(drawX + 2, drawY + 2, drawW - 4, drawH - 4, 5, BGCOLOR);
+            tft->fillRoundRect(drawX + 3, drawY + 3, drawW - 6, drawH - 6, 5, BGCOLOR);
+            tft->drawRoundRect(drawX + 3, drawY + 3, drawW - 6, drawH - 6, 5, itemColor);
             tft->setTextColor(itemColor, BGCOLOR);
             // Draw text in the center of the icon
-            tft->drawCentreString(opt[i].name, x + w / 2, y + h / 2 - LH * f_size / 2, 1);
+            tft->drawCentreString(opt[i].name, drawX + drawW / 2, drawY + drawH / 2 - LH * f_size / 2, 1);
         }
         // tft->drawRect(opt[i].x,opt[i].y,opt[i].w,opt[i].h,BLUE); // debug purpose
     }

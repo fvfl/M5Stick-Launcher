@@ -373,7 +373,7 @@ void loop() {
     if (!sdcardMounted) index = 1; // if SD card is not present, paint SD square grey and auto select OTA
     std::vector<MenuOptions> menuItems = {
         {
-#if TFT_HEIGHT < 135
+#if (TFT_HEIGHT < 135) || (TFT_WIDTH < 135)
          "SD", "Launch from SDCard",
 #else
             "SD",
@@ -386,7 +386,7 @@ void loop() {
         {"OTA", "Online Installer", [=]() { ota_function(); }},
 #endif
         {
-#if TFT_HEIGHT < 135
+#if (TFT_HEIGHT < 135) || (TFT_WIDTH < 135)
          "WUI", "Start WebUI",
 #else
             "WUI",
@@ -396,7 +396,7 @@ void loop() {
         },
 #if defined(SOC_USB_OTG_SUPPORTED)
         {
-#if TFT_HEIGHT < 135
+#if (TFT_HEIGHT < 135) || (TFT_WIDTH < 135)
          "USB", "SD->USB",
 #else
             "USB",
@@ -415,7 +415,7 @@ void loop() {
         },
 #endif
         {
-#if TFT_HEIGHT < 135
+#if (TFT_HEIGHT < 135) || (TFT_WIDTH < 135)
          "PM"
 #else
             "PMan"
@@ -424,7 +424,7 @@ void loop() {
          "Partition Manager.", [=]() { partList(); }
         },
         {
-#if TFT_HEIGHT < 135
+#if (TFT_HEIGHT < 135) || (TFT_WIDTH < 135)
          "CFG", "Change Settings.",
 #else
             "CFG",
@@ -531,6 +531,44 @@ void loop() {
             }
             redraw = true;
         }
+#if defined(HAS_KEYBOARD) || defined(HAS_5_BUTTONS)
+        auto moveMainMenuRow = [&](int direction) {
+            if (tftHeight <= 90) return;
+
+            int cols = (tftHeight > 90) ? 3 : 5;
+            int rows = (opt + cols - 1) / cols;
+            int targetRow = index / cols + direction;
+            if (targetRow < 0) {
+                targetRow = rows - 1;
+            } else if (targetRow >= rows) {
+                targetRow = 0;
+            }
+
+            int targetStart = targetRow * cols;
+            int targetEnd = targetStart + cols;
+            if (targetEnd > opt) targetEnd = opt;
+
+            int currentCenter = menuItems[index].x + menuItems[index].w / 2;
+            int nextIndex = targetStart;
+            int bestDistance = 0x7fffffff;
+            for (int i = targetStart; i < targetEnd; ++i) {
+                int candidateCenter = menuItems[i].x + menuItems[i].w / 2;
+                int distance = candidateCenter > currentCenter ? candidateCenter - currentCenter
+                                                               : currentCenter - candidateCenter;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    nextIndex = i;
+                }
+            }
+
+            index = nextIndex;
+            pass_by = 0;
+            redraw = true;
+        };
+
+        if (check(UpPress)) { moveMainMenuRow(-1); }
+        if (check(DownPress)) { moveMainMenuRow(1); }
+#endif
 
         // Select and run function
         if (check(SelPress)) {

@@ -1,9 +1,9 @@
+#include "idf/launcher_platform.h"
 #include "powerSave.h"
 #include <Adafruit_TCA8418.h>
 #include <Keyboard.h>
 #include <Wire.h>
 #include <interface.h>
-#include "idf/launcher_platform.h"
 
 // Cardputer and 1.1 keyboard
 Keyboard_Class Keyboard;
@@ -118,7 +118,9 @@ void _post_setup_gpio() {
 
     if (!UseTCA8418) {
         launcherConsolePrintf("%s\n", String("ADV  : Failed to initialize TCA8418!").c_str());
-        launcherConsolePrintf("%s\n", String("Probable standard Cardputer detected, switching to Keyboard library").c_str());
+        launcherConsolePrintf(
+            "%s\n", String("Probable standard Cardputer detected, switching to Keyboard library").c_str()
+        );
         Wire.end();
         Keyboard.begin();
         return;
@@ -153,6 +155,8 @@ void InputHandler(void) {
     static unsigned long tm = 0;
     static unsigned long nextRepeatTime = 0;
     static unsigned long prevRepeatTime = 0;
+    static unsigned long upRepeatTime = 0;
+    static unsigned long downRepeatTime = 0;
 
     static bool sel = false;
     static bool prev = false;
@@ -175,6 +179,8 @@ void InputHandler(void) {
         bool keyEventHandled = false;
         bool nextPulse = false;
         bool prevPulse = false;
+        bool upPulse = false;
+        bool downPulse = false;
         bool delPulse = false;
         bool keyPulse = false;
         keyStroke pendingKey;
@@ -191,7 +197,8 @@ void InputHandler(void) {
                 uint8_t row, col;
                 mapRawKeyToPhysical(value, row, col);
 
-                // launcherConsolePrintf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed, row, col);
+                // launcherConsolePrintf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed,
+                // row, col);
 
                 if (row >= 4 || col >= 14) continue;
 
@@ -209,7 +216,8 @@ void InputHandler(void) {
 
                 char keyVal = getKeyChar(row, col);
 
-                // launcherConsolePrintf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
+                // launcherConsolePrintf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row,
+                // col);
 
                 if (keyVal == KEY_BACKSPACE && col == 13) {
                     if (pressed) {
@@ -231,7 +239,15 @@ void InputHandler(void) {
                         pendingKey.word.emplace_back(KEY_ENTER);
                         keyPulse = true;
                     }
-                } else if (keyVal == ',' || keyVal == ';') {
+                } else if (keyVal == ';') {
+                    up = pressed;
+                    if (pressed) {
+                        upPulse = true;
+                        upRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == ',') {
                     prev = pressed;
                     if (pressed) {
                         prevPulse = true;
@@ -239,7 +255,15 @@ void InputHandler(void) {
                         pendingKey.word.emplace_back(keyVal);
                         keyPulse = true;
                     }
-                } else if (keyVal == '/' || keyVal == '.') {
+                } else if (keyVal == '.') {
+                    down = pressed;
+                    if (pressed) {
+                        downPulse = true;
+                        downRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == '/') {
                     next = pressed;
                     if (pressed) {
                         nextPulse = true;
@@ -296,6 +320,14 @@ void InputHandler(void) {
             prevPulse = true;
             prevRepeatTime = now + TCA8418_REPEAT_MS;
         }
+        if (up && now >= upRepeatTime) {
+            upPulse = true;
+            upRepeatTime = now + TCA8418_REPEAT_MS;
+        }
+        if (down && now >= downRepeatTime) {
+            downPulse = true;
+            downRepeatTime = now + TCA8418_REPEAT_MS;
+        }
 
         if (!keyEventHandled && !nextPulse && !prevPulse && !LongPress) {
             sel = false; // avoid multiple selections
@@ -316,8 +348,8 @@ void InputHandler(void) {
 
         NextPress = nextPulse;
         PrevPress = prevPulse;
-        UpPress = up;
-        DownPress = down;
+        UpPress = upPulse;
+        DownPress = downPulse;
         SelPress = sel | SelPress; // in case G0 is pressed
         EscPress = esc;
         tm = now;
