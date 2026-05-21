@@ -32,6 +32,9 @@ bool fn_key_pressed = false;
 bool shift_key_pressed = false;
 bool caps_lock = false;
 
+constexpr unsigned long TCA8418_REPEAT_START_MS = 350;
+constexpr unsigned long TCA8418_REPEAT_MS = 150;
+
 #define KB_ROWS 4
 #define KB_COLS 10
 
@@ -91,9 +94,10 @@ char getKeyChar(uint8_t k) {
 }
 
 int handleSpecialKeys(uint8_t k, bool pressed) {
-    switch (k) {
+    char keyVal = _key_value_map[k / 10][k % 10].value_first;
+    switch (keyVal) {
         case KEY_FN: fn_key_pressed = !fn_key_pressed; return 1;
-        case KEY_LEFT_SHIFT: {
+        case SHIFT: {
             shift_key_pressed = pressed;
             if (fn_key_pressed && shift_key_pressed) { caps_lock = !caps_lock; }
             return 1;
@@ -208,15 +212,18 @@ void _setBrightness(uint8_t brightval) {
 void InputHandler(void) {
 
     static unsigned long tm = launcherMillis();
+    static unsigned long nextRepeatTime = 0;
+    static unsigned long prevRepeatTime = 0;
+    static unsigned long upRepeatTime = 0;
+    static unsigned long downRepeatTime = 0;
+    static bool nextHeld = false;
+    static bool prevHeld = false;
+    static bool upHeld = false;
+    static bool downHeld = false;
     static int posDifference = 0;
     static int lastPos = 0;
     bool sel = !BTN_ACT;
     bool esc = !BTN_ACT;
-
-    uint8_t keyValue = 0;
-    uint8_t keyVal = '\0';
-
-    if (launcherMillis() - tm < 500) return;
 
     int newPos = encoder->getPosition();
     if (newPos != lastPos) {
@@ -227,34 +234,101 @@ void InputHandler(void) {
     sel = launcherGpioRead(SEL_BTN);
     esc = launcherGpioRead(BK_BTN);
 
-    if (keyboard.available() > 0) {
+    bool nextPulse = false;
+    bool prevPulse = false;
+    bool upPulse = false;
+    bool downPulse = false;
+    bool selPulse = false;
+    bool escPulse = false;
+    bool keyPulse = false;
+    keyStroke pendingKey;
+
+    while (keyboard.available() > 0) {
         int keyValue = keyboard.getEvent();
         bool pressed = keyValue & 0x80;
         keyValue &= 0x7F;
         keyValue--;
-        if (keyValue / 10 < 4) {
-            if (handleSpecialKeys(keyValue, pressed) > 0) goto END;
-            keyVal = getKeyChar(keyValue);
-        }
-        if (pressed && !wakeUpScreen() && keyVal != '\0') {
-            KeyStroke.Clear();
-            KeyStroke.hid_keys.push_back(keyVal);
-            if (keyVal == KEY_BACKSPACE) {
-                KeyStroke.del = true;
-                KeyStroke.exit_key = true;
-            }
-            if (keyVal == KEY_ENTER) KeyStroke.enter = true;
-            if (launcherGpioRead(SEL_BTN) == BTN_ACT) KeyStroke.fn = true;
-            if (keyVal == 'w') UpPress = true;
-            if (keyVal == 's') DownPress = true;
-            if (keyVal == 'a') PrevPress = true;
-            if (keyVal == 'd') NextPress = true;
-            KeyStroke.word.push_back(keyVal);
-            KeyStroke.pressed = true;
-        }
-    } else KeyStroke.Clear();
 
-    if (posDifference != 0 || sel == BTN_ACT || esc == BTN_ACT || KeyStroke.enter) {
+        if (keyValue / 10 >= KB_ROWS || keyValue % 10 >= KB_COLS) continue;
+        if (handleSpecialKeys(keyValue, pressed) > 0) continue;
+
+        uint8_t keyVal = getKeyChar(keyValue);
+        if (pressed && !wakeUpScreen() && keyVal != '\0') {
+            pendingKey.hid_keys.push_back(keyVal);
+            if (keyVal == KEY_BACKSPACE) {
+                pendingKey.del = true;
+                pendingKey.exit_key = true;
+                escPulse = true;
+            }
+            if (keyVal == KEY_ENTER) {
+                pendingKey.enter = true;
+                selPulse = true;
+            }
+            if (launcherGpioRead(SEL_BTN) == BTN_ACT) pendingKey.fn = true;
+            if (keyVal == 'w') {
+                upPulse = true;
+                upRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+            }
+            if (keyVal == 's') {
+                downPulse = true;
+                downRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+            }
+            if (keyVal == 'a') {
+                prevPulse = true;
+                prevRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+            }
+            if (keyVal == 'd') {
+                nextPulse = true;
+                nextRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+            }
+            pendingKey.word.push_back(keyVal);
+            pendingKey.pressed = true;
+            keyPulse = true;
+        }
+
+        if (keyVal == 'w') upHeld = pressed;
+        if (keyVal == 's') downHeld = pressed;
+        if (keyVal == 'a') prevHeld = pressed;
+        if (keyVal == 'd') nextHeld = pressed;
+    }
+
+    unsigned long now = launcherMillis();
+    if (nextHeld && now >= nextRepeatTime) {
+        nextPulse = true;
+        nextRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (prevHeld && now >= prevRepeatTime) {
+        prevPulse = true;
+        prevRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (upHeld && now >= upRepeatTime) {
+        upPulse = true;
+        upRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (downHeld && now >= downRepeatTime) {
+        downPulse = true;
+        downRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+
+    if (keyPulse) KeyStroke = pendingKey;
+    else if (!nextPulse && !prevPulse && !upPulse && !downPulse) KeyStroke.Clear();
+
+    if (nextPulse || prevPulse || upPulse || downPulse || selPulse || escPulse || keyPulse) {
+        AnyKeyPress = true;
+        NextPress = nextPulse;
+        PrevPress = prevPulse;
+        UpPress = upPulse;
+        DownPress = downPulse;
+        SelPress = selPulse;
+        EscPress = escPulse;
+    }
+
+    if (launcherMillis() - tm < 500) {
+        if (nextPulse || prevPulse || upPulse || downPulse || selPulse || escPulse || keyPulse) tm = launcherMillis();
+        return;
+    }
+
+    if (posDifference != 0 || sel == BTN_ACT || esc == BTN_ACT) {
         if (!wakeUpScreen()) {
             AnyKeyPress = true;
 
@@ -266,13 +340,15 @@ void InputHandler(void) {
                 NextPress = true;
                 posDifference--;
             }
-            if (sel == BTN_ACT || KeyStroke.enter) SelPress = true;
-            if (esc == BTN_ACT || KeyStroke.del) EscPress = true;
+            if (sel == BTN_ACT) SelPress = true;
+            if (esc == BTN_ACT) EscPress = true;
         } else goto END;
     }
 
 END:
-    if (sel == BTN_ACT || esc == BTN_ACT || KeyStroke.enter) tm = launcherMillis();
+    if (sel == BTN_ACT || esc == BTN_ACT || nextPulse || prevPulse || upPulse || downPulse || selPulse || escPulse ||
+        keyPulse)
+        tm = launcherMillis();
 }
 
 void powerOff() { PPM.shutdown(); }

@@ -16,6 +16,9 @@ bool fn_key_pressed = false;
 bool shift_key_pressed = false;
 bool caps_lock = false;
 
+constexpr unsigned long TCA8418_REPEAT_START_MS = 350;
+constexpr unsigned long TCA8418_REPEAT_MS = 150;
+
 int handleSpecialKeys(uint8_t row, uint8_t col, bool pressed);
 void mapRawKeyToPhysical(uint8_t rawValue, uint8_t &row, uint8_t &col);
 
@@ -86,7 +89,7 @@ void _setup_gpio() {
     // Set GPIO5 HIGH for SD card compatibility (thx for the tip @bmorcelli & 7h30th3r0n3)
     launcherGpioWrite(5, HIGH);
 }
-bool kb_interrupt = false;
+volatile bool kb_interrupt = false;
 void IRAM_ATTR gpio_isr_handler(void *arg) { kb_interrupt = true; }
 void _post_setup_gpio() {
     // Initialize TCA8418 I2C keyboard controller
@@ -124,7 +127,7 @@ void _post_setup_gpio() {
     tca.matrix(7, 8);
     tca.flush();
     launcherGpioInput(11);
-    attachInterruptArg(digitalPinToInterrupt(11), gpio_isr_handler, &kb_interrupt, CHANGE);
+    attachInterruptArg(digitalPinToInterrupt(11), gpio_isr_handler, nullptr, CHANGE);
     tca.enableInterrupts();
 }
 
@@ -148,9 +151,8 @@ void _setBrightness(uint8_t brightval) {
 **********************************************************************/
 void InputHandler(void) {
     static unsigned long tm = 0;
-    static unsigned long lastCheck = 0;
-    static unsigned long lastKeyTime = 0;
-    static uint8_t lastKeyValue = 0;
+    static unsigned long nextRepeatTime = 0;
+    static unsigned long prevRepeatTime = 0;
 
     static bool sel = false;
     static bool prev = false;
@@ -158,9 +160,8 @@ void InputHandler(void) {
     static bool up = false;
     static bool down = false;
     static bool esc = false;
-    static bool del = false;
 
-    if (launcherMillis() - tm < 200 && !LongPress) return;
+    if (!UseTCA8418 && launcherMillis() - tm < 200 && !LongPress) return;
 
     if (launcherGpioRead(0) == LOW) { // GPIO0 button, shoulder button
         tm = launcherMillis();
@@ -171,103 +172,156 @@ void InputHandler(void) {
         AnyKeyPress = true;
     }
     if (UseTCA8418) {
-        if (!kb_interrupt) {
-            if (!LongPress) {
-                sel = false; // avoid multiple selections
-                esc = false; // avoid multiple escapes
+        bool keyEventHandled = false;
+        bool nextPulse = false;
+        bool prevPulse = false;
+        bool delPulse = false;
+        bool keyPulse = false;
+        keyStroke pendingKey;
+
+        if (kb_interrupt) {
+            // Drain the FIFO now. Processing one TCA8418 event per 200 ms made quick taps
+            // pile up and replay later as delayed navigation.
+            while (tca.available() > 0) {
+                int keyEvent = tca.getEvent();
+                bool pressed = (keyEvent & 0x80); // Bit 7: 1 Pressed, 0 Released
+                uint8_t value = keyEvent & 0x7F;  // Bits 0-6: key value
+
+                // Map raw value to physical position
+                uint8_t row, col;
+                mapRawKeyToPhysical(value, row, col);
+
+                // launcherConsolePrintf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed, row, col);
+
+                if (row >= 4 || col >= 14) continue;
+
+                if (wakeUpScreen()) continue;
+
+                AnyKeyPress = true;
+                keyEventHandled = true;
+
+                if (handleSpecialKeys(row, col, pressed) > 0) continue;
+
+                if (!pressed) {
+                    KeyStroke.Clear();
+                    LongPressTmp = false;
+                }
+
+                char keyVal = getKeyChar(row, col);
+
+                // launcherConsolePrintf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
+
+                if (keyVal == KEY_BACKSPACE && col == 13) {
+                    if (pressed) {
+                        delPulse = true;
+                        esc = true;
+                    } else {
+                        esc = false;
+                    }
+                } else if (keyVal == '`') {
+                    esc = pressed;
+                    if (pressed) {
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == KEY_ENTER && col == 13) {
+                    sel = pressed;
+                    if (pressed) {
+                        pendingKey.enter = true;
+                        pendingKey.word.emplace_back(KEY_ENTER);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == ',' || keyVal == ';') {
+                    prev = pressed;
+                    if (pressed) {
+                        prevPulse = true;
+                        prevRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == '/' || keyVal == '.') {
+                    next = pressed;
+                    if (pressed) {
+                        nextPulse = true;
+                        nextRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == KEY_TAB) {
+                    if (pressed) {
+                        pendingKey.word.emplace_back(KEY_TAB);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == 0xFF) {
+                    if (pressed) {
+                        pendingKey.fn = true;
+                        keyPulse = true;
+                    }
+                } else if (keyVal == KEY_LEFT_SHIFT) {
+                    if (pressed) {
+                        pendingKey.modifier_keys.emplace_back(KEY_LEFT_SHIFT);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == KEY_LEFT_CTRL) {
+                    if (pressed) {
+                        pendingKey.modifier_keys.emplace_back(KEY_LEFT_CTRL);
+                        keyPulse = true;
+                    }
+                } else if (keyVal == KEY_LEFT_ALT) {
+                    if (pressed) {
+                        pendingKey.modifier_keys.emplace_back(KEY_LEFT_ALT);
+                        keyPulse = true;
+                    }
+                } else {
+                    if (pressed) {
+                        pendingKey.word.emplace_back(keyVal);
+                        keyPulse = true;
+                    }
+                }
             }
-            NextPress = next;
-            PrevPress = prev;
-            UpPress = up;
-            DownPress = down;
-            SelPress = sel | SelPress; // in case G0 is pressed
-            EscPress = esc;
-            if (del) {
-                KeyStroke.del = del;
-                KeyStroke.pressed = true;
-            }
-            tm = launcherMillis();
-            return;
+
+            //  try to clear the IRQ flag
+            //  if there are pending events it is not cleared
+            tca.writeRegister(TCA8418_REG_INT_STAT, 1);
+            int intstat = tca.readRegister(TCA8418_REG_INT_STAT);
+            if ((intstat & 0x01) == 0) { kb_interrupt = false; }
         }
 
-        //  try to clear the IRQ flag
-        //  if there are pending events it is not cleared
-        tca.writeRegister(TCA8418_REG_INT_STAT, 1);
-        int intstat = tca.readRegister(TCA8418_REG_INT_STAT);
-        if ((intstat & 0x01) == 0) { kb_interrupt = false; }
+        unsigned long now = launcherMillis();
+        if (next && now >= nextRepeatTime) {
+            nextPulse = true;
+            nextRepeatTime = now + TCA8418_REPEAT_MS;
+        }
+        if (prev && now >= prevRepeatTime) {
+            prevPulse = true;
+            prevRepeatTime = now + TCA8418_REPEAT_MS;
+        }
 
-        if (tca.available() <= 0) return;
-        int keyEvent = tca.getEvent();
-        bool pressed = (keyEvent & 0x80); // Bit 7: 1 Pressed, 0 Released
-        uint8_t value = keyEvent & 0x7F;  // Bits 0-6: key value
-
-        // Map raw value to physical position
-        uint8_t row, col;
-        mapRawKeyToPhysical(value, row, col);
-
-        // launcherConsolePrintf("Key event: raw=%d, pressed=%d, row=%d, col=%d\n", value, pressed, row, col);
-
-        if (row >= 4 || col >= 14) return;
-
-        if (wakeUpScreen()) return;
-
-        AnyKeyPress = true;
-
-        if (handleSpecialKeys(row, col, pressed) > 0) return;
-
-        if (!pressed) {
+        if (!keyEventHandled && !nextPulse && !prevPulse && !LongPress) {
+            sel = false; // avoid multiple selections
+            esc = false; // avoid multiple escapes
+        }
+        if (delPulse) {
+            pendingKey.del = true;
+            pendingKey.exit_key = true;
+            keyPulse = true;
+        }
+        if (keyPulse) {
+            pendingKey.pressed = true;
+            KeyStroke = pendingKey;
+        } else if (!nextPulse && !prevPulse) {
             KeyStroke.Clear();
-            LongPressTmp = false;
         }
+        if (nextPulse || prevPulse || keyPulse) AnyKeyPress = true;
 
-        keyStroke key;
-        char keyVal = getKeyChar(row, col);
-
-        // launcherConsolePrintf("Key pressed: %c (0x%02X) at row=%d, col=%d\n", keyVal, keyVal, row, col);
-
-        if (keyVal == KEY_BACKSPACE && col == 13) {
-            del = pressed;
-            esc = pressed;
-            // if (pressed) key.word.emplace_back(KEY_BACKSPACE);
-        } else if (keyVal == '`') {
-            esc = pressed;
-            if (pressed) key.word.emplace_back(keyVal);
-        } else if (keyVal == KEY_ENTER && col == 13) {
-            key.enter = pressed;
-            if (pressed) key.word.emplace_back(KEY_ENTER);
-            sel = pressed;
-        } else if (keyVal == ',' || keyVal == ';') {
-            prev = pressed;
-            if (pressed) key.word.emplace_back(keyVal);
-        } else if (keyVal == '/' || keyVal == '.') {
-            next = pressed;
-            if (pressed) key.word.emplace_back(keyVal);
-        } else if (keyVal == KEY_TAB) {
-            if (pressed) key.word.emplace_back(KEY_TAB);
-        } else if (keyVal == 0xFF) {
-            key.fn = pressed;
-        } else if (keyVal == KEY_LEFT_SHIFT) {
-            if (pressed) key.modifier_keys.emplace_back(KEY_LEFT_SHIFT);
-        } else if (keyVal == KEY_LEFT_CTRL) {
-            if (pressed) key.modifier_keys.emplace_back(KEY_LEFT_CTRL);
-        } else if (keyVal == KEY_LEFT_ALT) {
-            if (pressed) key.modifier_keys.emplace_back(KEY_LEFT_ALT);
-        } else {
-            if (pressed) key.word.emplace_back(keyVal);
-        }
-        key.pressed = pressed;
-        if (del) {
-            key.del = del;
-            key.pressed = true;
-        }
-        KeyStroke = key;
-        NextPress = next;
-        PrevPress = prev;
+        NextPress = nextPulse;
+        PrevPress = prevPulse;
         UpPress = up;
         DownPress = down;
-        SelPress = sel;
+        SelPress = sel | SelPress; // in case G0 is pressed
         EscPress = esc;
-        tm = launcherMillis();
+        tm = now;
+        return;
     } else {
         Keyboard.update();
         if (!Keyboard.isPressed()) {

@@ -22,6 +22,9 @@ XPowersPPM PPM;
 
 Adafruit_TCA8418 *keyboard;
 
+constexpr unsigned long TCA8418_REPEAT_START_MS = 350;
+constexpr unsigned long TCA8418_REPEAT_MS = 150;
+
 #define BOARD_SDA 13
 #define BOARD_SCL 14
 #define TOUCH_INT 12
@@ -349,6 +352,15 @@ int handleSpecialKeys(uint8_t k, bool pressed) {
 **********************************************************************/
 void InputHandler(void) {
     static long _tmptmp;
+    static unsigned long nextRepeatTime = 0;
+    static unsigned long prevRepeatTime = 0;
+    static unsigned long upRepeatTime = 0;
+    static unsigned long downRepeatTime = 0;
+    static bool nextHeld = false;
+    static bool prevHeld = false;
+    static bool upHeld = false;
+    static bool downHeld = false;
+
     LTouchPointPro t;
     uint8_t touched = 0;
     touched = touch.getPoint(&t.x, &t.y, 1);
@@ -383,9 +395,16 @@ void InputHandler(void) {
         yield();
     }
 
-    uint8_t keyValue = 0;
-    char keyVal = '\0';
-    if (keyboard->available() > 0) {
+    bool nextPulse = false;
+    bool prevPulse = false;
+    bool upPulse = false;
+    bool downPulse = false;
+    bool selPulse = false;
+    bool escPulse = false;
+    bool keyPulse = false;
+    keyStroke pendingKey;
+
+    while (keyboard->available() > 0) {
         int keyValue = keyboard->getEvent();
         int state = -1;
         if (keyValue >= KEYPAD_RELEASE_VAL_MIN && keyValue <= KEYPAD_RELEASE_VAL_MAX) { // release event
@@ -397,34 +416,102 @@ void InputHandler(void) {
             state = 1; // pressed
         }
 
-        if (state == -1) return;
+        if (state == -1) continue;
 
-        if (handleSpecialKeys(keyValue, state) > 0) return;
-        keyVal = getKeyChar(keyValue);
+        if (handleSpecialKeys(keyValue, state) > 0) continue;
+        char keyVal = getKeyChar(keyValue);
 
         if (keyVal != '\0') {
-            KeyStroke.Clear();
+            bool pressed = state == 1;
             if (keyVal == KEY_BACKSPACE) {
-                KeyStroke.pressed = true;
-                KeyStroke.del = true;
-                EscPress = true;
-                KeyStroke.exit_key = true;
+                if (pressed) {
+                    pendingKey.pressed = true;
+                    pendingKey.del = true;
+                    pendingKey.exit_key = true;
+                    escPulse = true;
+                    keyPulse = true;
+                }
             } else if (keyVal == KEY_ENTER) {
-                KeyStroke.enter = true;
-                SelPress = true;
+                if (pressed) {
+                    pendingKey.enter = true;
+                    pendingKey.pressed = true;
+                    selPulse = true;
+                    keyPulse = true;
+                }
             } else if (keyVal == KEY_FN) {
-                KeyStroke.fn = true;
+                if (pressed) {
+                    pendingKey.fn = true;
+                    pendingKey.pressed = true;
+                    keyPulse = true;
+                }
             } else {
-                KeyStroke.word.push_back(keyVal);
-                if (keyVal == 'w') UpPress = true;
-                if (keyVal == 's') DownPress = true;
-                if (keyVal == 'a') PrevPress = true;
-                if (keyVal == 'd') NextPress = true;
-                KeyStroke.pressed = true;
+                if (keyVal == 'w') {
+                    upHeld = pressed;
+                    if (pressed) {
+                        upPulse = true;
+                        upRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                    }
+                }
+                if (keyVal == 's') {
+                    downHeld = pressed;
+                    if (pressed) {
+                        downPulse = true;
+                        downRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                    }
+                }
+                if (keyVal == 'a') {
+                    prevHeld = pressed;
+                    if (pressed) {
+                        prevPulse = true;
+                        prevRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                    }
+                }
+                if (keyVal == 'd') {
+                    nextHeld = pressed;
+                    if (pressed) {
+                        nextPulse = true;
+                        nextRepeatTime = launcherMillis() + TCA8418_REPEAT_START_MS;
+                    }
+                }
+                if (pressed) {
+                    pendingKey.word.push_back(keyVal);
+                    pendingKey.pressed = true;
+                    keyPulse = true;
+                }
             }
         }
-        _tmptmp = launcherMillis();
-    } else KeyStroke.Clear();
+    }
+
+    unsigned long now = launcherMillis();
+    if (nextHeld && now >= nextRepeatTime) {
+        nextPulse = true;
+        nextRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (prevHeld && now >= prevRepeatTime) {
+        prevPulse = true;
+        prevRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (upHeld && now >= upRepeatTime) {
+        upPulse = true;
+        upRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+    if (downHeld && now >= downRepeatTime) {
+        downPulse = true;
+        downRepeatTime = now + TCA8418_REPEAT_MS;
+    }
+
+    if (keyPulse) KeyStroke = pendingKey;
+    else if (!nextPulse && !prevPulse && !upPulse && !downPulse) KeyStroke.Clear();
+
+    if (nextPulse || prevPulse || upPulse || downPulse || selPulse || escPulse || keyPulse) {
+        AnyKeyPress = true;
+        NextPress = nextPulse;
+        PrevPress = prevPulse;
+        UpPress = upPulse;
+        DownPress = downPulse;
+        SelPress = selPulse;
+        EscPress = escPulse;
+    }
 }
 
 /*********************************************************************
