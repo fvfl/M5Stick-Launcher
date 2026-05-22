@@ -1,54 +1,8 @@
 #include "idf/launcher_platform.h"
 #include "powerSave.h"
+#include <M5Unified.h>
 #include <Wire.h>
 #include <interface.h>
-
-#define TFT_BRIGHT_CHANNEL 0
-#define TFT_BRIGHT_Bits 8
-#define TFT_BRIGHT_FREQ 5000
-
-constexpr uint32_t kDwDoublePressWindowMs = 250;
-constexpr uint32_t kDwLongPressMs = 600;
-constexpr uint32_t kDwDebounceMs = 8;
-
-static volatile uint32_t dw_last_isr_ms = 0;
-static volatile uint32_t dw_press_ms = 0;
-static volatile uint32_t dw_first_release_ms = 0;
-static volatile bool dw_is_down = false;
-static volatile bool dw_waiting = false;
-static volatile bool dw_double_ready = false;
-static volatile bool dw_long_seen = false;
-
-void IRAM_ATTR isr_dw_btn() {
-    uint32_t now = launcherMillis();
-    if (now - dw_last_isr_ms < kDwDebounceMs) return;
-    dw_last_isr_ms = now;
-    bool pressed = (launcherGpioRead(DW_BTN) == BTN_ACT);
-    if (pressed) {
-        dw_is_down = true;
-        dw_press_ms = now;
-        return;
-    }
-
-    dw_is_down = false;
-    if (dw_long_seen) {
-        dw_long_seen = false;
-        dw_waiting = false;
-        return;
-    }
-
-    if ((now - dw_press_ms) < kDwLongPressMs) {
-        if (dw_waiting && (now - dw_first_release_ms) <= kDwDoublePressWindowMs) {
-            dw_double_ready = true;
-            dw_waiting = false;
-        } else {
-            dw_waiting = true;
-            dw_first_release_ms = now;
-        }
-    } else {
-        dw_waiting = false;
-    }
-}
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -82,45 +36,16 @@ void _setup_gpio() {
     launcherGpioOutput(46);
     launcherGpioWrite(46, LOW); // Infrared LED Off
 
-    launcherGpioInputPullup(SEL_BTN);
-    launcherGpioInputPullup(DW_BTN);
-    attachInterrupt(digitalPinToInterrupt(DW_BTN), isr_dw_btn, CHANGE);
-}
-/***************************************************************************************
-** Function name: _post_setup_gpio()
-** Location: main.cpp
-** Description:   second stage gpio setup to make a few functions work
-***************************************************************************************/
-void _post_setup_gpio() {
-    // PWM backlight setup
-    pinMode(TFT_BL, OUTPUT);
-    ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
-    ledcWrite(TFT_BL, bright);
+    M5.BtnA.setDebounceThresh(8);
+    M5.BtnB.setDebounceThresh(8);
+    M5.BtnB.setHoldThresh(500);
 }
 /*********************************************************************
 ** Function: setBrightness
 ** location: settings.cpp
 ** set brightness value
 **********************************************************************/
-void _setBrightness(uint8_t brightval) {
-    int dutyCycle;
-    if (brightval == 100) dutyCycle = 250;
-    else if (brightval == 75) dutyCycle = 130;
-    else if (brightval == 50) dutyCycle = 70;
-    else if (brightval == 25) dutyCycle = 20;
-    else if (brightval == 0) dutyCycle = 5;
-    else dutyCycle = ((brightval * 250) / 100);
-
-    // launcherConsolePrintf("dutyCycle for bright 0-255: %d\n", dutyCycle);
-
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-    if (!ledcWrite(TFT_BL, dutyCycle)) {
-        // launcherConsolePrintf("%s\n", String("Failed to set brightness").c_str());
-        ledcDetach(TFT_BL);
-        ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
-        ledcWrite(TFT_BL, dutyCycle);
-    }
-}
+void _setBrightness(uint8_t brightval) { M5.Display.setBrightness(brightval); }
 
 /***************************************************************************************
 ** Function name: getBattery()
@@ -146,50 +71,23 @@ int getBattery() {
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
-    static unsigned long tm = 0;
-    static bool dwLongFired = false;
-    unsigned long now = launcherMillis();
-    if (now - tm < 200 && !LongPress) return;
+    M5.update();
+
+    bool btnAActive = M5.BtnA.isPressed() || M5.BtnA.isHolding();
+    bool btnBActive = M5.BtnB.isPressed() || M5.BtnB.isHolding();
+    bool hasEvent =
+        M5.BtnA.wasPressed() || M5.BtnB.wasHold() || M5.BtnB.wasSingleClicked() || M5.BtnB.wasDoubleClicked();
+
+    AnyKeyPress = btnAActive || btnBActive || hasEvent;
+    if (!AnyKeyPress) return;
+
     if (!wakeUpScreen()) AnyKeyPress = true;
     else return;
 
-    bool selPressed = (launcherGpioRead(SEL_BTN) == BTN_ACT);
-    bool dwPressed = dw_is_down;
-    bool dwWaiting = dw_waiting;
-    bool dwDoubleReady = dw_double_ready;
-    unsigned long dwPressStart = dw_press_ms;
-    unsigned long dwFirstRelease = dw_first_release_ms;
-
-    AnyKeyPress = selPressed || dwPressed || dwWaiting || dwDoubleReady;
-
-    if (selPressed) {
-        SelPress = true;
-        tm = now;
-    }
-
-    if (dwPressed) {
-        if (!dwLongFired && (now - dwPressStart) > kDwLongPressMs) {
-            PrevPress = true;
-            dwLongFired = true;
-            dw_waiting = false;
-            dw_double_ready = false;
-            dw_long_seen = true;
-            tm = now;
-        }
-    } else if (dwLongFired) {
-        dwLongFired = false;
-    }
-
-    if (dwDoubleReady) {
-        PrevPress = true;
-        dw_double_ready = false;
-        dw_waiting = false;
-        tm = now;
-    } else if (dwWaiting && !dwPressed && (now - dwFirstRelease) > kDwDoublePressWindowMs) {
-        NextPress = true;
-        dw_waiting = false;
-        tm = now;
-    }
+    if (M5.BtnA.wasPressed()) SelPress = true;
+    if (M5.BtnB.wasSingleClicked()) NextPress = true;
+    if (M5.BtnB.wasDoubleClicked()) PrevPress = true;
+    if (M5.BtnB.wasHold()) EscPress = true;
 }
 
 /*********************************************************************

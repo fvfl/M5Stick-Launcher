@@ -285,7 +285,9 @@ void setup() {
     TouchFooter2();
 #endif
 
-    // This task keeps running all the time, will never stop
+    // Some boards need input polling to stay on the main loop thread because
+    // display/touch drivers are not safe to service from a helper task.
+#ifndef DONT_USE_INPUT_TASK
     xTaskCreate(
         taskInputHandler, // Task function
         "InputHandler",   // Task Name
@@ -294,6 +296,9 @@ void setup() {
         2,                // Task priority (0 to 3), loopTask has priority 2.
         &xHandle          // Task handle (not used)
     );
+#else
+    xHandle = nullptr;
+#endif
 
     // Start Bootscreen timer
     int i = launcherMillis();

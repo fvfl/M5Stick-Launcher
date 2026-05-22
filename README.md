@@ -94,6 +94,8 @@ Things that needs to be done in next updates
      * [x] Changed items on CFG for better understanding
      * [x] Optimize WiFi/WebUI functions to save Flash
      * [x] Enabled OTA to CYD-3248S035C, CYD-3248S035R
+     * [x] Port to [M5-DinMeter](https://shop.m5stack.com/products/m5stack-din-meter-w-m5stamps3?ref=Pirata)
+     * [x] Port to [Arduino Nesso N1](https://docs.arduino.cc/hardware/nesso-n1)
      * [-] Optimize Settings functions to save flash
      * [ ] Optimize Storage functions to save Flash
 

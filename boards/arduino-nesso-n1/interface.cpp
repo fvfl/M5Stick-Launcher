@@ -1,7 +1,7 @@
+#include "idf/launcher_platform.h"
 #include "powerSave.h"
 #include <M5Unified.h>
 #include <interface.h>
-#include "idf/launcher_platform.h"
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -10,6 +10,9 @@
 ***************************************************************************************/
 void _setup_gpio() {
     M5.begin(); // Need to test if SDCard inits with the new setup
+    M5.BtnA.setDebounceThresh(8);
+    M5.BtnB.setDebounceThresh(8);
+    M5.BtnB.setHoldThresh(500);
 }
 
 /***************************************************************************************
@@ -36,10 +39,11 @@ void _setBrightness(uint8_t brightval) { M5.Display.setBrightness(brightval); }
 **********************************************************************/
 void InputHandler(void) {
     static long tm = launcherMillis();
+    // Touchscreen handling
     if (launcherMillis() - tm > 200 || LongPress) {
         M5.update();
-        bool bntA = M5.BtnA.isPressed();
-        bool bntB = M5.BtnB.isPressed();
+        bool btnAActive = M5.BtnA.isPressed() || M5.BtnA.isHolding();
+        bool btnBActive = M5.BtnB.isPressed() || M5.BtnB.isHolding();
         auto t = M5.Touch.getDetail();
         if (t.isPressed() || t.isHolding()) {
             tm = launcherMillis();
@@ -54,13 +58,16 @@ void InputHandler(void) {
             touchHeatMap(touchPoint);
         } else touchPoint.pressed = false;
 
-        if (bntA || bntB) {
+        // Buttons handling
+        if (btnAActive || btnBActive) {
             tm = launcherMillis();
             if (!wakeUpScreen()) AnyKeyPress = true;
             else return;
         }
-        if (bntA) NextPress = true;
-        if (bntB) SelPress = true;
+        if (M5.BtnA.wasClicked()) SelPress = true;
+        if (M5.BtnB.wasSingleClicked()) NextPress = true;
+        if (M5.BtnB.wasDoubleClicked()) PrevPress = true;
+        if (M5.BtnB.wasHold()) EscPress = true;
     }
 }
 
