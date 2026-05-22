@@ -4,6 +4,9 @@
 #include <Wire.h>
 #include <interface.h>
 
+constexpr uint32_t kBtnBDoublePressWindowMs = 270;
+constexpr uint32_t kBtnBLongPressMs = 500;
+
 /***************************************************************************************
 ** Function name: _setup_gpio()
 ** Location: main.cpp
@@ -38,7 +41,7 @@ void _setup_gpio() {
 
     M5.BtnA.setDebounceThresh(8);
     M5.BtnB.setDebounceThresh(8);
-    M5.BtnB.setHoldThresh(500);
+    M5.BtnB.setHoldThresh(kBtnBLongPressMs);
 }
 /*********************************************************************
 ** Function: setBrightness
@@ -71,23 +74,54 @@ int getBattery() {
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
+    static uint32_t btnBFirstReleaseMs = 0;
+    static bool btnBWaitingSecondClick = false;
+    static bool btnBLongPressFired = false;
+
     M5.update();
 
+    bool emitNext = false;
+    bool emitPrev = false;
+    bool emitEsc = false;
+    uint32_t now = launcherMillis();
     bool btnAActive = M5.BtnA.isPressed() || M5.BtnA.isHolding();
     bool btnBActive = M5.BtnB.isPressed() || M5.BtnB.isHolding();
-    bool hasEvent =
-        M5.BtnA.wasPressed() || M5.BtnB.wasHold() || M5.BtnB.wasSingleClicked() || M5.BtnB.wasDoubleClicked();
 
-    AnyKeyPress = btnAActive || btnBActive || hasEvent;
+    if (M5.BtnB.wasPressed()) btnBLongPressFired = false;
+
+    if (btnBActive && !btnBLongPressFired && M5.BtnB.pressedFor(kBtnBLongPressMs)) {
+        btnBLongPressFired = true;
+        btnBWaitingSecondClick = false;
+        emitEsc = true;
+    }
+
+    if (M5.BtnB.wasReleased()) {
+        if (btnBLongPressFired) {
+            btnBLongPressFired = false;
+        } else if (btnBWaitingSecondClick && now - btnBFirstReleaseMs <= kBtnBDoublePressWindowMs) {
+            btnBWaitingSecondClick = false;
+            emitPrev = true;
+        } else {
+            btnBWaitingSecondClick = true;
+            btnBFirstReleaseMs = now;
+        }
+    }
+
+    if (btnBWaitingSecondClick && !btnBActive && now - btnBFirstReleaseMs > kBtnBDoublePressWindowMs) {
+        btnBWaitingSecondClick = false;
+        emitNext = true;
+    }
+
+    AnyKeyPress = btnAActive || btnBActive || btnBWaitingSecondClick || M5.BtnA.wasClicked() || emitNext ||
+                  emitPrev || emitEsc;
     if (!AnyKeyPress) return;
 
-    if (!wakeUpScreen()) AnyKeyPress = true;
-    else return;
+    if ((btnAActive || btnBActive) && wakeUpScreen()) return;
 
-    if (M5.BtnA.wasPressed()) SelPress = true;
-    if (M5.BtnB.wasSingleClicked()) NextPress = true;
-    if (M5.BtnB.wasDoubleClicked()) PrevPress = true;
-    if (M5.BtnB.wasHold()) EscPress = true;
+    if (M5.BtnA.wasClicked()) SelPress = true;
+    if (emitNext) NextPress = true;
+    if (emitPrev) PrevPress = true;
+    if (emitEsc) EscPress = true;
 }
 
 /*********************************************************************
