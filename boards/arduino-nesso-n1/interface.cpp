@@ -41,25 +41,27 @@ void _setBrightness(uint8_t brightval) { M5.Display.setBrightness(brightval); }
 ** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
 **********************************************************************/
 void InputHandler(void) {
+    static unsigned long tm = 0;
     static uint32_t btnBFirstReleaseMs = 0;
     static bool btnBWaitingSecondClick = false;
     static bool btnBLongPressFired = false;
-
+    if (millis() - tm < 200 && !LongPress) return;
     M5.update();
 
     bool emitNext = false;
     bool emitPrev = false;
     bool emitEsc = false;
-    uint32_t now = launcherMillis();
+    uint32_t now = millis();
 
     auto t = M5.Touch.getDetail();
     if (t.isPressed() || t.isHolding()) {
-        if (!wakeUpScreen()) AnyKeyPress = true;
-        else return;
+        tm = millis();
+        if (wakeUpScreen()) return;
 
         touchPoint.x = t.x;
         touchPoint.y = t.y;
         touchPoint.pressed = true;
+        Serial.printf("Touched x=%d, y=%d", t.x, t.y);
         touchHeatMap(touchPoint);
     } else touchPoint.pressed = false;
 
