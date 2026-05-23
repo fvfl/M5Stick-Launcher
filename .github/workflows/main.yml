@@ -92,6 +92,7 @@
             - { env: "lilygo-t-display-S3-amoled-plus" }
             - { env: "lilygo-t-watch-s3"          }
             - { env: "lilygo-t-watch-ultra"       }
+            - { env: "reaper"                     }
             - { env: "smoochiee-board"            }
             - { env: "Marauder-v4-OG"             }
             - { env: "Marauder-v61"               }

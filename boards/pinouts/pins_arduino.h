@@ -50,6 +50,8 @@
 #include "lilygo-t-display-s3-pro.h"
 #elif SMOOCHIEE_BOARD
 #include "smoochiee-board.h"
+#elif REAPER
+#include "../reaper/pins_arduino.h"
 #elif defined(LYLYGO_T5S3_PRO) || defined(LYLYGO_TDECK_PRO)
 #include "esp32s3.h"
 #elif LYLYGO_T5
