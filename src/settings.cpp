@@ -482,7 +482,7 @@ bool config_exists() {
             conf.printf(
                 "[{\"%s\":%d,\"dimmerSet\":10,\"onlyBins\":1,\"bootToApp\":1,\"noDotFiles\":1,\"bright\":100,"
                 "\"askSpiffs\":1,\"wui_usr\":\"admin\",\"wui_pwd\":\"launcher\",\"dwn_path\":\"/downloads/"
-                "\",\"FGCOLOR\":2016,\"BGCOLOR\":0,\"ALCOLOR\":63488,\"even\":13029,\"odd\":12485,\",\"dev\":"
+                "\",\"FGCOLOR\":2016,\"BGCOLOR\":0,\"ALCOLOR\":63488,\"even\":13029,\"odd\":12485,\"dev\":"
                 "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\"}], \"favorite\":[]}]",
                 get_efuse_mac_as_string().c_str(),
                 ROTATION
@@ -684,7 +684,9 @@ bool getFromNVS() {
     if (lastAppErr == ESP_OK) lastInstalledApp = String(appBuffer);
     else if (lastAppErr == ESP_ERR_NVS_NOT_FOUND) lastInstalledApp = "";
     else err |= lastAppErr;
-    if (err != ESP_OK) {
+    // ESP_ERR_NVS_NOT_FOUND is expected after a firmware update adds new settings keys
+    // that haven't been written yet. Keep values at their defaults instead of wiping everything.
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
         log_i("Failed to retrieve settings from NVS: %d\nUsing Default values", err);
         defaultValues();
         return false;
