@@ -1,5 +1,5 @@
 # Launcher
-Application Launcher for M5Stack, Lilygo, CYDs, Marauder and ESP32 devices.
+Application launcher for M5Stack, Lilygo, CYD, Marauder, and ESP32 devices.
 
 
 <p align="center" width="100%">
@@ -11,31 +11,32 @@ Join our [Discord community](https://discord.gg/BE9by2a2FF)
 ## How to Install
 * Use the Flasher: [Launcher Flasher](https://bmorcelli.github.io/Launcher/).
 * Use M5Burner, or
-* Download the .bin file from Releases for your device and use https://web.esphome.io/ or esptool.py and flash the file: `Launcher-{ver}-{YourDevice}.bin` into your device.
+* Download the .bin file from Releases for your device and use https://web.esphome.io/ or esptool.py to flash the file `Launcher-{YourDevice}.bin` to your device.
 
 ## How to Use
-* Turn your Device on
-* Press M5 (Enter) in the Launcher Start Screen to start Launcher
-* Choose OTA to install new binaries from M5Burner repo
-* After installed, when turn on the device, if you don't press anything, the installed program will be launched.
+* Turn your device on
+* Press M5/Sel (Enter) on the Launcher start screen to get into Launcher
+* Choose OTA to install new binaries from online services (M5Burner or GitHub links)
+* After installation, when you turn on the device, the installed program will launch if you don't press anything.
 
 ## My SD Card doesn't work!
-* Make sure your SD is a SDHC (Not SDXC)
-* Maximum size of 32Gb (I use 8 or 16Gb)
-* Formatted in FAT32 (Use [Rufus tool](https://rufus.ie/) to format your SD Card)
+* Make sure your SD card is SDHC (not SDXC)
+* Use a maximum size of 32GB (I use 8 or 16GB)
+* Format it as FAT32 (use [Rufus](https://rufus.ie/) to format your SD card)
 * Ensure the partition scheme is MBR, not GPT
 
 ## With Launcher you'll be able to:
 <details>
   <summary><h3>OTA - OTA Update</h3></summary>
 
-- Install binaries from M5Burner repository (yes, online, without the need of a USB Cable)
-- Install binaries from a WebUI, that you can start from CFG option, installing binaries you have on your computer or smartphone
-- Install binaries from your SD Card
+- Install binaries from online repositories (M5Burner or GitHub links) without needing a USB cable
+- Install binaries from a WebUI that you can start from the WUI option, using binaries you have on your computer or smartphone
+- Install binaries from your SD card
+
 </details>
 <details>
-  <summary><h3>SD - SDCard Management</h3></summary>
-- Create new Folders,
+  <summary><h3>SD - SD Card Management</h3></summary>
+- Create new folders,
 - Delete files and folders,
 - Rename files,
 - Copy and paste files,
@@ -45,100 +46,115 @@ Join our [Discord community](https://discord.gg/BE9by2a2FF)
 <details>
   <summary><h3>WUI - Web User Interface</h3></summary>
 - Manage files on the SD Card
-- Install Binaries wirelessly using OTA Update option
-- Deploy instalation through the file list
+- Install binaries wirelessly using the OTA Update option
+- Edit text files
+- Edit NVS information (UiFlow2 data, Launcher settings, and others)
+- Deploy installations from the file list
 
 </details>
 <details>
   <summary><h3>CFG - Configurations (Customization)</h3></summary>
 - Charge Mode
 - Change brightness
-- Change Dim Time
-- Change UI Color
-- Avoid/Ask Spiffs (Change to not ask to install Spiffs file system, only Orca One uses this feature)
+- Change dim time
+- Change UI color
+- Avoid/Ask SPIFFS (change whether Launcher asks to install the SPIFFS file system; only Orca One uses this feature)
 - Change rotation
 - All files/Only Bins (see all files or only .bins - default)
-- Change Partition Scheme (allows installing big apps or UiFlow2, for example)
-- List of Partitions
-- Clear FAT partition
-- Save SPIFFS (Save a copy of the SPIFFS partition to restore when needed)
-- Save FAT vfs (Save a copy of the FAT partition to restore when needed)
+- Change partition scheme (allows installing large apps or UiFlow2, for example)
+- List of partitions
+- Clear the FAT partition
+- Save SPIFFS (save a copy of the SPIFFS partition to restore when needed)
 - Restore SPIFFS
-- Restore FAT vfs
+</details>
+
+<details>
+  <summary><h3>PMan - Partition Manager</h3></summary>
+- View current partition scheme
+- Create partitions
+- Delete partitions
+- Format partitions
+- Back up data partitions (SPIFFS or FAT)
+- Restore data partitions (SPIFFS or FAT)
+- Resize partitions
 </details>
 
 <details>
   <summary><h3>Tips</h3></summary>
-* Having an SD card is good for better experience, but not really needed. [SDCard Hat for M5StickCs](https://www.thingiverse.com/thing:6459069)
-* You can learn more about how it works o [Launcher Wiki](https://github.com/bmorcelli/Launcher/wiki/Explaining-the-project).
-* Where/How do I find Binaries to launch -> [Obtaining binaries to launch](https://github.com/bmorcelli/Launcher/wiki/Obtaining-binaries-to-launch)
+* Having an SD card gives you a better experience, but it is not required. [SD Card Hat for M5StickCs](https://www.thingiverse.com/thing:6459069)
+* You can learn more about how it works on the [Launcher Wiki](https://github.com/bmorcelli/Launcher/wiki/Explaining-the-project).
+* Where/how do I find binaries to launch? -> [Obtaining binaries to launch](https://github.com/bmorcelli/Launcher/wiki/Obtaining-binaries-to-launch)
 * Now you can download binaries from [HERE!](https://bmorcelli.github.io/Launcher/catalog.html)
 </details>
 
 ## Known Issues
-* UiFlow 1 doesn´t work with Launcher.. it uses an old MicroPython distro, that uses an old ESP-IDF distro with lots os secrets that I couldn´t figure out.
+* UiFlow 1 doesn't work with Launcher. It uses an old MicroPython distro, which uses an old ESP-IDF distro with lots of secrets that I couldn't figure out.
 
 ## To-Do list
-Things that needs to be done in next updates
-     * [ ] LVGL for e-paper displays
-     * [ ] Move to ESP-IDF Platform
+Things that need to be done in future updates
 
+* [ ] LVGL UI (?)
+* [ ] Move to ESP-IDF Platform
+* [ ] Optimize Settings functions to save flash
+* [ ] Optimize Storage functions to save Flash
 
 ## Latest Changelog
 * 2.7.0:
-     * [x] Custom partition builder (no more hardcoded partitions)
-     * [x] Auto partition maker, firmware chacker and flash optimizer.
-     * [x] Possibility to install more than one firmware at a time
-     * [x] Encrypted Wifi passwords within config.conf and NVS
-     * [x] Remoddeled WebUI, adding possibility to edit text files and NVS fields saved in memory
+     * [x] Improved navigation on devices with 5 buttons and keyboards; now you can navigate up and down on the main menu
+     * [x] Improved main menu for small screens (T-Dongle, StickC)
+     * [x] Custom Partition Manager "PMan" (no more hardcoded partitions on Cardputer)
+     * [x] Automatic partition maker, firmware sanity checker, and flash optimizer.
+     * [x] Ability to install more than one firmware at a time
+     * [x] Encrypted WiFi passwords within config.conf and NVS
+     * [x] Remodeled WebUI, adding the ability to edit text files and NVS fields saved in memory
      * [x] Changed items on CFG for better understanding
-     * [x] Optimize WiFi/WebUI functions to save Flash
-     * [x] Enabled OTA to CYD-3248S035C, CYD-3248S035R
+     * [x] Optimized WiFi/WebUI functions to save Flash
+     * [x] Enabled OTA for CYD-3248S035C and CYD-3248S035R
      * [x] Port to [M5-DinMeter](https://shop.m5stack.com/products/m5stack-din-meter-w-m5stamps3?ref=Pirata)
      * [x] Port to [Arduino Nesso N1](https://docs.arduino.cc/hardware/nesso-n1)
-     * [-] Optimize Settings functions to save flash
-     * [ ] Optimize Storage functions to save Flash
+     * [x] Port to [Reaper Board](https://www.elecrow.com/bruce-pcb-rf-reaper.html)
+
+<details>
+  <summary><h2>Older Changelogs</h2></summary>
 
 * 2.6.10:
-     * [x] Fixed Navigation on 3 Buttons-devices that were triggering EscPress when pressin Next or Prev buttons.
+     * [x] Fixed navigation on 3-button devices that were triggering EscPress when pressing Next or Prev buttons.
+
 * 2.6.9:
      * [X] Port to [NM-CYD-C5](https://www.nmminer.com/product/nm-cyd-c5/)
      * [x] Port to [3248W535C](https://www.displaysmodule.com/sale-51335661-jc3248w535c-i-y-lcd-display-module-with-320-480-pixel-resolution-and-effective-display-area-73-4-49-.html)
      * [x] Port to [Waveshare-ESP32-S3-LCD-1.47](https://www.waveshare.com/wiki/ESP32-S3-LCD-1.47)
      * [x] Port to [T-Dongle-C5 (tft)](https://lilygo.cc/products/t-dongle-c5?bg_ref=sDI8Bh4HmO)
      * [x] Port to [T-Display S3 AMOLED Plus](https://lilygo.cc/products/t-display-s3-amoled-plus)
-     * [x] Fix issue where brightness wasnt being saved
+     * [x] Fix issue where brightness wasn't being saved
      * [x] Fix issue where custom "downloads" folder wasn't being used
-     * [x] Fix issue where some fimware downloads waren't working due to prohibited characters on firmware name
-     * [x] Fixed SD Card not mounting on T-Watch Ultra and adjusted UI for Rounded edges on Main menu and file listings
-     * [x] Enabled AWSD navigation for Lyligo T-LoraPager, T-Deck, T-Deck Plus and T-Deck Pro
-     * [x] Added Touch Calibration for XPT2046 driven devices (Resistive touchscreens, like: CYD, Marauder, Phantom, T-HMI), It will be prompted when no calibration data is found (First boot), or can be started on `CFG > Calibrate Touch`, or by sending "calibrate" over Serial.
-     * [x] Adds "OFF" Option to main screen to turn off (DeepSleep when PMIC is not available) the device.
-     * [x] Centralized Main libraries, using git submodules, so it doesn't download many copies of the same library to the `.pio/libdeps/**/` folder
-     * [x] Speed up workflow, using Github cache for framwork and libs
-
-<details>
-  <summary><h2>Older Changelogs</h2></summary>
+     * [x] Fix issue where some firmware downloads weren't working due to prohibited characters in firmware names
+     * [x] Fixed SD card not mounting on T-Watch Ultra and adjusted UI for rounded edges on the main menu and file listings
+     * [x] Enabled WASD navigation for Lilygo T-LoraPager, T-Deck, T-Deck Plus, and T-Deck Pro
+     * [x] Added touch calibration for XPT2046-driven devices (resistive touchscreens, like CYD, Marauder, Phantom, and T-HMI). It will be prompted when no calibration data is found (first boot), or can be started from `CFG > Calibrate Touch` or by sending "calibrate" over Serial.
+     * [x] Added an "OFF" option to the main screen to turn off the device (DeepSleep when PMIC is not available).
+     * [x] Centralized main libraries using git submodules, so it doesn't download many copies of the same library to the `.pio/libdeps/**/` folder
+     * [x] Speed up workflow using GitHub cache for framework and libs
 
 * 2.6.8:
-     * [x] Increased Gamestation Partitions sizes. https://github.com/bmorcelli/Launcher/issues/299
-     * [x] Added option to erase App Partition
-     * [x] Added option to always boot into Launcher https://github.com/bmorcelli/Launcher/issues/292
+     * [x] Increased Game Station partition sizes. https://github.com/bmorcelli/Launcher/issues/299
+     * [x] Added an option to erase the app partition
+     * [x] Added an option to always boot into Launcher https://github.com/bmorcelli/Launcher/issues/292
      * [x] Added "APP" menu item to reboot into the last installed firmware
      * [x] Enhanced NVS partition and partition schemes for UiFlow2
-     * [x] Fix M5Stack Tab5 Wifi scan and WebUI in AP mode.
-     * [x] New Device: [Lilygo T-Watch-S3] (https://lilygo.cc/products/t-watch-s3?bg_ref=sDI8Bh4HmO)
-     * [x] New Device: [Lilygo T-Watch-Ultra] (https://lilygo.cc/products/t-watch-ultra?bg_ref=sDI8Bh4HmO)
-     * [x] New Device: [Lilygo E-Paper S3 Pro H752-x] (https://lilygo.cc/products/t5-e-paper-s3-pro?bg_ref=sDI8Bh4HmO)
+     * [x] Fix M5Stack Tab5 WiFi scan and WebUI in AP mode.
+     * [x] New Device: [Lilygo T-Watch-S3](https://lilygo.cc/products/t-watch-s3?bg_ref=sDI8Bh4HmO)
+     * [x] New Device: [Lilygo T-Watch-Ultra](https://lilygo.cc/products/t-watch-ultra?bg_ref=sDI8Bh4HmO)
+     * [x] New Device: [Lilygo E-Paper S3 Pro H752-x](https://lilygo.cc/products/t5-e-paper-s3-pro?bg_ref=sDI8Bh4HmO)
 
 
 * 2.6.7:
-     * [x] Restablished Tab5 SdCard on SPI for WiFi compatibility and refactored reboot process to powercycle the SDCard, resetting the Sdcard communication bus.
-     * [x] Tab5 Now has MassStorage interface!
-     * [x] Fixed M5Stack Paper S3 USB MassStorage issue https://github.com/bmorcelli/Launcher/issues/287 and OTA will show only S3 firmwares.
-     * [x] Added App offset parameter to allow Launcher to be updated in Tab5, and firmwares that are placed at different factory/app0 addresses.
-     * [x] Set to StickC and CPlus devices to see only ESP32 firmwares on OTA, excluding ESP32-S3 (StickS3) firmwares
-     * [x] Adjusted binary of firmware binaries that are not merged to have a partition table, allowing attaching SPIFFS partition into it. This binary will be valid ONLY for Launcher, can't be flashed alone because it doesn't have a valid bootloader and partition table. https://github.com/bmorcelli/Launcher/issues/289
+     * [x] Re-established Tab5 SD card on SPI for WiFi compatibility and refactored the reboot process to power cycle the SD card, resetting the SD card communication bus.
+     * [x] Tab5 now has a Mass Storage interface!
+     * [x] Fixed M5Stack Paper S3 USB Mass Storage issue https://github.com/bmorcelli/Launcher/issues/287 and OTA will show only S3 firmware.
+     * [x] Added app offset parameter to allow Launcher to be updated in Tab5, and firmware that is placed at different factory/app0 addresses.
+     * [x] Set StickC and CPlus devices to see only ESP32 firmware on OTA, excluding ESP32-S3 (StickS3) firmware
+     * [x] Adjusted firmware binaries that are not merged to have a partition table, allowing a SPIFFS partition to be attached to them. This binary will be valid ONLY for Launcher; it can't be flashed alone because it doesn't have a valid bootloader and partition table. https://github.com/bmorcelli/Launcher/issues/289
 
 * 2.6.6:
      * [x] [M5-StickS3](https://shop.m5stack.com/products/m5sticks3-esp32s3-mini-iot-dev-kit?ref=Pirata) port
@@ -147,7 +163,7 @@ Things that needs to be done in next updates
 
 * 2.6.5:
      * [x] M5-Tab5 using SDMMC driver for compatibility with other firmware
-     * [x] Added possibility to order by "Latest update"
+     * [x] Added the ability to order by "Latest update"
      * [x] Port to OpenSourceSRDLabs [WaveSentry and WaveSentry Pro ](https://opensourcesdrlab.com/products/aifw-wavesentry-esp32?VariantsId=10331)
      * [x] Battery ADC measurement fix for Cardputer, Tdeck, StickCPlus2, T-Display S3, T-HMI
 
@@ -156,13 +172,13 @@ Things that needs to be done in next updates
      * [x] Fixed Marauder V7 screen issues
      * [x] Enhanced M5-PaperS3 display, using Sprites now for better drawing resolution
      * [x] Fixed M5Stack Cardputer ADV keyboard not adding '*' and '('
-     * [x] Add New Partition Scheme for [Cardputer Game Station](https://github.com/geo-tp/Cardputer-Game-Station-Emulators/), allowing 4.5Mb game ROMs
+     * [x] Add new partition scheme for [Cardputer Game Station](https://github.com/geo-tp/Cardputer-Game-Station-Emulators/), allowing 4.5MB game ROMs
      * [ ] Port to [M5-Paper](https://shop.m5stack.com/products/m5paper-esp32-development-kit-v1-1-960x540-4-7-eink-display-235-ppi?ref=Pirata)
-     * [ ] Port to [Arduino Nesso N1](https://docs.arduino.cc/hardware/nesso-n1), not building
+     * [ ] Port to [Arduino Nesso N1](https://docs.arduino.cc/hardware/nesso-n1), not building yet
 
 * 2.6.3:
      * [x] Fixed Marauder keyboard
-     * [x] Changed from EEPROM to NVS to save configs and Wifi creds [Issue 232](https://github.com/bmorcelli/Launcher/issues/232)
+     * [x] Changed from EEPROM to NVS to save configs and WiFi credentials [Issue 232](https://github.com/bmorcelli/Launcher/issues/232)
      * [x] Port to [M5-PaperS3](https://shop.m5stack.com/products/m5papers3-esp32s3-development-kit?ref=Pirata)
      * [x] Fixed SelPress leaking into main menu
      * [x] T-Embed (all) and T-LoraPager Encoder enhancement
@@ -179,14 +195,14 @@ Things that needs to be done in next updates
      * [x] Add Delete from Favorites option
 
 * 2.6.0:
-     * [x] Pulling data from my new api, integrating all devices list with m5burner api and counting downloads into the m5burner database.
+     * [x] Pulling data from my new API, integrating all device lists with the M5Burner API, and counting downloads in the M5Burner database.
      * [x] OTA Pagination (pages of 100 firmware ordered by download-default)
      * [x] New Device: [M5Stack Tab5](https://shop.m5stack.com/products/m5stack-tab5-iot-development-kit-esp32-p4?ref=Pirata).
      * [x] New Device: [Lilygo T-HMI](https://www.lilygo.cc/products/t-hmi?bg_ref=sDI8Bh4HmO)
-     * [x] New Feature: Backup SPIFFS/FAT now prompts to merge data into a chosen binary, so you can install firmware and data choosign `SPIFFS Yes` on install and backup B Binaries now have incremental names.
-     * [x] New Feature: Added Filter and ordering to the fimware list.
-     * [x] New Feature: Added *Starred* firmware list (controlled by me.. support the project to have yout firmware into the starred list.).
-     * [x] New Feature: Added "Favorite" (Need SD Card), where you an add the firmwares from the OTA list, or Manually add your binary links from your local server or whatever.
+     * [x] New Feature: Backup SPIFFS/FAT now prompts to merge data into a chosen binary, so you can install firmware and data by choosing `SPIFFS Yes` during install, and backup binaries now have incremental names.
+     * [x] New Feature: Added filter and ordering to the firmware list.
+     * [x] New Feature: Added a *Starred* firmware list (controlled by me; support the project to have your firmware added to the starred list.).
+     * [x] New Feature: Added "Favorite" (requires SD card), where you can add firmware from the OTA list or manually add binary links from your local server or elsewhere.
      * [x] config.conf changes:
 ```
 ...
@@ -196,7 +212,7 @@ Things that needs to be done in next updates
         "fid": "2128851a0c98a4c1d15ac1a327b49812",
         "link": ""
       },
-      { // Example of my custom link file added manually editiing this file
+      { // Example of my custom link file added by manually editing this file
         "name": "Launcher Beta link",
         "fid": "", // leave it blank
         "link": "https://github.com/bmorcelli/Launcher/releases/download/beta/Launcher-m5stack-cardputer.bin"
@@ -219,7 +235,7 @@ Things that needs to be done in next updates
 * 2.5.2:
      * [x] Fixed Marauder V6 touchscreen and CYDs touchscreen unresponsive [issue](https://github.com/bmorcelli/Launcher/issues/210) and fixed Dim screen
      * [x] Fixed Marauder Mini and V7 screen dimming.
-     * [x] Fixed Smoochiee board inputs and SDCard [issue](https://github.com/bmorcelli/Launcher/issues/209)
+     * [x] Fixed Smoochiee board inputs and SD card [issue](https://github.com/bmorcelli/Launcher/issues/209)
      * [x] Fixed Longpress on Cardputer ADV
      * [x] Fixed folder creation on subfolders
 
@@ -232,7 +248,7 @@ Things that needs to be done in next updates
           * [x] Enable USB Mass Storage to SD_MMC devices (T-Display-S3 and touch and T-Dongle S3 tft)
           * [x] Partition changes
           * [x] Firmware updates
-          * [x] OTA lists and install
+          * [x] OTA lists and installation
      * [x] Added keyboard support to T-Deck Pro https://github.com/bmorcelli/Launcher/issues/180
      * [x] Fixed compatibility with UIFlow 2.3.x https://github.com/bmorcelli/Launcher/issues/192
      * [x] Added CSS, JS, Html online minifier
@@ -289,7 +305,7 @@ Things that needs to be done in next updates
 
 * 2.4.3:
      * [x] Fixed buttons on Core devices
-     * [x] Fixed random restartings when dimming screen
+     * [x] Fixed random restarts when dimming screen
      * [x] Ported to Lilygo E-Paper S3 Pro (Only Pro for now)
      * [x] Fixed T-Embed return from deepSleep
 
@@ -324,7 +340,7 @@ Things that needs to be done in next updates
      * [x] Ported to Lilygo T-Embed
      * [x] Ported to Lilygo T-Deck
      * [x] Headless version for ESP32 and ESP32-S3
-     * [x] StickCs Power Btn and Prev butn now act to go upwards on Menus... long press to exit menu
+     * [x] StickCs Power Btn and Prev Btn now act as up controls in menus; long press to exit menu
 * 2.2.5:
      * [x] Changed framework to remove all Watchdog Timers https://github.com/bmorcelli/Launcher/issues/61 https://github.com/bmorcelli/Launcher/issues/63 and solve some SD related issues
      * [x] Set Grove pins to LOW state on StickCs and Cardputer to avoid 433Mhz jamming while RF433T is connected
@@ -333,25 +349,25 @@ Things that needs to be done in next updates
      * [x] Added reset to watchdog on WebUI and check for free memory when loading files to WebUI, to avoid crashes.
 * 2.2.3:
      * [x] StickC, Plus and Plus2: removed power btn from skip logic at start.
-     * [x] Changed EEPROM Addresses to avoid problems with the new Bruce and other firmwares..
+     * [x] Changed EEPROM addresses to avoid problems with the new Bruce and other firmware.
 * 2.2.2:
      * [x] Port for [CYD-2432S028R](https://www.amazon.com/dp/B0BVFXR313) and [CYD-2-Usb](https://www.amazon.com/dp/B0CLR7MQ91)
-     * [x] Added check after finish the download that will delete failed downloaded files
+     * [x] Added a check after downloads finish that will delete failed downloaded files
 * 2.2.1:
      * [x] Port for [Lilygo T-Display S3 Touch](https://www.lilygo.cc/products/t-display-s3?variant=42351558590645)
      * [x] Fixed JSON read/write
 * 2.2.0:
-     * [x] M5Launcher 2.2+ now can be updated OverTheAir or Using SD Card
-     * [x] Ui Color settings (can be customized on /config.conf file)
+     * [x] M5Launcher 2.2+ can now be updated over the air or using an SD card
+     * [x] UI color settings (can be customized in /config.conf file)
      * [x] Reduced flickering on SD files navigation
-     * [x] Fixed problem when firmware names have "/" that prevent downloading
-     * [x] Appended firmware Version into download Name.
+     * [x] Fixed problem where firmware names with "/" prevented downloads
+     * [x] Appended firmware version to the download name.
      * [x] Added Dim time to lower brightness and CPU freq while idle
-     * [x] Added "Chage Mode" on settings, reducing CPU fre to 80Mhz and brightness to 5%, https://github.com/bmorcelli/Launcher/issues/40
-     * [x] Fixed Download progressbar https://github.com/bmorcelli/Launcher/issues/41
+     * [x] Added "Charge Mode" in settings, reducing CPU frequency to 80MHz and brightness to 5%, https://github.com/bmorcelli/Launcher/issues/40
+     * [x] Fixed download progress bar https://github.com/bmorcelli/Launcher/issues/41
      * [x] Change default folder for download (manually on /config.conf) https://github.com/bmorcelli/Launcher/issues/15
-     * [x] Save more SSIDs and pwd, connect automatically if is a known network (config.conf) https://github.com/bmorcelli/Launcher/issues/30
-     * [x] Slightlty increased Wifi Download/OTA Speed, using a customized framework.
+     * [x] Save more SSIDs and passwords, and connect automatically if it is a known network (config.conf) https://github.com/bmorcelli/Launcher/issues/30
+     * [x] Slightly increased WiFi download/OTA speed using a customized framework.
 * 2.1.2:
      * [x] Fixed OTA error message
      * [x] Increased Options Menu width and reduced menu flickering
@@ -361,53 +377,53 @@ Things that needs to be done in next updates
      * [x] Small Fixes https://github.com/bmorcelli/Launcher/issues/37
 * 2.1.0:
      * [x] Core Fire (all 16Mb Core devices) and Core2 compatibility
-     * [x] Turn SPIFFs update optional (turne off by default) (config.conf)
-     * [x] De-Sprite-fied the screens for Core devices (No PSRam, unable to handle huge Sprites) https://github.com/bmorcelli/Launcher/issues/34
+     * [x] Made SPIFFS update optional (turned off by default) (config.conf)
+     * [x] De-Sprite-fied the screens for Core devices (no PSRAM, unable to handle huge sprites) https://github.com/bmorcelli/Launcher/issues/34
      * [x] Make keyboard work with touchscreen capture in Core devices
      * [x] Dedicated btn for WebUI on main screen https://github.com/bmorcelli/Launcher/issues/22
      * [x] Multiple files upload on WebUI https://github.com/bmorcelli/Launcher/issues/28
-     * [x] Update FAT vfs partition to make compatible with UIFlow2 https://github.com/bmorcelli/Launcher/issues/29
-     * [x] Partition changer, to allow running DOOM and UIFlow on Cardputer and StickC
+     * [x] Update FAT VFS partition to make it compatible with UIFlow2 https://github.com/bmorcelli/Launcher/issues/29
+     * [x] Partition changer to allow running DOOM and UIFlow on Cardputer and StickC
      * [x] Fixed (increased number of files) https://github.com/bmorcelli/Launcher/issues/33
-     * [x] Backup and Restore FAT and SPIFFS Filesystems. If you use UIFlow, you can save all sketches into your device and make a backup to restore after reinstall UIFlow or MicroHydra or CircuitPython
+     * [x] Backup and restore FAT and SPIFFS filesystems. If you use UIFlow, you can save all sketches to your device and make a backup to restore after reinstalling UIFlow, MicroHydra, or CircuitPython
 * 2.0.1:
-     * Fixed UIFlow Instalation https://github.com/bmorcelli/Launcher/issues/20
-     * Fixed Folder creation on WebUI https://github.com/bmorcelli/Launcher/issues/18
-     * Fexed problem that preven webUI to open in some cases https://github.com/bmorcelli/Launcher/issues/16
-     * Now M5Launcher formats FAT vfs partition, so make sure you have saved your data into SDCard when using MicroPython, UIFlow or MicroHydra https://github.com/bmorcelli/Launcher/issues/19
+     * Fixed UIFlow installation https://github.com/bmorcelli/Launcher/issues/20
+     * Fixed folder creation on WebUI https://github.com/bmorcelli/Launcher/issues/18
+     * Fixed problem that prevented the WebUI from opening in some cases https://github.com/bmorcelli/Launcher/issues/16
+     * Now M5Launcher formats the FAT VFS partition, so make sure you have saved your data to the SD card when using MicroPython, UIFlow, or MicroHydra https://github.com/bmorcelli/Launcher/issues/19
 * 2.0.0:
-     * SD: added Folder creation, delete an rename files and folders, copy and paste files
-     * OTA (Over-The-Air update): Added feature to list the programs available in M5Burner and install it fro the internet.
+     * SD: added folder creation, delete and rename files and folders, and copy and paste files
+     * OTA (Over-The-Air update): Added feature to list the programs available in M5Burner and install them from the internet.
      * WebUI: Added a WebUI where you can manage your SD Card and install new binaries wirelessly
-     * Some other minnor features
+     * Some other minor features
      *
 * 1.3.0:
-     * Added support to Micropython based binaries (MicroHydra), with 1Mb FAT partition to Cardputer and StickCPlus2 and 64kb to StickC and Plus1.1
+     * Added support for MicroPython-based binaries (MicroHydra), with a 1MB FAT partition for Cardputer and StickCPlus2 and 64KB for StickC and Plus1.1
 * 1.2.1:
-     * Launcher now lower the LCD power and fill the screen black before restart, to prevent lcd burn when using apps that don't use the Screen
+     * Launcher now lowers the LCD power and fills the screen black before restart to prevent LCD burn when using apps that don't use the screen
      * Fixed display things and positions for the M5StickC
 * 1.2.0:
      * Excluded ota_data.bin file as it is not needed
      * Excluded StartApp application
-     * Excluded OTA_1 partitions form .csv files because i found out it is not needed
-     * Realocated free spaces into "SPIFFS" partition, giving room to improvements, and support to applications that use it (OrcaOne)
+     * Excluded OTA_1 partitions from .csv files because I found out it is not needed
+     * Reallocated free space into the "SPIFFS" partition, giving room for improvements and support for applications that use it (OrcaOne)
      * Added Bootscreen with battery monitor
      * Added Restart option and battery monitor to launcher
      * Added auto orientation to M5StickCs
-     * Laucher does not create .bak files anymore!!
+     * Launcher does not create .bak files anymore!!
      * .bin file handling to avoid some errors: File is too big, file is not valid, etc etc..
 
 * 1.1.3:
-     * Fixed menu files that ware occasionally hiding files and folders.
+     * Fixed menu files that were occasionally hiding files and folders.
 * 1.1.2:
      * Adjusted Magic numbers to work with some apps (Volos Watch).
 * 1.1.1:
-     * Changed OTA_0 Partition size from 3Mb to 6Mb on Cardputer and M5StickCPlus2
+     * Changed OTA_0 partition size from 3MB to 6MB on Cardputer and M5StickCPlus2
      * ~~Added verification to identify MicroPython binaries and don't corrupt them with the cropping process (these apps still don't work, need more work...)~~
 * 1.1.0:
-     * Fixed issues that prevented M5Launcher to launch apps on Cardputer
+     * Fixed issues that prevented M5Launcher from launching apps on Cardputer
 * 1.0.1:
-     * Fixed blackscreen and keyboard capture on Cardputer.
+     * Fixed black screen and keyboard capture on Cardputer.
 </details>
 
 
