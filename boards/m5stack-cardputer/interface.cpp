@@ -129,7 +129,10 @@ void _post_setup_gpio() {
     tca.matrix(7, 8);
     tca.flush();
     launcherGpioInput(11);
-    attachInterruptArg(digitalPinToInterrupt(11), gpio_isr_handler, nullptr, CHANGE);
+    // TCA8418 INT is active-low; only the falling edge means "event available".
+    // FALLING avoids the spurious rising-edge ISR that fired after we cleared
+    // INT_STAT, which was resetting the sel/esc hold state one frame too early.
+    attachInterruptArg(digitalPinToInterrupt(11), gpio_isr_handler, nullptr, FALLING);
     tca.enableInterrupts();
 }
 
@@ -188,6 +191,7 @@ void InputHandler(void) {
         if (kb_interrupt) {
             // Drain the FIFO now. Processing one TCA8418 event per 200 ms made quick taps
             // pile up and replay later as delayed navigation.
+            bool wokeScreen = false;
             while (tca.available() > 0) {
                 int keyEvent = tca.getEvent();
                 bool pressed = (keyEvent & 0x80); // Bit 7: 1 Pressed, 0 Released
@@ -202,7 +206,11 @@ void InputHandler(void) {
 
                 if (row >= 4 || col >= 14) continue;
 
-                if (wakeUpScreen()) continue;
+                // wakeUpScreen() is stateful — it returns true only on the first call when
+                // the screen is actually sleeping. Track the result so that all remaining
+                // events in the same FIFO burst are also discarded, not just the first one.
+                if (!wokeScreen) wokeScreen = wakeUpScreen();
+                if (wokeScreen) continue;
 
                 AnyKeyPress = true;
                 keyEventHandled = true;
@@ -329,7 +337,7 @@ void InputHandler(void) {
             downRepeatTime = now + TCA8418_REPEAT_MS;
         }
 
-        if (!keyEventHandled && !nextPulse && !prevPulse && !LongPress) {
+        if (!keyEventHandled && !nextPulse && !prevPulse && !upPulse && !downPulse && !LongPress) {
             sel = false; // avoid multiple selections
             esc = false; // avoid multiple escapes
         }
