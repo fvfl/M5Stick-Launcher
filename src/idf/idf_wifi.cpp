@@ -17,6 +17,7 @@
 namespace {
 constexpr EventBits_t WIFI_CONNECTED_BIT = BIT0;
 constexpr EventBits_t WIFI_FAIL_BIT = BIT1;
+constexpr EventBits_t WIFI_STARTED_BIT = BIT2;
 
 EventGroupHandle_t wifiEvents = nullptr;
 esp_netif_t *staNetif = nullptr;
@@ -36,6 +37,10 @@ void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void 
             expectingConnection = false;
             xEventGroupSetBits(wifiEvents, WIFI_FAIL_BIT);
         }
+    } else if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_START) {
+        xEventGroupSetBits(wifiEvents, WIFI_STARTED_BIT);
+    } else if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_STOP) {
+        xEventGroupClearBits(wifiEvents, WIFI_STARTED_BIT | WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     } else if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
         expectingConnection = false;
         xEventGroupClearBits(wifiEvents, WIFI_FAIL_BIT);
@@ -71,6 +76,11 @@ bool ensureWifiInitialized() {
 
     if (!wifiInitialized) {
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+#if CONFIG_ESP_HOSTED_ENABLED
+        // Required for ESP-Hosted remote Wi-Fi; matches Arduino's WiFiGeneric
+        // initialization path and avoids stale slave-side persisted config.
+        cfg.nvs_enable = false;
+#endif
         err = esp_wifi_init(&cfg);
         if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) { return false; }
         wifiInitialized = true;
@@ -109,6 +119,10 @@ bool launcherWifiStartSta() {
     esp_wifi_set_ps(WIFI_PS_NONE);
     err = esp_wifi_start();
     if (!okOrAlready(err)) return false;
+    EventBits_t bits = xEventGroupWaitBits(
+        wifiEvents, WIFI_STARTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(3000)
+    );
+    if ((bits & WIFI_STARTED_BIT) == 0) return false;
     return true;
 }
 
@@ -187,6 +201,9 @@ int launcherWifiScan(std::vector<LauncherWifiAp> &out) {
 
     wifi_scan_config_t scanConfig = {};
     scanConfig.show_hidden = true;
+    scanConfig.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    scanConfig.scan_time.active.min = 100;
+    scanConfig.scan_time.active.max = 300;
     esp_err_t err = esp_wifi_scan_start(&scanConfig, true);
     if (err != ESP_OK) return -1;
 

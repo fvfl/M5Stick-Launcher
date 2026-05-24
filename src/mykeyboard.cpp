@@ -295,13 +295,13 @@ String generalKeyboard(
     // 12 px = 10 px + 2 of padding between the letters -> refer to the section above to better understand
     // ((12px * n_letters) - 2px ) + 9*2px = width
     const int btns_layout[][3] = {
-        {1 * PAD + 0 * LW * FM + RES,  3 * LW * FM, 1 * PAD + 0 * LW * FM + LW * FM / 2 + RES }, // OK
-        {2 * PAD + 3 * LW * FM + RES,  3 * LW * FM, 2 * PAD + 3 * LW * FM + LW * FM / 2 + RES }, // ab (Caps)
-        {3 * PAD + 6 * LW * FM + RES,  3 * LW * FM, 3 * PAD + 6 * LW * FM + LW * FM / 2 + RES }, // <- (DEL)
-        {4 * PAD + 9 * LW * FM + RES,  4 * LW * FM, 4 * PAD + 9 * LW * FM + LW * FM / 2 + RES }, // [_] (SPACE)
-        {5 * PAD + 13 * LW * FM + RES, 4 * LW * FM, 5 * PAD + 13 * LW * FM + LW * FM / 2 + RES}, // Esc
+        {1 * PAD + 0 * LW * FM + RES,  3 * LW * FM, 1 * PAD + RES + 0 * LW * FM + LW * FM / 2 }, // OK
+        {2 * PAD + 3 * LW * FM + RES,  3 * LW * FM, 2 * PAD + RES + 3 * LW * FM + LW * FM / 2 }, // ab (Caps)
+        {3 * PAD + 6 * LW * FM + RES,  3 * LW * FM, 3 * PAD + RES + 6 * LW * FM + LW * FM / 2 }, // <- (DEL)
+        {4 * PAD + 9 * LW * FM + RES,  3 * LW * FM, 4 * PAD + RES + 10 * LW * FM              }, // _ (SPACE)
+        {5 * PAD + 12 * LW * FM + RES, 3 * LW * FM, 5 * PAD + RES + 12 * LW * FM + LW * FM / 2}, // Ex
 #if HAS_1_BUTTON
-        {6 * PAD + 17 * LW * FM + RES, 4 * LW * FM, 6 * PAD + 17 * LW * FM + LW * FM / 2 + RES}, // R/D or L/U
+        {6 * PAD + 15 * LW * FM + RES, 4 * LW * FM, 6 * PAD + RES + 15 * LW * FM + LW * FM / 2}, // R/D or L/U
 #endif
     };
 
@@ -414,7 +414,7 @@ String generalKeyboard(
                         btns_layout[3][0], 2, btns_layout[3][1], KBLH, getComplementaryColor(BGCOLOR)
                     );
                 } else tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
-                tft->drawString("[_]", btns_layout[3][2], 5);
+                tft->drawString("_", btns_layout[3][2], 5);
                 //   BACK
                 if (((x >= 4 && !HAS_1_BUTTON) || (x == 4 && HAS_1_BUTTON)) && y == -1) {
                     tft->setTextColor(BGCOLOR, getComplementaryColor(BGCOLOR));
@@ -422,7 +422,7 @@ String generalKeyboard(
                         btns_layout[4][0], 2, btns_layout[4][1], KBLH, getComplementaryColor(BGCOLOR)
                     );
                 } else tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
-                tft->drawString("Esc", btns_layout[4][2], 5);
+                tft->drawString("Ex", btns_layout[4][2], 5);
 #if HAS_1_BUTTON
                 //   >v or <^ direction
                 if (x >= 5 && y == -1) {
