@@ -97,32 +97,10 @@ bool md5Matches(const uint8_t *data, size_t len, const uint8_t *expected) {
     uint8_t digest[16] = {0};
     return mbedtls_md5(data, len, digest) == 0 && memcmp(digest, expected, sizeof(digest)) == 0;
 }
-} // namespace
 
-bool LauncherPartitionEntry::isApp() const { return type == kTypeApp; }
-
-bool LauncherPartitionEntry::isData() const { return type == kTypeData; }
-
-bool LauncherPartitionEntry::isOtaApp() const {
-    return isApp() && subtype >= kSubtypeOtaFlag && subtype <= (kSubtypeOtaFlag | kSubtypeOtaMask);
-}
-
-bool LauncherPartitionEntry::isFactoryOrTestApp() const {
-    return isApp() && (subtype == kSubtypeFactory || subtype == kSubtypeTest);
-}
-
-bool launcherPartitionReadCurrent(LauncherPartitionTable &table, String *error) {
-    esp_err_t err = esp_flash_read(
-        nullptr, gPartitionTableRaw, LAUNCHER_PARTITION_TABLE_OFFSET, sizeof(gPartitionTableRaw)
-    );
-    if (err != ESP_OK) {
-        setError(error, "Could not read partition table from flash");
-        return false;
-    }
-    return launcherPartitionParse(gPartitionTableRaw, sizeof(gPartitionTableRaw), table, error);
-}
-
-bool launcherPartitionParse(const uint8_t *data, size_t size, LauncherPartitionTable &table, String *error) {
+bool launcherPartitionParseInternal(
+    const uint8_t *data, size_t size, LauncherPartitionTable &table, String *error, bool validate
+) {
     table = LauncherPartitionTable();
     if (!data || size < LAUNCHER_PARTITION_ENTRY_SIZE) {
         setError(error, "Partition table buffer is too small");
@@ -145,10 +123,12 @@ bool launcherPartitionParse(const uint8_t *data, size_t size, LauncherPartitionT
                 setError(error, "Partition table MD5 mismatch");
                 return false;
             }
-            return launcherPartitionValidate(table, error);
+            return validate ? launcherPartitionValidate(table, error) : true;
         }
 
-        if (magic == 0xFFFF || magic == 0x0000) { return launcherPartitionValidate(table, error); }
+        if (magic == 0xFFFF || magic == 0x0000) {
+            return validate ? launcherPartitionValidate(table, error) : true;
+        }
 
         if (magic != kPartitionMagic) {
             setError(error, "Invalid partition entry magic");
@@ -168,6 +148,42 @@ bool launcherPartitionParse(const uint8_t *data, size_t size, LauncherPartitionT
 
     setError(error, "Partition table terminator not found");
     return false;
+}
+
+bool launcherPartitionReadCurrentInternal(LauncherPartitionTable &table, String *error, bool validate) {
+    esp_err_t err = esp_flash_read(
+        nullptr, gPartitionTableRaw, LAUNCHER_PARTITION_TABLE_OFFSET, sizeof(gPartitionTableRaw)
+    );
+    if (err != ESP_OK) {
+        setError(error, "Could not read partition table from flash");
+        return false;
+    }
+    return launcherPartitionParseInternal(gPartitionTableRaw, sizeof(gPartitionTableRaw), table, error, validate);
+}
+} // namespace
+
+bool LauncherPartitionEntry::isApp() const { return type == kTypeApp; }
+
+bool LauncherPartitionEntry::isData() const { return type == kTypeData; }
+
+bool LauncherPartitionEntry::isOtaApp() const {
+    return isApp() && subtype >= kSubtypeOtaFlag && subtype <= (kSubtypeOtaFlag | kSubtypeOtaMask);
+}
+
+bool LauncherPartitionEntry::isFactoryOrTestApp() const {
+    return isApp() && (subtype == kSubtypeFactory || subtype == kSubtypeTest);
+}
+
+bool launcherPartitionReadCurrent(LauncherPartitionTable &table, String *error) {
+    return launcherPartitionReadCurrentInternal(table, error, true);
+}
+
+bool launcherPartitionReadCurrentUnchecked(LauncherPartitionTable &table, String *error) {
+    return launcherPartitionReadCurrentInternal(table, error, false);
+}
+
+bool launcherPartitionParse(const uint8_t *data, size_t size, LauncherPartitionTable &table, String *error) {
+    return launcherPartitionParseInternal(data, size, table, error, true);
 }
 
 bool launcherPartitionBuild(

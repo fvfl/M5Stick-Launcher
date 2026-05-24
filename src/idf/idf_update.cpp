@@ -5,6 +5,7 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "launcher_platform.h"
+#include "partition_table_model.h"
 #include <Arduino.h>
 #include <algorithm>
 #include <cstring>
@@ -12,6 +13,20 @@
 namespace {
 constexpr size_t kSectorSize = 4096;
 constexpr size_t kAppHeaderHoldSize = 16;
+
+struct LauncherRequiredBootPartition {
+    const char *label;
+    uint8_t type;
+    uint8_t subtype;
+    uint32_t offset;
+    uint32_t size;
+};
+
+constexpr LauncherRequiredBootPartition kRequiredBootPartitions[] = {
+    {"nvs",      0x01, 0x02, 0x9000, 0x4000},
+    {"otadata",  0x01, 0x00, 0xD000, 0x2000},
+    {"phy_init", 0x01, 0x01, 0xF000, 0x1000},
+};
 
 struct LauncherUpdateContext {
     const esp_partition_t *partition = nullptr;
@@ -82,6 +97,45 @@ bool verifyAppImage(uint32_t address, size_t partitionSize) {
 
 bool validRawRange(uint32_t address, size_t size) {
     return address != 0 && size != 0 && (address % kSectorSize) == 0 && (size % kSectorSize) == 0;
+}
+
+bool isRequiredBootPartitionLabel(const char *label) {
+    for (const LauncherRequiredBootPartition &required : kRequiredBootPartitions) {
+        if (strncmp(label, required.label, 16) == 0) return true;
+    }
+    return false;
+}
+
+bool overlapsRequiredBootPartitionArea(const LauncherPartitionEntry &entry) {
+    constexpr uint32_t requiredStart = 0x9000;
+    constexpr uint32_t requiredEnd = 0x10000;
+    const uint32_t entryEnd = entry.offset + entry.size;
+    return entry.offset < requiredEnd && requiredStart < entryEnd;
+}
+
+bool hasRequiredBootPartitions(const LauncherPartitionTable &table) {
+    for (const LauncherRequiredBootPartition &required : kRequiredBootPartitions) {
+        const LauncherPartitionEntry *entry = launcherPartitionFindByLabel(table, required.label);
+        if (!entry || entry->type != required.type || entry->subtype != required.subtype ||
+            entry->offset != required.offset || entry->size != required.size) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void addRequiredBootPartitions(LauncherPartitionTable &table) {
+    for (const LauncherRequiredBootPartition &required : kRequiredBootPartitions) {
+        LauncherPartitionEntry entry;
+        entry.type = required.type;
+        entry.subtype = required.subtype;
+        entry.offset = required.offset;
+        entry.size = required.size;
+        entry.flags = 0;
+        memset(entry.label, 0, sizeof(entry.label));
+        strncpy(entry.label, required.label, sizeof(entry.label) - 1);
+        table.entries.push_back(entry);
+    }
 }
 
 bool writeRawFlashBytes(uint32_t address, const uint8_t *data, size_t len) {
@@ -461,6 +515,67 @@ bool launcherUpdateCopyPartition(
         if (cb) cb(copied, copySize);
         launcherDelayMs(1);
     }
+    return true;
+}
+
+bool launcherUpdateRepairPartitionTable(uint32_t removeOtaAddress, bool *removedOta) {
+    ctx.error = LAUNCHER_UPDATE_ERROR_OK;
+    if (removedOta) *removedOta = false;
+
+    String error;
+    LauncherPartitionTable current;
+    if (!launcherPartitionReadCurrentUnchecked(current, &error)) {
+        launcherConsolePrintf("Partition table read failed: %s\n", error.c_str());
+        ctx.error = LAUNCHER_UPDATE_ERROR_READ;
+        return false;
+    }
+
+    const bool tableValid = launcherPartitionValidate(current, &error);
+    const bool repairBootPartitions = !tableValid || !hasRequiredBootPartitions(current);
+    bool removed = false;
+
+    LauncherPartitionTable target = current;
+    target.entries.erase(
+        std::remove_if(
+            target.entries.begin(),
+            target.entries.end(),
+            [&](const LauncherPartitionEntry &entry) {
+                if (removeOtaAddress != 0 && entry.isOtaApp() && entry.offset == removeOtaAddress) {
+                    removed = true;
+                    return true;
+                }
+                if (!repairBootPartitions) return false;
+                return isRequiredBootPartitionLabel(entry.label) || overlapsRequiredBootPartitionArea(entry);
+            }
+        ),
+        target.entries.end()
+    );
+
+    if (!repairBootPartitions && !removed) return true;
+    if (repairBootPartitions) addRequiredBootPartitions(target);
+
+    std::sort(
+        target.entries.begin(),
+        target.entries.end(),
+        [](const LauncherPartitionEntry &a, const LauncherPartitionEntry &b) { return a.offset < b.offset; }
+    );
+
+    if (!launcherPartitionValidate(target, &error)) {
+        launcherConsolePrintf("Partition table validation failed: %s\n", error.c_str());
+        ctx.error = LAUNCHER_UPDATE_ERROR_BAD_ARGUMENT;
+        return false;
+    }
+
+    if (!launcherPartitionWriteGeneratedTable(target, &error)) {
+        launcherConsolePrintf("Partition table write failed: %s\n", error.c_str());
+        ctx.error = LAUNCHER_UPDATE_ERROR_WRITE;
+        return false;
+    }
+
+    if (removedOta) *removedOta = removed;
+    launcherConsolePrintf(
+        "Partition table updated: boot_repair=%d removed_ota=%d\n", repairBootPartitions, removed
+    );
     return true;
 }
 

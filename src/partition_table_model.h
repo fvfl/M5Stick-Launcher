@@ -43,6 +43,7 @@ struct LauncherPartitionPayloadPlan {
 };
 
 bool launcherPartitionReadCurrent(LauncherPartitionTable &table, String *error = nullptr);
+bool launcherPartitionReadCurrentUnchecked(LauncherPartitionTable &table, String *error = nullptr);
 bool launcherPartitionParse(
     const uint8_t *data, size_t size, LauncherPartitionTable &table, String *error = nullptr
 );

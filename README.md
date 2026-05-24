@@ -99,6 +99,9 @@ Things that need to be done in future updates
 * [ ] Optimize Storage functions to save Flash
 
 ## Latest Changelog
+* 2.7.1:
+     * [x] Fixed Launcher auto updater process.
+
 * 2.7.0:
      * [x] Improved navigation on devices with 5 buttons and keyboards; now you can navigate up and down on the main menu
      * [x] Improved main menu for small screens (T-Dongle, StickC)

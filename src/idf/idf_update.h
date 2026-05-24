@@ -53,6 +53,7 @@ bool launcherUpdateErasePartition(const esp_partition_t *partition);
 bool launcherUpdateCopyPartition(
     const esp_partition_t *source, const esp_partition_t *destination, LauncherUpdateProgress cb = nullptr
 );
+bool launcherUpdateRepairPartitionTable(uint32_t removeOtaAddress, bool *removedOta = nullptr);
 bool launcherRawUpdateStream(
     Stream &source, uint32_t address, size_t partitionSize, size_t imageSize, bool appImage,
     LauncherUpdateProgress cb = nullptr

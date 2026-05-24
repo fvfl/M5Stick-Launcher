@@ -924,6 +924,30 @@ void partitionCrawler() {
         return;
     }
 
+    bool removedRunningOta = false;
+    displayRedStripe("Updating table");
+    if (!launcherUpdateRepairPartitionTable(running_partition->address, &removedRunningOta)) {
+        displayRedStripe("Partition fix failed");
+        launcherDelayMs(5000);
+        return;
+    }
+
+    if (removedRunningOta) {
+        ESP_LOGI(TAG, "Running OTA partition was removed from partition table, restarting");
+        reboot();
+        return;
+    }
+
+    if (running_partition->address == test_partition->address) {
+        ESP_LOGW(
+            TAG,
+            "Running partition address matches target partition address 0x%08lX, skipping invalidation",
+            static_cast<unsigned long>(running_partition->address)
+        );
+        reboot();
+        return;
+    }
+
     ESP_LOGI(TAG, "Writing 0x00 to first byte of the running partition (break OTA0 Launcher)");
     uint8_t zero_byte = 0x00;
     esp_err_t err = esp_partition_write(running_partition, 0, &zero_byte, 1);
