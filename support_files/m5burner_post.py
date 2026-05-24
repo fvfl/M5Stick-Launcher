@@ -45,7 +45,8 @@ FIRMWARE_MAP = {
     "8bd30a7ef1dcce06dbbf04bda8318bf8": "Launcher-m5stack-tab5.bin",
     "9ce0bed47c008f578cf099168b530c72": "Launcher-m5stack-paper-s3.bin",
     "c0e83b10a5b368fbe27fdd6598518ebd": "Launcher-m5stack-sticks3.bin",
-    # "5ac021007628e2e75fa8575470a59fdd": "Launcher-arduino-nesso-n1.bin",
+    "5ac021007628e2e75fa8575470a59fdd": "Launcher-arduino-nesso-n1.bin",
+    "bccbefef5284357a2a7c3c7cc196fd98": "Launcher-m5stack-dinmeter.bin",
 }
 
 
