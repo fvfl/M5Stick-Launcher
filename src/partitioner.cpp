@@ -959,8 +959,11 @@ bool attachPartition(String _from, String _to) {
             to.read(bytes, 16);
 
             if (bytes[3] == 0x81 || bytes[3] == 0x82 || bytes[3] == 0x83) {
-                // Calculate offset (big endian)
-                offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
+                // Offset is a uint32 at bytes 4-7, little-endian (ESP-IDF partition table format)
+                offset = (uint32_t)bytes[0x04]
+                       | ((uint32_t)bytes[0x05] << 8)
+                       | ((uint32_t)bytes[0x06] << 16)
+                       | ((uint32_t)bytes[0x07] << 24);
                 launcherConsolePrintf("offset=%d\n", offset);
             }
         }
