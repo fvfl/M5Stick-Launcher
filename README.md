@@ -100,6 +100,7 @@ Things that need to be done in future updates
 
 ## Latest Changelog
 * 2.7.2:
+     * [x] Adjusted boot logic, now it works as it was before.
      * [x] Fixed devices that share TFT and Touch SPI bus (NM-CYD-C5 and others), that were unable to install firmware from SD Card.
      * [x] Fixed devices that share TFT with SD Card being unable to download firmware from OTA.
 

@@ -238,7 +238,12 @@ String launcherSelectedBootAppName() {
     if (apps.size() == 1) return apps[0].name;
     return "";
 }
-
+bool launcherBootCurrentApp() {
+    if (!bootToApp) return false;
+    std::vector<LauncherAppMetadata> apps = launcherListInstalledApps();
+    if (apps.empty()) return false;
+    return true;
+}
 bool launcherBootInstalledAppOrShowMenu() {
     if (!bootToApp) return false;
 

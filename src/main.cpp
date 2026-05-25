@@ -304,7 +304,7 @@ void setup() {
     int i = launcherMillis();
     int j = 0;
     LongPress = true;
-    while (launcherMillis() < i + (5000 - bootToApp * 3000)) { // increased from 2500 to 5000
+    while (launcherMillis() < i + (2000 + bootToApp * 3000)) { // increased from 2500 to 5000
         initDisplay();                                         // Inicia o display
 
         if (launcherMillis() > (i + j * 500)) { // Serial message each ~500ms
@@ -350,8 +350,12 @@ void setup() {
             goto Launcher;
         }
     }
-
-    goto Launcher;
+    // If nothing is done and there's something installed, launch it
+    if (launcherBootCurrentApp()) {
+        tft->fillScreen(BGCOLOR);
+        _setBrightness(0);
+        reboot();
+    }
 
 // If M5 or Enter button is pressed, continue from here
 Launcher:

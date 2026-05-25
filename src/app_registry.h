@@ -20,6 +20,7 @@ void launcherShowAppLauncher();
 void launcherShowAppActions(const char *label);
 String launcherAppDisplayNameForLabel(const char *label);
 String launcherSelectedBootAppName();
+bool launcherBootCurrentApp();
 bool launcherBootInstalledAppOrShowMenu();
 bool launcherBootAppByLabel(const char *label);
 bool launcherDeleteAppByLabel(const char *label);
