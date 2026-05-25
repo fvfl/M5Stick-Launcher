@@ -9,8 +9,8 @@
 
 namespace {
 constexpr int kTimeoutMs = 15000;
-constexpr int kHttpRxBufferSize = 2048;
-constexpr int kHttpTxBufferSize = 1024;
+constexpr int kHttpRxBufferSize = 4096;
+constexpr int kHttpTxBufferSize = 2048;
 constexpr int kMaxRedirects = 5;
 
 struct HttpRequestContext {

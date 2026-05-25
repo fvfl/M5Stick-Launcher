@@ -99,6 +99,10 @@ Things that need to be done in future updates
 * [ ] Optimize Storage functions to save Flash
 
 ## Latest Changelog
+* 2.7.2:
+     * [x] Fixed devices that share TFT and Touch SPI bus (NM-CYD-C5 and others), that were unable to install firmware from SD Card.
+     * [x] Fixed devices that share TFT with SD Card being unable to download firmware from OTA.
+
 * 2.7.1:
      * [x] Fixed Launcher auto updater process.
 

@@ -273,14 +273,22 @@ bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
         progressHandler(0, download->expected);
     }
 
-    size_t wrote = download->file->write(data, len);
-    if (wrote != len) return false;
-    download->downloaded += wrote;
+    size_t totalWrote = 0;
+    constexpr size_t sdWriteChunk = 512;
+    while (totalWrote < len) {
+        const size_t part = min(sdWriteChunk, len - totalWrote);
+        size_t wrote = download->file->write(data + totalWrote, part);
+        if (wrote != part) return false;
+        totalWrote += wrote;
+    }
+    download->downloaded += totalWrote;
 
     if (download->expected > 0) {
         if (download->progressTick >= 10) {
-            tft->drawPixel(0, 0, 0);
+            download->file->flush();
+            vTaskDelay(pdMS_TO_TICKS(2));
             progressHandler(download->downloaded, download->expected);
+            vTaskDelay(pdMS_TO_TICKS(2));
             download->progressTick = 0;
         } else {
             download->progressTick++;
@@ -732,10 +740,8 @@ void downloadFirmware(String fid, String file_url, String fileName, String folde
         launcherDelayMs(2500);
         return;
     }
-    log_i("Download folder before checks: '%s'", folder.c_str());
     if (!folder.endsWith("/")) folder = folder + "/";
     if (!folder.startsWith("/")) folder = "/" + folder;
-    log_i("Download folder after checks: '%s'", folder.c_str());
     String folder_name = folder.substring(0, folder.length() - 1);
     if (folder_name.length() > 2) {
         if (!SDM.exists(folder_name)) {
@@ -782,6 +788,7 @@ retry:
         displayRedStripe("Download FAILED");
         while (!check(SelPress)) yield();
     } else {
+        progressHandler(100, 100);
         launcherConsolePrintln("File successfully downloaded..");
         displayRedStripe(" Downloaded ");
         while (!check(SelPress)) yield();

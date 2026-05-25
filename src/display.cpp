@@ -449,7 +449,8 @@ void displayRedStripe(String text, uint16_t fgcolor, uint16_t bgcolor) {
 ** Dependencia: prog_handler =>>    0 - Flash, 1 - SPIFFS
 ***************************************************************************************/
 void progressHandler(size_t progress, size_t total) {
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(2));
+    tft->drawPixel(0, 0, 0);
 #if defined(E_PAPER_DISPLAY)
     static unsigned long lastUpdate = 0;
 #endif
@@ -798,7 +799,7 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
         return;
     }
     bool compactOneLine = tftHeight <= 90;
-    int cols = compactOneLine ? 5 : 3;                                  // Number of columns based on height
+    int cols = compactOneLine ? 5 : 3; // Number of columns based on height
     int visibleItems = compactOneLine && size > cols ? cols : size;
     int rows = compactOneLine ? 1 : (size + cols - 1) / cols;           // Calculate rows needed
     int w = (tftWidth - 16) / cols;                                     // Width of each icon

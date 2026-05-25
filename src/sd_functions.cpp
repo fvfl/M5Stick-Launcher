@@ -17,6 +17,14 @@ SPIClass sdcardSPI;
 String fileToCopy;
 String fileToUse;
 
+static inline void pauseSdInstallInput() {
+    if (xHandle != nullptr) vTaskSuspend(xHandle);
+}
+
+static inline void resumeSdInstallInput() {
+    if (xHandle != nullptr) vTaskResume(xHandle);
+}
+
 bool setupSdCard() {
 #if !defined(SDM_SD) // fot Lilygo T-Display S3 with lilygo shield
 #if defined(USE_SD_MMC) && defined(PIN_SD_CLK) && defined(PIN_SD_CMD) && defined(PIN_SD_D0)
@@ -411,7 +419,7 @@ bool performUpdate(Stream &updateSource, size_t updateSize, int command) {
     tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
     progressHandler(0, 500);
 
-    vTaskSuspend(xHandle);
+    pauseSdInstallInput();
     LauncherUpdateTarget target;
     if (launcherUpdateTargetFromCommand(command, target)) {
         prog_handler = target == LAUNCHER_UPDATE_APP ? 0 : 1;
@@ -430,7 +438,7 @@ bool performUpdate(Stream &updateSource, size_t updateSize, int command) {
         displayRedStripe("E:" + String(error) + "-Wrong Partition Scheme");
         launcherDelayMs(2500);
     }
-    vTaskResume(xHandle);
+    resumeSdInstallInput();
     return success;
 }
 static String installedAppNameFromPath(const String &path) { return launcherAppNameFromFile(path); }
@@ -582,7 +590,7 @@ static bool installFromSdDynamic(
         return false;
     }
 
-    vTaskSuspend(xHandle);
+    pauseSdInstallInput();
     bool success = false;
     displayRedStripe("Installing APP");
     prog_handler = 0;
@@ -653,7 +661,7 @@ static bool installFromSdDynamic(
     success = true;
 
 DONE:
-    vTaskResume(xHandle);
+    resumeSdInstallInput();
     return success;
 }
 

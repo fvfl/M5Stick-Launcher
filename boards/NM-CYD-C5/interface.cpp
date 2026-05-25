@@ -26,12 +26,10 @@ CYD28_TouchR touch(CYD28_DISPLAY_HOR_RES_MAX, CYD28_DISPLAY_VER_RES_MAX);
 ** Description:   initial setup for the device
 ***************************************************************************************/
 void _setup_gpio() {
-    launcherGpioOutput(TFT_CS);
-    launcherGpioWrite(TFT_CS, HIGH);
-    launcherGpioOutput(SDCARD_CS);
-    launcherGpioWrite(SDCARD_CS, HIGH);
-    launcherGpioOutput(CYD28_TouchR_CS); // Touch CS pin (XPT2046)
-    launcherGpioWrite(CYD28_TouchR_CS, HIGH);
+    pinMode(SDCARD_CS, OUTPUT);
+    digitalWrite(SDCARD_CS, HIGH);
+    pinMode(CYD28_TouchR_CS, OUTPUT); // Touch CS pin (XPT2046)
+    digitalWrite(CYD28_TouchR_CS, HIGH);
 }
 
 /***************************************************************************************
@@ -101,8 +99,8 @@ void InputHandler(void) {
 #endif
             auto t = touch.getPointScaled();
             auto t2 = touch.getPointRaw();
-            launcherConsolePrintf("\nRAW: Touch Pressed on x=%d, y=%d, rot: %d", t2.x, t2.y, rotation);
-            launcherConsolePrintf("\nBEF: Touch Pressed on x=%d, y=%d, rot: %d", t.x, t.y, rotation);
+            // launcherConsolePrintf("\nRAW: Touch Pressed on x=%d, y=%d, rot: %d", t2.x, t2.y, rotation);
+            // launcherConsolePrintf("\nBEF: Touch Pressed on x=%d, y=%d, rot: %d", t.x, t.y, rotation);
             if (rotation == 3) {
                 t.y = (tftHeight + 20) - t.y;
                 t.x = tftWidth - t.x;
@@ -117,7 +115,7 @@ void InputHandler(void) {
                 t.x = t.y;
                 t.y = (tftHeight + 20) - tmp;
             }
-            launcherConsolePrintf("\nAFT: Touch Pressed on x=%d, y=%d, rot: %d\n", t.x, t.y, rotation);
+            // launcherConsolePrintf("\nAFT: Touch Pressed on x=%d, y=%d, rot: %d\n", t.x, t.y, rotation);
             tm = launcherMillis();
             if (!wakeUpScreen()) AnyKeyPress = true;
             else return;
