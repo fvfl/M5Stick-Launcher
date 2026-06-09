@@ -10,7 +10,7 @@ bool installExtFirmware(String url);
 void installFirmware(
     String fid, String file, uint32_t app_size, uint32_t app_offset, bool spiffs, uint32_t spiffs_offset,
     uint32_t spiffs_size, bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions,
-    String installedName = ""
+    String installedName = "", const String &spiffsLabel = "spiffs"
 );
 void installFirmwareFromManifest(String fid, String version, String installedName = "");
 
