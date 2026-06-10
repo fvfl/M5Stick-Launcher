@@ -17,8 +17,12 @@ constexpr uint32_t kBtnBLongPressMs = 500;
 ***************************************************************************************/
 void _setup_gpio() {
     M5.begin();
+#ifndef USE_CARDKB2
+    // Disable 5V output to external port. With CardKB2 support the rail must
+    // stay on from M5.begin() so the keyboard's MCU is booted by probe time;
+    // _post_setup_gpio() turns it off when no keyboard is found.
     M5.Power.setExtOutput(false);
-    // Disable 5V output to external port
+#endif
     /*
   | Device  | SCK   | MISO  | MOSI  | CS    | GDO0/CE   |
   | ---     | :---: | :---: | :---: | :---: | :---:     |
