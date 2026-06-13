@@ -546,7 +546,8 @@ static uint32_t effectiveSdAppSize(File &file, uint32_t appOffset, uint32_t fall
 
 static bool installFromSdDynamic(
     File &file, const String &path, uint32_t appSize, uint32_t appOffset, bool spiffs, uint32_t spiffsOffset,
-    uint32_t spiffsSize, uint32_t spiffsCopySize, std::vector<LauncherInstallFatPartition> &fatPartitions
+    uint32_t spiffsSize, uint32_t spiffsCopySize, std::vector<LauncherInstallFatPartition> &fatPartitions,
+    const String &spiffsLabel
 ) {
     String error;
     LauncherPartitionTable table;
@@ -577,7 +578,8 @@ static bool installFromSdDynamic(
             appEntry,
             spiffsEntry,
             hasSpiffsEntry,
-            error
+            error,
+            spiffsLabel
         )) {
         launcherConsolePrintf("SD install layout failed: %s\n", error.c_str());
         displayRedStripe(error.length() ? error : "No install space");
@@ -677,6 +679,7 @@ void updateFromSD(String path) {
     uint32_t app_size = 0;
     uint32_t app_offset = 0;
     bool spiffs = false;
+    String spiffsLabel = "spiffs";
     std::vector<LauncherInstallFatPartition> fatPartitions;
 
     File file = SDM.open(path);
@@ -688,7 +691,7 @@ void updateFromSD(String path) {
     if (partitionEntry[0] != 0xAA || partitionEntry[1] != 0x50 || partitionEntry[2] != 0x01) {
         app_size = effectiveSdAppSize(file, 0, file.size());
         std::vector<LauncherInstallFatPartition> fatPartitions;
-        if (!installFromSdDynamic(file, path, app_size, 0, false, 0, 0, 0, fatPartitions)) { goto Exit; }
+        if (!installFromSdDynamic(file, path, app_size, 0, false, 0, 0, 0, fatPartitions, spiffsLabel)) { goto Exit; }
         file.close();
         tft->fillScreen(BGCOLOR);
         FREE_TFT
@@ -724,7 +727,7 @@ void updateFromSD(String path) {
                 }
             }
 
-            if (partitionEntry[0x02] == 0x01 && partitionEntry[3] == 0x82) {
+            if (partitionEntry[0x02] == 0x01 && (partitionEntry[3] == 0x82 || partitionEntry[3] == 0x83)) {
                 spiffs_offset = readLe32(partitionEntry + 0x04);
                 const uint32_t declaredSpiffsSize = readLe32(partitionEntry + 0x08);
                 spiffs_size = declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
@@ -738,6 +741,8 @@ void updateFromSD(String path) {
                                                                               : spiffs_size
                 );
                 spiffs = true;
+                String declaredLabel = readPartitionLabel(partitionEntry);
+                if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
                 if (file.size() < spiffs_offset) {
                     spiffs_copy_size = 0;
                     launcherConsolePrintf(
@@ -809,7 +814,8 @@ void updateFromSD(String path) {
                 spiffs_offset,
                 spiffs_size,
                 spiffs_copy_size,
-                fatPartitions
+                fatPartitions,
+                spiffsLabel
             )) {
             goto Exit;
         }

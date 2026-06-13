@@ -793,8 +793,13 @@ bool launcherPartitionIsReplaceableApp(const LauncherPartitionEntry &entry) {
 bool launcherPartitionIsRemovableInstallData(const LauncherPartitionEntry &entry) {
     if (!entry.isData()) return false;
     if (entry.subtype != 0x81 && entry.subtype != 0x82 && entry.subtype != 0x83) return false;
-    return strcmp(entry.label, "spiffs") == 0 || strcmp(entry.label, "sys") == 0 ||
-           strcmp(entry.label, "vfs") == 0;
+    // FAT partitions are only removable if they use the standard install labels
+    if (entry.subtype == 0x81) {
+        return strcmp(entry.label, "sys") == 0 || strcmp(entry.label, "vfs") == 0;
+    }
+    // SPIFFS / LittleFS partitions are removable regardless of label
+    // (e.g. "spiffs", "assets", "storage", etc.)
+    return true;
 }
 
 bool launcherPartitionRemoveInstallDataPartitions(LauncherPartitionTable &table, bool removeSpiffs) {

@@ -17,13 +17,15 @@ struct LauncherInstallFatPartition {
 
 bool launcherPrepareInstallDataPartitions(
     LauncherPartitionTable &table, bool spiffs, uint32_t spiffsSize, LauncherPartitionEntry &spiffsEntry,
-    bool &hasSpiffsEntry, std::vector<LauncherInstallFatPartition> &fatPartitions, String &error
+    bool &hasSpiffsEntry, std::vector<LauncherInstallFatPartition> &fatPartitions, String &error,
+    const String &spiffsLabel = "spiffs"
 );
 
 bool launcherSelectInstallLayout(
     LauncherPartitionTable &table, size_t updateSize, const String &defaultLabel, bool spiffs,
     uint32_t spiffsSize, std::vector<LauncherInstallFatPartition> &fatPartitions,
-    LauncherPartitionEntry &appEntry, LauncherPartitionEntry &spiffsEntry, bool &hasSpiffsEntry, String &error
+    LauncherPartitionEntry &appEntry, LauncherPartitionEntry &spiffsEntry, bool &hasSpiffsEntry, String &error,
+    const String &spiffsLabel = "spiffs"
 );
 
 #endif

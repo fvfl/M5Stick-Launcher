@@ -386,7 +386,8 @@ bool flashRawRangeFromHttp(
 bool installFirmwareDynamic(
     const String &fileAddr, const String &file, uint32_t appSize, uint32_t appPartitionSize,
     uint32_t appOffset, bool spiffs, uint32_t spiffsOffset, uint32_t spiffsSize, uint32_t spiffsCopySize,
-    bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions, const String &installedName
+    bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions, const String &installedName,
+    const String &spiffsLabel
 ) {
     String error;
     LauncherPartitionTable table;
@@ -440,7 +441,8 @@ bool installFirmwareDynamic(
             appEntry,
             spiffsEntry,
             hasSpiffsEntry,
-            error
+            error,
+            spiffsLabel
         )) {
         displayRedStripe(error.length() ? error : "No install space");
         launcherDelayMs(2000);
@@ -659,6 +661,7 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
     uint32_t spiffsOffset = 0;
     uint32_t spiffsSize = 0;
     uint32_t spiffsCopySize = 0;
+    String spiffsLabel = "spiffs";
 
     std::vector<LauncherInstallFatPartition> fatPartitions;
 
@@ -670,7 +673,7 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
             appCopySize = part["copy_size"] | appCopySize;
             appPartitionSize = appCopySize;
             nb = appOffset == 0;
-        } else if (type == "data" && subtype == "spiffs") {
+        } else if (type == "data" && (subtype == "spiffs" || subtype == "littlefs")) {
             spiffs = true;
             uint32_t declaredSize = part["size"] | 0;
             spiffsOffset = part["source_offset"] | 0;
@@ -678,6 +681,8 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
             spiffsSize = declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
                              ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
                              : LAUNCHER_DEFAULT_SPIFFS_SIZE;
+            String declaredLabel = part["label"].as<String>();
+            if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
         } else if (type == "data" && subtype == "fat") {
             LauncherInstallFatPartition fatPartition;
             fatPartition.label = part["label"].as<String>();
@@ -718,7 +723,8 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
             spiffsCopySize,
             nb,
             fatPartitions,
-            installedName
+            installedName,
+            spiffsLabel
         )) {
         launcherDelayMs(2500);
     }
@@ -804,9 +810,10 @@ bool installExtFirmware(String url) {
     bool spiffs = 0;
     uint32_t spiffs_offset = 0;
     uint32_t spiffs_size = 0;
+    String spiffsLabel = "spiffs";
     bool nb = 1;
     std::vector<LauncherInstallFatPartition> fatPartitions;
-    uint8_t bytes[16];
+    uint8_t bytes[32];
     if (!url.startsWith("https://")) {
         displayRedStripe("Invalid link");
         launcherDelayMs(2000);
@@ -828,7 +835,7 @@ bool installExtFirmware(String url) {
     if (buff[0] == 0xAA) {
         nb = 0;
         for (int i = 0x0; i <= 0x1A0; i += 0x20) {
-            memcpy(bytes, &buff[i], 16);
+            memcpy(bytes, &buff[i], 32);
 
             if (bytes[3] == 0x00 || (bytes[3] >= 0x10 && bytes[3] <= 0x1F)) {
                 if (bytes[0x0A] > 0 && PartitionSize == 0) {
@@ -855,6 +862,13 @@ bool installExtFirmware(String url) {
                 spiffs_offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 bytes[0x0C] = 0;
                 spiffs_size = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
+                // Read the actual partition label from the table entry
+                char labelBuf[17] = {0};
+                memcpy(labelBuf, bytes + 12, 16);
+                labelBuf[16] = '\0';
+                if (labelBuf[0] != '\0') {
+                    spiffsLabel = String(labelBuf);
+                }
             }
         }
         size_t temp_size = 0;
@@ -882,7 +896,8 @@ bool installExtFirmware(String url) {
         spiffs_size,
         nb,
         fatPartitions,
-        "External OTA"
+        "External OTA",
+        spiffsLabel
     );
     return true;
 }
@@ -893,7 +908,7 @@ bool installExtFirmware(String url) {
 ***************************************************************************************/
 void installFirmware( // adicionar "fid"
     String fid, String file, uint32_t app_size, uint32_t app_offset, bool spiffs, uint32_t spiffs_offset, uint32_t spiffs_size, bool nb,
-    std::vector<LauncherInstallFatPartition> &fatPartitions, String installedName
+    std::vector<LauncherInstallFatPartition> &fatPartitions, String installedName, const String &spiffsLabel
 ) {
     if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
@@ -932,7 +947,8 @@ void installFirmware( // adicionar "fid"
             spiffsCopySize,
             nb,
             fatPartitions,
-            installedName
+            installedName,
+            spiffsLabel
         )) {
         launcherDelayMs(2500);
     }
