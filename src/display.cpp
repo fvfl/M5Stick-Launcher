@@ -1237,11 +1237,12 @@ void loopFirmware() {
     String query = "";
     bool star = false;
     bool refine = false;
+    bool refined = false;
     int index = 0;
 
 RESTART:
     currentIndex = -1;
-    if (_page != current_page || refine) {
+    if (_page != current_page || refined) {
         GetJsonFromLauncherHub(current_page, order_by, star, query);
         index = 1;
     }
@@ -1279,30 +1280,29 @@ RESTART:
             {"Order by downloads",
              [&]() {
                  order_by = "downloads";
-                 refine = true;
+                 refined = true;
              }, order_by == "downloads" ? FGCOLOR : NO_COLOR},
             {"Order by name",
              [&]() {
                  order_by = "name";
-                 refine = true;
+                 refined = true;
              }, order_by == "name" ? FGCOLOR : NO_COLOR},
             {"Order by latest",
              [&]() {
                  order_by = "date";
-                 refine = true;
+                 refined = true;
              }, order_by == "date" ? FGCOLOR : NO_COLOR},
-            {star == true ? "Starred -> Off" : "Starred -> On",
+            {star == true ? "[x] Starred Only" : "[ ] Starred Only",
              [&]() {
                  star = !star;
-                 refine = true;
+                 refined = true;
              }},
             {"Text Search",
              [&]() {
                  String _q = keyboard(query, 76, "Search Firmware");
                  if (_q != String(KEY_ESCAPE)) query = _q;
-                 refine = true;
              }},
-            {"Back to list", [&]() { refine = false; }}
+            {"Back to list", [&]() { yield(); }}
         };
         loopOptions(opt);
     }
