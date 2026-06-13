@@ -99,6 +99,10 @@ Things that need to be done in future updates
 * [ ] Optimize Storage functions to save Flash
 
 ## Latest Changelog
+* 2.7.3:
+     * [x] Now it creates a SPIFFS partition with the name set in the file, thanks to @QQSHI13
+     * [x] Fix M5Stack PaperS3 touchscreen https://github.com/bmorcelli/Launcher/issues/338
+
 * 2.7.2:
      * [x] Adjusted boot logic, now it works as it was before.
      * [x] Fixed devices that share TFT and Touch SPI bus (NM-CYD-C5 and others), that were unable to install firmware from SD Card.
