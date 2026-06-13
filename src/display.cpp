@@ -873,6 +873,9 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
                     drawH = h;
                 }
             }
+            // Clear residue from previous selected state: top-left (button) and bottom-right (shadow)
+            tft->fillRect(x, y, 4, 4, BGCOLOR);
+            tft->fillRect(x + w - 4, y + h - 4, 4, 4, BGCOLOR);
             // Non-selected item
             tft->drawRoundRect(drawX, drawY, drawW, drawH, 5, BGCOLOR);
             tft->drawRoundRect(drawX + 1, drawY + 1, drawW - 2, drawH - 2, 5, BGCOLOR);
