@@ -85,6 +85,7 @@ void InputHandler(void) {
 void powerOff() {
     tft->fillScreen(BGCOLOR);
     initDisplay(true);
+    tft->drawCentreString("Powered OFF", tftWidth / 2, tftHeight - 100, 4);
     launcherDelayMs(1000);
     M5.Power.powerOff();
     while (1) launcherDelayMs(100);

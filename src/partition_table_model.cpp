@@ -158,7 +158,9 @@ bool launcherPartitionReadCurrentInternal(LauncherPartitionTable &table, String 
         setError(error, "Could not read partition table from flash");
         return false;
     }
-    return launcherPartitionParseInternal(gPartitionTableRaw, sizeof(gPartitionTableRaw), table, error, validate);
+    return launcherPartitionParseInternal(
+        gPartitionTableRaw, sizeof(gPartitionTableRaw), table, error, validate
+    );
 }
 } // namespace
 
@@ -794,9 +796,7 @@ bool launcherPartitionIsRemovableInstallData(const LauncherPartitionEntry &entry
     if (!entry.isData()) return false;
     if (entry.subtype != 0x81 && entry.subtype != 0x82 && entry.subtype != 0x83) return false;
     // FAT partitions are only removable if they use the standard install labels
-    if (entry.subtype == 0x81) {
-        return strcmp(entry.label, "sys") == 0 || strcmp(entry.label, "vfs") == 0;
-    }
+    if (entry.subtype == 0x81) { return strcmp(entry.label, "sys") == 0 || strcmp(entry.label, "vfs") == 0; }
     // SPIFFS / LittleFS partitions are removable regardless of label
     // (e.g. "spiffs", "assets", "storage", etc.)
     return true;
@@ -835,8 +835,9 @@ bool launcherPartitionAddManualAppEntry(
 }
 
 uint32_t launcherPartitionDefaultFatSize(const char *label) {
-    if (label && strcmp(label, "sys") == 0) return 0x100000;
-    if (label && strcmp(label, "ffat") == 0) return 0x100000;
+    // it is now using the upcoming partition size
+    // if (label && strcmp(label, "sys") == 0) return 0x100000;
+    // if (label && strcmp(label, "system") == 0) return 0x100000;
     return LAUNCHER_DEFAULT_FAT_SIZE;
 }
 
@@ -853,10 +854,18 @@ LauncherPartitionPayloadPlan launcherPartitionFatPayloadPlan(
     const char *label, uint32_t declaredSize, uint32_t requestedCopySize, uint32_t availableSize
 ) {
     LauncherPartitionPayloadPlan plan;
-    plan.partitionSize = launcherPartitionDefaultFatSize(label);
+    // if partition is labeled "sys" or "system", treat the entire partition as payload and ignore the default
+    // size limit
+    const bool usePayloadSize = label && (strcmp(label, "sys") == 0 || strcmp(label, "system") == 0);
+    const uint32_t defaultSize = launcherPartitionDefaultFatSize(label);
     plan.copySize = launcherPartitionBoundedPayloadSize(
-        declaredSize, requestedCopySize, plan.partitionSize, availableSize
+        declaredSize,
+        requestedCopySize,
+        usePayloadSize ? (requestedCopySize > 0 ? requestedCopySize : declaredSize) : defaultSize,
+        availableSize
     );
+    plan.partitionSize = usePayloadSize ? plan.copySize : defaultSize;
+    if (plan.partitionSize == 0) plan.partitionSize = defaultSize;
     return plan;
 }
 

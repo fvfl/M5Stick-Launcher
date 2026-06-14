@@ -1,8 +1,8 @@
 #include "TouchDrvGT911.hpp"
+#include "idf/launcher_platform.h"
 #include "powerSave.h"
 #include <Wire.h>
 #include <interface.h>
-#include "idf/launcher_platform.h"
 TouchDrvGT911 touch;
 
 struct LTouchPointPro {
@@ -65,7 +65,8 @@ void ISR_rst() {
 ***************************************************************************************/
 void _setup_gpio() {
     launcherDelayMs(500); // time to ESP32C3 start and enable the keyboard
-    if (!Wire.begin(KB_I2C_SDA, KB_I2C_SCL)) launcherConsolePrintf("%s\n", String("Fail starting ESP32-C3 keyboard").c_str());
+    if (!Wire.begin(KB_I2C_SDA, KB_I2C_SCL))
+        launcherConsolePrintf("%s\n", String("Fail starting ESP32-C3 keyboard").c_str());
 
     launcherGpioOutput(PIN_POWER_ON);
     launcherGpioWrite(PIN_POWER_ON, HIGH);
@@ -174,16 +175,25 @@ void InputHandler(void) {
         else return;
 
         // launcherConsolePrintf("%s", String("Trackball: [").c_str());
-        // launcherConsolePrintf("%s", String(trackball_axis_x).c_str()); launcherConsolePrintf("%s", String(", ").c_str()); launcherConsolePrintf("%s", String(trackball_axis_y).c_str());
+        // launcherConsolePrintf("%s", String(trackball_axis_x).c_str()); launcherConsolePrintf("%s",
+        // String(", ").c_str()); launcherConsolePrintf("%s", String(trackball_axis_y).c_str());
         // launcherConsolePrintf("%s\n", String("]").c_str());
-        if (trackball_axis_x < 0 || trackball_axis_y < 0) {
+        if (trackball_axis_x < 0) {
             ISR_rst();
             PrevPress = true;
-        } // left , Up
-        else if (trackball_axis_x > 0 || trackball_axis_y > 0) {
+        } // Up
+        else if (trackball_axis_x > 0) {
             ISR_rst();
             NextPress = true;
-        } // right, Down
+        } // Down
+        if (trackball_axis_y < 0) {
+            ISR_rst();
+            UpPress = true;
+        } // Up
+        else if (trackball_axis_y > 0) {
+            ISR_rst();
+            DownPress = true;
+        } // Down
     }
 
     if (keyValue != (char)0x00) {
