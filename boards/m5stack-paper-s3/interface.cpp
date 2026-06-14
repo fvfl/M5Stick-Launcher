@@ -1,8 +1,8 @@
+#include "idf/launcher_platform.h"
 #include "powerSave.h"
 #include <M5GFX.h>
 #include <M5Unified.h>
 #include <interface.h>
-#include "idf/launcher_platform.h"
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -52,6 +52,21 @@ void InputHandler(void) {
             tm = launcherMillis();
             if (!wakeUpScreen()) AnyKeyPress = true;
             else return;
+            if (rotation == 0) {
+            } else if (rotation == 2) {
+                t.y = (tftHeight + 20) - t.y;
+                t.x = tftWidth - t.x;
+            }
+            if (rotation == 3) {
+                int tmp = t.x;
+                t.x = tftWidth - t.y;
+                t.y = tmp;
+            }
+            if (rotation == 1) {
+                int tmp = t.x;
+                t.x = t.y;
+                t.y = (tftHeight + 20) - tmp;
+            }
             launcherConsolePrintf("x2=%d, y2=%d, rot=%d\n", t.x, t.y, rotation);
 
             // Touch point global variable
