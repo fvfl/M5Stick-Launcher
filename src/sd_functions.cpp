@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "idf/idf_update.h"
 #include "idf/launcher_platform.h"
+#include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "partition_install_layout.h"
 #include "partition_table_model.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <esp_app_format.h>
 #include <esp_image_format.h>
+#include <esp_partition.h>
 #include <globals.h>
 #include <memory>
 SPIClass sdcardSPI;
@@ -470,7 +472,23 @@ static bool flashRawFromSd(
         progressHandler(written, imageSize);
         launcherDelayMs(1);
     }
-    return launcherRawUpdateEnd();
+    if (!launcherRawUpdateEnd()) return false;
+
+    if (!appImage) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(target, &patchError)) {
+            launcherConsolePrintf(
+                "LittleFS patch failed after SD copy label=%s offset=0x%08X size=0x%08X: %s\n",
+                target.label,
+                target.offset,
+                target.size,
+                patchError.c_str()
+            );
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static bool readSdBytes(File &file, uint32_t offset, void *buffer, size_t len) {
@@ -843,6 +861,22 @@ bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label
     if (!launcherUpdateStream(updateSource, updateSize, target, progressHandler)) {
         log_i("FAIL updating %s", label);
         return false;
+    }
+
+    const esp_partition_t *partition =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, label);
+    if (partition) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(partition->address, partition->size, &patchError)) {
+            launcherConsolePrintf(
+                "LittleFS patch failed after FAT restore label=%s offset=0x%08X size=0x%08X: %s\n",
+                label,
+                partition->address,
+                partition->size,
+                patchError.c_str()
+            );
+            return false;
+        }
     }
 
     log_i("Success updating %s", label);

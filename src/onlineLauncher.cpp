@@ -5,6 +5,7 @@
 #include "idf/idf_update.h"
 #include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
+#include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "partition_install_layout.h"
 #include "partition_table_model.h"
@@ -379,6 +380,19 @@ bool flashRawRangeFromHttp(
     bool complete = update.written == imageSize;
     bool endOk = complete && launcherRawUpdateEnd();
     bool ok = complete && endOk;
+    if (ok && !appImage) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(target, &patchError)) {
+            launcherConsolePrintf(
+                "LittleFS patch failed after HTTP copy label=%s offset=0x%08X size=0x%08X: %s\n",
+                target.label,
+                target.offset,
+                target.size,
+                patchError.c_str()
+            );
+            ok = false;
+        }
+    }
     resumeInputHandlerTask();
     return ok;
 }

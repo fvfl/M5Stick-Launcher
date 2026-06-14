@@ -1,6 +1,7 @@
 #include "partition_table_model.h"
 
 #include "idf/launcher_platform.h"
+#include "littlefs_patch.h"
 #include "pre_compiler.h"
 
 #include <algorithm>
@@ -423,6 +424,11 @@ bool launcherPartitionMigrateMovedData(
                 }
                 yield();
             }
+        }
+
+        if (!launcherPatchReducedLittlefsSuperblocks(target, error)) {
+            if (error && error->length() == 0) *error = "Could not patch reduced LittleFS partition";
+            return false;
         }
     }
 

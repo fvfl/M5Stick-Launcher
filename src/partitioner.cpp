@@ -3,6 +3,7 @@
 #include "esp_heap_caps.h"
 #include "idf/idf_update.h"
 #include "idf/launcher_platform.h"
+#include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "partition_table_model.h"
 #include "sd_functions.h"
@@ -849,6 +850,19 @@ void restorePartition(const char *partitionLabel) {
                 displayRedStripe(launcherUpdateLastErrorName());
                 launcherDelayMs(2500);
                 return;
+            }
+            const esp_partition_t *partition =
+                esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+            if (partition) {
+                String patchError;
+                if (!launcherPatchReducedLittlefsSuperblocks(
+                        partition->address, partition->size, &patchError
+                    )) {
+                    source.close();
+                    displayRedStripe(patchError.length() ? patchError : "LittleFS patch failed");
+                    launcherDelayMs(2500);
+                    return;
+                }
             }
         }
 
