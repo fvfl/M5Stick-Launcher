@@ -4,6 +4,9 @@
 #include "powerSave.h"
 #include "settings.h"
 #include <globals.h>
+#ifdef USE_CARDKB2
+#include <cardkb2.h>
+#endif
 
 #ifndef HAS_1_BUTTON // if not defined, use 0 for calculations
 #define HAS_1_BUTTON 0
@@ -233,6 +236,10 @@ String generalKeyboard(
 ) {
     resetTftDisplay();
     touchPoint.Clear();
+#ifdef USE_CARDKB2
+    KeyStroke.Clear();      // drop keys queued while navigating menus
+    CardKB2TextMode = true; // printable keys type instead of navigating
+#endif
 
     /* SUPPORT VARIABLES */
     bool caps = false;
@@ -560,6 +567,29 @@ String generalKeyboard(
             cursor_y = KBLH + counter_height + 6;
             cursor_x = 5 + RES / 2 + current_text.length() * LW * FM;
         }
+
+#ifdef USE_CARDKB2
+        if (CardKB2Installed && KeyStroke.pressed) {
+            wakeUpScreen();
+            if (KeyStroke.exit_key) { // ESC (Fn+1) cancels
+                resetGlobals();
+                current_text = KEY_ESCAPE;
+                break;
+            }
+            if (KeyStroke.enter) {
+                resetGlobals();
+                break;
+            }
+            tft->setTextColor(getComplementaryColor(BGCOLOR), BGCOLOR);
+            tft->setCursor(cursor_x, cursor_y);
+            if (KeyStroke.del) handleDelete(current_text, cursor_x, cursor_y);
+            for (auto ch : KeyStroke.word) {
+                handleCharacterAdd(current_text, ch, cursor_x, cursor_y, max_size);
+            }
+            resetGlobals();
+            redraw = true;
+        }
+#endif
 
         if (launcherMillis() - last_input_time > 250) { // INPUT DEBOUCING
             // waits at least 250ms before accepting another input, to prevent rapid involuntary repeats
@@ -923,6 +953,9 @@ String generalKeyboard(
     // Resets screen when finished writing
     tft->fillScreen(BGCOLOR);
     resetTftDisplay();
+#ifdef USE_CARDKB2
+    CardKB2TextMode = false;
+#endif
 #if defined(E_PAPER_DISPLAY) && defined(USE_M5GFX)
     M5.Display.setEpdMode(epd_mode_t::epd_quality);
 #endif

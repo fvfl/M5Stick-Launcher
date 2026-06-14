@@ -1033,7 +1033,7 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
                 } else goto WAITING;
             }
         }
-#if defined(HAS_5_BUTTONS)
+#if defined(HAS_5_BUTTONS) || defined(USE_CARDKB2)
         if (check(UpPress)) {
             if (index == 0) index = options.size() - 1;
             else if (index > 0) index--;

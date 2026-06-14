@@ -540,7 +540,7 @@ void loop() {
             }
             redraw = true;
         }
-#if defined(HAS_KEYBOARD) || defined(HAS_5_BUTTONS)
+#if defined(HAS_KEYBOARD) || defined(HAS_5_BUTTONS) || defined(USE_CARDKB2)
         auto moveMainMenuRow = [&](int direction) {
             if (tftHeight <= 90) return;
 

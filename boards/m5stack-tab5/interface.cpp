@@ -3,6 +3,9 @@
 #include "powerSave.h"
 #include <M5Unified.h>
 #include <interface.h>
+#ifdef USE_CARDKB2
+#include <cardkb2.h>
+#endif
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -20,7 +23,11 @@ void _setup_gpio() {
 ** Location: main.cpp
 ** Description:   second stage gpio setup to make a few functions work
 ***************************************************************************************/
-void _post_setup_gpio() {}
+void _post_setup_gpio() {
+#ifdef USE_CARDKB2
+    cardkb2_setup(); // CardKB2 on the Grove port (G53/G54)
+#endif
+}
 
 /***************************************************************************************
 ** Function name: getBattery()
@@ -46,6 +53,9 @@ void _setBrightness(uint8_t brightval) { M5.Display.setBrightness(brightval); }
 **********************************************************************/
 void InputHandler(void) {
     static long tm = launcherMillis();
+#ifdef USE_CARDKB2
+    cardkb2_poll(); // not throttled by the touch gate below
+#endif
     if (launcherMillis() - tm > 200 || LongPress) {
         M5.update();
         auto t = M5.Touch.getDetail();

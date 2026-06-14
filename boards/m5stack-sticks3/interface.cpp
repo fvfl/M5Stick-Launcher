@@ -3,6 +3,9 @@
 #include <M5Unified.h>
 #include <Wire.h>
 #include <interface.h>
+#ifdef USE_CARDKB2
+#include <cardkb2.h>
+#endif
 
 constexpr uint32_t kBtnBDoublePressWindowMs = 270;
 constexpr uint32_t kBtnBLongPressMs = 500;
@@ -14,8 +17,12 @@ constexpr uint32_t kBtnBLongPressMs = 500;
 ***************************************************************************************/
 void _setup_gpio() {
     M5.begin();
+#ifndef USE_CARDKB2
+    // Disable 5V output to external port. With CardKB2 support the rail must
+    // stay on from M5.begin() so the keyboard's MCU is booted by probe time;
+    // _post_setup_gpio() turns it off when no keyboard is found.
     M5.Power.setExtOutput(false);
-    // Disable 5V output to external port
+#endif
     /*
   | Device  | SCK   | MISO  | MOSI  | CS    | GDO0/CE   |
   | ---     | :---: | :---: | :---: | :---: | :---:     |
@@ -43,6 +50,23 @@ void _setup_gpio() {
     M5.BtnB.setDebounceThresh(8);
     M5.BtnB.setHoldThresh(kBtnBLongPressMs);
 }
+
+/***************************************************************************************
+** Function name: _post_setup_gpio()
+** Location: main.cpp
+** Description:   second stage gpio setup to make a few functions work
+***************************************************************************************/
+void _post_setup_gpio() {
+#ifdef USE_CARDKB2
+    // CardKB2 on the Grove port (G9/G10). Probing reconfigures G9 as I2C SDA,
+    // so restore the RF433 anti-jam state if no keyboard is attached.
+    if (!cardkb2_setup()) {
+        M5.Power.setExtOutput(false);
+        launcherGpioOutput(9);
+        launcherGpioWrite(9, LOW); // M5RF433 avoid Jamming
+    }
+#endif
+}
 /*********************************************************************
 ** Function: setBrightness
 ** location: settings.cpp
@@ -60,7 +84,11 @@ int getBattery() {
     bool charging = M5.Power.isCharging();
     if (charging && lastState != 1) {
         lastState = 1;
+#ifdef USE_CARDKB2
+        if (!CardKB2Installed) M5.Power.setExtOutput(false); // keyboard needs Grove 5V
+#else
         M5.Power.setExtOutput(false);
+#endif
     } else if (!charging && lastState != 0) {
         lastState = 0;
         M5.Power.setExtOutput(true);
@@ -79,6 +107,9 @@ void InputHandler(void) {
     static bool btnBLongPressFired = false;
 
     M5.update();
+#ifdef USE_CARDKB2
+    cardkb2_poll();
+#endif
 
     bool emitNext = false;
     bool emitPrev = false;
@@ -112,8 +143,9 @@ void InputHandler(void) {
         emitNext = true;
     }
 
-    AnyKeyPress = btnAActive || btnBActive || btnBWaitingSecondClick || M5.BtnA.wasClicked() || emitNext ||
-                  emitPrev || emitEsc;
+    if (btnAActive || btnBActive || btnBWaitingSecondClick || M5.BtnA.wasClicked() || emitNext || emitPrev ||
+        emitEsc)
+        AnyKeyPress = true;
     if (!AnyKeyPress) return;
 
     if ((btnAActive || btnBActive) && wakeUpScreen()) return;
