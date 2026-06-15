@@ -22,6 +22,10 @@
 #include <string>
 #include <vector>
 
+#ifdef USE_CARDKB2
+#include <cardkb2.h>
+#endif
+
 #if defined(SET_LOOP_TASK_STACK_SIZE)
 SET_LOOP_TASK_STACK_SIZE(16384)
 #endif
@@ -80,6 +84,9 @@ void __attribute__((weak)) taskInputHandler(void *parameter) {
             resetGlobals();
 #ifndef DONT_USE_INPUT_TASK
             InputHandler();
+#ifdef USE_CARDKB2
+            cardkb2_poll();
+#endif
 #endif
             timer = launcherMillis();
         }
@@ -273,6 +280,11 @@ void setup() {
     partitionCrawler();
     // Checks the size of partitions and take actions to find the best options (in HEADLESS environment)
     get_partition_sizes();
+
+#if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
+    cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL);
+#endif
+
     // Init post setup GPIO before SD Card initializes
     _post_setup_gpio();
 

@@ -265,7 +265,10 @@ void InputHandler(void) {
 void powerOff() {
     tft->fillScreen(BGCOLOR);
     initDisplay(true);
-    tft->drawCentreString("Powered OFF", tftWidth / 2, tftHeight - 100, 4);
+    tft->setTextSize(FG);
+    tft->setTextColor(FGCOLOR);
+    tft->drawCentreString("Powered OFF", tftWidth / 2, tftHeight - 100, 1);
+    tft->display();
     launcherDelayMs(1000);
     PPM.shutdown();
     while (1) launcherDelayMs(100);

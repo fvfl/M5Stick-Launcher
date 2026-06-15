@@ -60,7 +60,7 @@ void _post_setup_gpio() {
 #ifdef USE_CARDKB2
     // CardKB2 on the Grove port (G9/G10). Probing reconfigures G9 as I2C SDA,
     // so restore the RF433 anti-jam state if no keyboard is attached.
-    if (!cardkb2_setup()) {
+    if (!CardKB2Installed) {
         M5.Power.setExtOutput(false);
         launcherGpioOutput(9);
         launcherGpioWrite(9, LOW); // M5RF433 avoid Jamming
@@ -107,10 +107,6 @@ void InputHandler(void) {
     static bool btnBLongPressFired = false;
 
     M5.update();
-#ifdef USE_CARDKB2
-    cardkb2_poll();
-#endif
-
     bool emitNext = false;
     bool emitPrev = false;
     bool emitEsc = false;

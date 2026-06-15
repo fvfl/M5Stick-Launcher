@@ -11,7 +11,7 @@ extern bool CardKB2Installed;
 extern volatile bool CardKB2TextMode;
 
 // Probes the Grove port for a CardKB2. Returns true when found.
-bool cardkb2_setup();
+bool cardkb2_setup(int I2C_SDA, int I2C_SCL);
 // Drains pending keys and updates the global input state. Cheap no-op when
 // no keyboard was detected. Call from the board's InputHandler().
 void cardkb2_poll();
