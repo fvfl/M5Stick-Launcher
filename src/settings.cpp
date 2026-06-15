@@ -88,6 +88,40 @@ bool ensureU8Key(nvs::NVSHandle &handle, const char *key, uint8_t value) {
     if (err != ESP_OK) { launcherConsolePrintf("ensureU8Key(%s) write failed: %d", key, err); }
     return err == ESP_OK;
 }
+
+bool eraseNamespace(const char *ns) {
+    esp_err_t err = ESP_OK;
+    auto handle = openNamespace(ns, NVS_READWRITE, err);
+    if (!handle) return false;
+    err = handle->erase_all();
+    if (err != ESP_OK) return false;
+    err = handle->commit();
+    return err == ESP_OK;
+}
+
+bool backupConfigFileIfPresent() {
+    if (!setupSdCard()) return true;
+    String backupPath = String(CONFIG_FILE) + ".old";
+    if (SDM.exists(backupPath)) SDM.remove(backupPath);
+    if (!SDM.exists(CONFIG_FILE)) return true;
+    return SDM.rename(CONFIG_FILE, backupPath);
+}
+
+void factoryReset() {
+    bool confirmed = false;
+    options = {
+        {"Reset Configs/Wifi", [&]() { confirmed = true; } },
+        {"Cancel",             [&]() { confirmed = false; }},
+    };
+    loopOptions(options);
+    if (!confirmed) return;
+    eraseNamespace("l_wifi");
+    eraseNamespace("launcher");
+    backupConfigFileIfPresent();
+    settings.clear();
+    defaultValues();
+    saveConfigs();
+}
 } // namespace
 
 JsonObject ensureSettingsRoot() {
@@ -262,7 +296,7 @@ void settings_menu() {
 #if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
         options.push_back({"Start CardKb", [=]() { cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL); }});
 #endif
-
+        if (dev_mode) options.push_back({"Reset Configs/Wifi", factoryReset});
         options.push_back({"Restart", [=]() { FREE_TFT reboot(); }});
 #if !defined(CARDPUTER)
         options.push_back({"Turn-off", [=]() { FREE_TFT powerOff(); }});

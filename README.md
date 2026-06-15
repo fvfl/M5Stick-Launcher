@@ -100,13 +100,14 @@ Things that need to be done in future updates
 
 ## Latest Changelog
 * 2.7.3:
-     * [x] Now it creates a SPIFFS partition with the name set in the file, thanks to @QQSHI13
-     * [x] Fix M5Stack PaperS3 touchscreen https://github.com/bmorcelli/Launcher/issues/338
-     * [x] FAT labeled "sys" and "system" are now copied entirely, and the other partitions (FAT or LittleFS) are properly copied and resized to avoid being re-formatted.
-     * [x] Added support to M5 CardKB2 and CardKB 1.1, support is added to M5 devices in grove I2C Port A of StickC, CPlus, CPlus2 StickS3, CoreS3, Core2 and Core, Thanks to @cddigi
-     * [x] E-paper displays now show "Powered Off" when turned off by launcher.
-     * [x] Fix WebUI OTA installation
      * [x] Lilygo T-Watch-Ultra now has OTA installing
+     * [x] Added support to M5 CardKB2 and CardKB 1.1. Support was added to M5 devices using grove I2C Port A for: StickC, StickCPlus 1.1, StickCPlus2, StickS3, Tab5, CoreS3, Core2 and Core, Thanks to @cddigi
+     * [x] Now it creates a SPIFFS partition with the name set in the file, thanks to @QQSHI13
+     * [x] FAT labeled "sys" and "system" are now copied entirely, and the other partitions (FAT or LittleFS) are properly copied and resized to avoid being re-formatted.
+     * [x] E-paper displays now show "Powered Off" when turned off by launcher.
+     * [x] Fix M5Stack PaperS3 touchscreen https://github.com/bmorcelli/Launcher/issues/338
+     * [x] Fix WebUI OTA installation
+     * [x] Added "dev" option to Reset Config and wifi credentials
 
 * 2.7.2:
      * [x] Adjusted boot logic, now it works as it was before.
