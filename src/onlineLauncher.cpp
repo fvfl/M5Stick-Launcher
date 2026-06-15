@@ -75,11 +75,16 @@ bool wifiConnect(String ssid, int encryptation, bool isAP) {
         while (connectState != LauncherWifiConnectState::Connected) {
             connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
             if (connectState == LauncherWifiConnectState::Connected) break;
+            if (connectState == LauncherWifiConnectState::WrongPassword) {
+                displayRedStripe("Wrong Password");
+                launcherDelayMs(1200);
+                wrongPass = true;
+                goto Retry;
+            }
             vTaskDelay(500 / portTICK_PERIOD_MS);
             tftprint(".", 10);
             count++;
             if (connectState == LauncherWifiConnectState::Failed || count > kWifiConnectAttempts) {
-                wrongPass = (connectState == LauncherWifiConnectState::Failed && encryptation > 0);
                 options = {
                     {"Retry",     [&]() { yield(); }            },
                     {"Main Menu", [&]() { returnToMenu = true; }},

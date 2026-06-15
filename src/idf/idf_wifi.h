@@ -15,6 +15,7 @@ struct LauncherWifiAp {
 enum class LauncherWifiConnectState : uint8_t {
     Pending,
     Connected,
+    WrongPassword,
     Failed,
 };
 

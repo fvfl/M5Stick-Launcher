@@ -28,13 +28,26 @@ bool handlersRegistered = false;
 bool mdnsStarted = false;
 bool expectingConnection = false; // true only after esp_wifi_connect() is called
 int wifiConnectRetryCount = 0;
+wifi_err_reason_t lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
 
-void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void *) {
+bool isWrongPasswordReason(wifi_err_reason_t reason) {
+    return reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_HANDSHAKE_TIMEOUT ||
+           reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || reason == WIFI_REASON_802_1X_AUTH_FAILED ||
+           reason == WIFI_REASON_AUTH_EXPIRE;
+}
+
+void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
     if (!wifiEvents) return;
     if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *disconnected =
+            reinterpret_cast<wifi_event_sta_disconnected_t *>(eventData);
+        if (disconnected) lastDisconnectReason = static_cast<wifi_err_reason_t>(disconnected->reason);
         xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT);
         if (expectingConnection) {
-            if (wifiConnectRetryCount < kWifiConnectRetryLimit) {
+            if (isWrongPasswordReason(lastDisconnectReason)) {
+                expectingConnection = false;
+                xEventGroupSetBits(wifiEvents, WIFI_FAIL_BIT);
+            } else if (wifiConnectRetryCount < kWifiConnectRetryLimit) {
                 ++wifiConnectRetryCount;
                 esp_wifi_connect();
             } else {
@@ -49,6 +62,7 @@ void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void 
     } else if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
         expectingConnection = false;
         wifiConnectRetryCount = 0;
+        lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
         xEventGroupClearBits(wifiEvents, WIFI_FAIL_BIT);
         xEventGroupSetBits(wifiEvents, WIFI_CONNECTED_BIT);
     }
@@ -183,6 +197,7 @@ LauncherWifiConnectState launcherWifiConnectStatus(
         // event won't set FAIL_BIT.
         esp_wifi_disconnect();
         vTaskDelay(pdMS_TO_TICKS(100));
+        lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
         xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
         esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &config);
@@ -205,7 +220,10 @@ LauncherWifiConnectState launcherWifiConnectStatus(
         wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)
     );
     if ((bits & WIFI_CONNECTED_BIT) != 0) return LauncherWifiConnectState::Connected;
-    if ((bits & WIFI_FAIL_BIT) != 0) return LauncherWifiConnectState::Failed;
+    if ((bits & WIFI_FAIL_BIT) != 0) {
+        if (isWrongPasswordReason(lastDisconnectReason)) return LauncherWifiConnectState::WrongPassword;
+        return LauncherWifiConnectState::Failed;
+    }
     return LauncherWifiConnectState::Pending;
 }
 

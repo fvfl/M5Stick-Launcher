@@ -659,6 +659,10 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
                     while (connectState != LauncherWifiConnectState::Connected) {
                         connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
                         if (connectState == LauncherWifiConnectState::Connected) break;
+                        if (connectState == LauncherWifiConnectState::WrongPassword) {
+                            launcherConsolePrintln("Wrong Password");
+                            break;
+                        }
                         vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                         launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
@@ -686,6 +690,10 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
                 while (connectState != LauncherWifiConnectState::Connected) {
                     connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
                     if (connectState == LauncherWifiConnectState::Connected) break;
+                    if (connectState == LauncherWifiConnectState::WrongPassword) {
+                        launcherConsolePrintln("Wrong Password");
+                        break;
+                    }
                     vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                     launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
