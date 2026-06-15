@@ -47,12 +47,70 @@ constexpr unsigned long TCA8418_REPEAT_MS = 150;
 #define BOARD_KEYBOARD_LED 42
 #define BOARD_A7682E_PWRKEY 40
 
-int variant = 0;
+int variant = -1;
 /*
 variant = 0 -> 1.0
 variant = 1 -> 1.1
 variant = 2 -> max
+variant = -1 -> unknown
 */
+
+namespace {
+bool hasI2cDevice(uint8_t address) {
+    Wire.beginTransmission(address);
+    return Wire.endTransmission() == 0;
+}
+
+void detectBoardVariantAndPrepareDisplay(bool preDisplayInit) {
+    if (variant == 2 || variant == 1) return;
+
+    const bool hasDrv2605 = hasI2cDevice(0x5A);
+    const bool hasXl9555 = hasI2cDevice(0x20);
+
+    if (hasXl9555) {
+        launcherConsolePrintln("T-Deck Pro MAX detected");
+        variant = 2;
+
+        if (preDisplayInit) {
+            // The Max routes the display reset through the XL9555 expander.
+            // Pulse it before the e-paper driver starts so GxEPD2 doesn't inherit
+            // stale controller state from the previously booted firmware.
+            if (io.begin(Wire, 0x20)) {
+                io.pinMode(9, OUTPUT); // EXPANDS_KB_RST / display reset line
+                io.digitalWrite(9, LOW);
+                delay(20);
+                io.digitalWrite(9, HIGH);
+                delay(50);
+            } else {
+                launcherConsolePrintf("%s\n", String("Initializing expander failed").c_str());
+            }
+        }
+        return;
+    }
+
+    if (preDisplayInit) return;
+
+    if (hasDrv2605) {
+        launcherConsolePrintln("T-Deck Pro 1.1 detected");
+        variant = 1;
+        pinMode(TOUCH_RST2, OUTPUT);
+        digitalWrite(TOUCH_RST2, LOW);
+        launcherDelayMs(10);
+        digitalWrite(TOUCH_RST2, HIGH);
+        delay(50);
+    } else {
+        // T-Deck Pro 1.0 has no distinct probe in this path, so once MAX and 1.1
+        // are ruled out we treat the board as 1.0.
+        launcherConsolePrintln("T-Deck Pro 1.0 detected");
+        variant = 0;
+        pinMode(TOUCH_RST, OUTPUT);
+        digitalWrite(TOUCH_RST, LOW);
+        launcherDelayMs(10);
+        digitalWrite(TOUCH_RST, HIGH);
+        delay(50);
+    }
+}
+} // namespace
 
 /***************************************************************************************
 ** Function name: _setup_gpio()
@@ -92,6 +150,7 @@ void _setup_gpio() {
 
     Wire.begin(BOARD_SDA, BOARD_SCL);
     launcherDelayMs(100);
+    detectBoardVariantAndPrepareDisplay(true);
 
     // BQ25896 --- 0x6B
     Wire.beginTransmission(BQ25896_SLAVE_ADDRESS);
@@ -160,15 +219,12 @@ void _post_setup_gpio() {
     ledcAttach(TFT_BL, TFT_BRIGHT_FREQ, TFT_BRIGHT_Bits);
     ledcWrite(TFT_BL, bright);
 
-    Wire.beginTransmission(0x20); // test for XL9555, MAX exclusive IC
-    if (Wire.endTransmission() == 0) {
-        launcherConsolePrintln("T-Deck Pro MAX detected");
-        launcherGpioOutput(9);      // Display RST Pin
-        launcherGpioWrite(9, HIGH); // Display RST Pin HIGH
+    detectBoardVariantAndPrepareDisplay(false);
+    if (variant == 2) {
         if (io.begin(Wire, 0x20)) {
             const uint8_t expands[] = {
-                9, // EXPANDS_KB_RST
-                2, // GPS,
+                9, // EXPANDS_KB_RST / display reset line
+                2, // GPS
             };
             for (auto pin : expands) {
                 io.pinMode(pin, OUTPUT);
@@ -178,27 +234,6 @@ void _post_setup_gpio() {
         } else {
             launcherConsolePrintf("%s\n", String("Initializing expander failed").c_str());
         }
-        variant = 2;
-    }
-    Wire.beginTransmission(0x5A); // test for DRV2605, t-deck Pro 1.1
-    if (variant == 0 && Wire.endTransmission() == 0) {
-        launcherConsolePrintln("T-Deck Pro 1.1 detected");
-        variant = 1;
-        pinMode(TOUCH_RST2, OUTPUT);
-        digitalWrite(TOUCH_RST2, LOW);
-        launcherDelayMs(10);
-        digitalWrite(TOUCH_RST2, HIGH);
-        delay(50);
-    } else if (variant == 0) {
-        launcherConsolePrintln("T-Deck Pro 1.0 detected");
-        pinMode(TOUCH_RST, OUTPUT);
-        digitalWrite(TOUCH_RST, LOW);
-        launcherDelayMs(10);
-        digitalWrite(TOUCH_RST, HIGH);
-        delay(50);
-    } else {
-        launcherConsolePrintln("No version of T-Deck Pro detected");
-        variant = -1;
     }
 
     uint8_t address = 0xFF;
