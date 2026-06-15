@@ -1,6 +1,5 @@
 
 #include "settings.h"
-#include "wifi_crypto.h"
 #include "display.h"
 #include "esp_mac.h"
 #include "idf/launcher_platform.h"
@@ -11,6 +10,7 @@
 #include "partitioner.h"
 #include "powerSave.h"
 #include "sd_functions.h"
+#include "wifi_crypto.h"
 #include <FS.h>
 #include <SD.h>
 #include <cstdio>
@@ -19,6 +19,9 @@
 #include <memory>
 #if !defined(SDM_SD)
 #include <SD_MMC.h>
+#endif
+#ifdef USE_CARDKB2
+#include <cardkb2.h>
 #endif
 namespace {
 uint32_t crc32(const uint8_t *data, size_t length) {
@@ -256,6 +259,10 @@ void settings_menu() {
 #if defined(HAS_RESISTIVE_TOUCH)
         options.push_back({"Calibrate Touch", calibrateTouch});
 #endif
+#if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
+        options.push_back({"Start CardKb", [=]() { cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL); }});
+#endif
+
         options.push_back({"Restart", [=]() { FREE_TFT reboot(); }});
 #if !defined(CARDPUTER)
         options.push_back({"Turn-off", [=]() { FREE_TFT powerOff(); }});
@@ -579,7 +586,11 @@ bool saveWifiIntoNVS() {
         esp_err_t secErr = nvsHandle->set_item(secKey.c_str(), (uint8_t)1);
         if (ssidErr != ESP_OK || pwdErr != ESP_OK || secErr != ESP_OK) {
             log_i(
-                "saveWifiIntoNVS: failed storing %s (ssid=%d pwd=%d sec=%d)", ssid.c_str(), ssidErr, pwdErr, secErr
+                "saveWifiIntoNVS: failed storing %s (ssid=%d pwd=%d sec=%d)",
+                ssid.c_str(),
+                ssidErr,
+                pwdErr,
+                secErr
             );
         }
     }
