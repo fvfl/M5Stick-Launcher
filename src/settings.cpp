@@ -23,6 +23,10 @@
 #ifdef USE_CARDKB2
 #include <cardkb2.h>
 #endif
+
+// forward declaration 
+void defaultValues();
+
 namespace {
 uint32_t crc32(const uint8_t *data, size_t length) {
     uint32_t crc = 0xFFFFFFFF;
