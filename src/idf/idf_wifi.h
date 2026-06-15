@@ -12,9 +12,18 @@ struct LauncherWifiAp {
     int8_t rssi;
 };
 
+enum class LauncherWifiConnectState : uint8_t {
+    Pending,
+    Connected,
+    Failed,
+};
+
 bool launcherWifiStartSta();
 bool launcherWifiInitHostedSdio(
     int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2, int8_t d3, int8_t rst
+);
+LauncherWifiConnectState launcherWifiConnectStatus(
+    const char *ssid, const char *password, uint32_t timeout_ms
 );
 bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeout_ms);
 int launcherWifiScan(std::vector<LauncherWifiAp> &out);

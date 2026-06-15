@@ -655,17 +655,17 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
                     pwd = wifientry["pwd"].as<String>();
                     int count = 0;
                     launcherConsolePrintf("Connecting to %s\n", ssid.c_str());
-                    bool connected = false;
-                    while (!connected) {
-                        connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
-                        if (connected) break;
+                    LauncherWifiConnectState connectState = LauncherWifiConnectState::Pending;
+                    while (connectState != LauncherWifiConnectState::Connected) {
+                        connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
+                        if (connectState == LauncherWifiConnectState::Connected) break;
                         vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                         launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
                         launcherConsolePrint(".");
                         count++;
-                        if (count > 10) { // try for 5 seconds
+                        if (connectState == LauncherWifiConnectState::Failed || count > 20) {
                             break; // stops trying this network, will try the others, if there are some other
                                    // with same SSID
                         }
@@ -682,17 +682,17 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
                 launcherConsolePrintln("Network matches the SSID, starting connection\n");
                 int count = 0;
                 launcherConsolePrintf("Connecting to %s\n", ssid.c_str());
-                bool connected = false;
-                while (!connected) {
-                    connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
-                    if (connected) break;
+                LauncherWifiConnectState connectState = LauncherWifiConnectState::Pending;
+                while (connectState != LauncherWifiConnectState::Connected) {
+                    connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
+                    if (connectState == LauncherWifiConnectState::Connected) break;
                     vTaskDelay(pdTICKS_TO_MS(500));
 #if LED > 0
                     launcherGpioWrite(LED, count & 1 ? LED_ON : (LED_ON ? LOW : HIGH)); // blink the LED
 #endif
                     launcherConsolePrint(".");
                     count++;
-                    if (count > 6) { // try for 3 seconds
+                    if (connectState == LauncherWifiConnectState::Failed || count > 20) {
                         break; // stops trying this network, will try the others, if there are some other with
                                // same SSID, it can take quite sometime :/
                     }

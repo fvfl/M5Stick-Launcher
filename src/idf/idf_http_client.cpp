@@ -86,6 +86,7 @@ bool executeGet(
     int64_t contentLength = esp_http_client_get_content_length(client);
     if (contentLength >= 0) resp->content_length = contentLength;
     resp->status = esp_http_client_get_status_code(client);
+    resp->transport_error = static_cast<int>(err);
 
     esp_http_client_cleanup(client);
     bool ok = err == ESP_OK && request.callbackOk && resp->status >= 200 && resp->status < 300;
@@ -106,11 +107,12 @@ bool stringChunkCb(const uint8_t *data, size_t len, void *ctx) {
 }
 } // namespace
 
-bool launcherHttpGetToString(const char *url, String &out, size_t maxSize) {
+bool launcherHttpGetToString(const char *url, String &out, size_t maxSize, LauncherHttpResponse *response) {
     out = "";
     StringSink sink = {&out, maxSize};
-    LauncherHttpResponse response;
-    return launcherHttpGetStream(url, stringChunkCb, &sink, &response) && response.status == 200;
+    LauncherHttpResponse localResponse;
+    LauncherHttpResponse *resp = response ? response : &localResponse;
+    return launcherHttpGetStream(url, stringChunkCb, &sink, resp) && resp->status == 200;
 }
 
 bool launcherHttpGetStream(

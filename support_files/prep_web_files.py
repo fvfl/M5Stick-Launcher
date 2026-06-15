@@ -97,8 +97,9 @@ def prepare_www_files():
 
         for file in files_to_gzip:
             gz_file = file + ".gz"
+            file_name = basename(file)
             with open(file, "rb") as src, gzip.open(gz_file, "wb") as dst:
-                ext = basename(file).rsplit(".", 1)[-1].lower()
+                ext = file_name.rsplit(".", 1)[-1].lower()
                 if ext == 'html':
                     minified = minify_html(src)
                 elif ext == 'css':
@@ -112,8 +113,7 @@ def prepare_www_files():
 
             with open(gz_file, "rb") as gz:
                 compressed_data = gz.read()
-                var_name = basename(file).replace(".", "_")
-
+                var_name = file_name.replace(".", "_")
                 header.write(f"const uint8_t {var_name}[] PROGMEM = {{\n")
 
                 # Write hex values, inserting a newline every 15 bytes

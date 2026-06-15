@@ -18,6 +18,7 @@ namespace {
 constexpr EventBits_t WIFI_CONNECTED_BIT = BIT0;
 constexpr EventBits_t WIFI_FAIL_BIT = BIT1;
 constexpr EventBits_t WIFI_STARTED_BIT = BIT2;
+constexpr int kWifiConnectRetryLimit = 5;
 
 EventGroupHandle_t wifiEvents = nullptr;
 esp_netif_t *staNetif = nullptr;
@@ -26,16 +27,20 @@ bool wifiInitialized = false;
 bool handlersRegistered = false;
 bool mdnsStarted = false;
 bool expectingConnection = false; // true only after esp_wifi_connect() is called
+int wifiConnectRetryCount = 0;
 
 void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void *) {
     if (!wifiEvents) return;
     if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT);
-        // Only signal failure if we actually initiated a connection; ignore
-        // the DISCONNECTED event fired by esp_wifi_disconnect() during setup.
         if (expectingConnection) {
-            expectingConnection = false;
-            xEventGroupSetBits(wifiEvents, WIFI_FAIL_BIT);
+            if (wifiConnectRetryCount < kWifiConnectRetryLimit) {
+                ++wifiConnectRetryCount;
+                esp_wifi_connect();
+            } else {
+                expectingConnection = false;
+                xEventGroupSetBits(wifiEvents, WIFI_FAIL_BIT);
+            }
         }
     } else if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_START) {
         xEventGroupSetBits(wifiEvents, WIFI_STARTED_BIT);
@@ -43,6 +48,7 @@ void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void 
         xEventGroupClearBits(wifiEvents, WIFI_STARTED_BIT | WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     } else if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
         expectingConnection = false;
+        wifiConnectRetryCount = 0;
         xEventGroupClearBits(wifiEvents, WIFI_FAIL_BIT);
         xEventGroupSetBits(wifiEvents, WIFI_CONNECTED_BIT);
     }
@@ -110,6 +116,13 @@ std::string ipFromNetif(esp_netif_t *netif) {
     snprintf(out, sizeof(out), IPSTR, IP2STR(&ip.ip));
     return out;
 }
+
+bool staHasIpAddress() {
+    if (!staNetif) return false;
+    esp_netif_ip_info_t ip = {};
+    if (esp_netif_get_ip_info(staNetif, &ip) != ESP_OK) return false;
+    return ip.ip.addr != 0;
+}
 } // namespace
 
 bool launcherWifiStartSta() {
@@ -145,8 +158,10 @@ bool launcherWifiInitHostedSdio(
 #endif
 }
 
-bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeout_ms) {
-    if (!launcherWifiStartSta()) return false;
+LauncherWifiConnectState launcherWifiConnectStatus(
+    const char *ssid, const char *password, uint32_t timeout_ms
+) {
+    if (!launcherWifiStartSta()) return LauncherWifiConnectState::Failed;
 
     // Only (re-)initiate if not already waiting for this SSID to connect.
     // The caller may call us in a retry loop; we must not interrupt an ongoing
@@ -173,14 +188,15 @@ bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeou
         esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &config);
         if (err != ESP_OK) {
             // Serial.printf("[idf_wifi] set_config failed: %d\n", (int)err);
-            return false;
+            return LauncherWifiConnectState::Failed;
         }
+        wifiConnectRetryCount = 0;
         expectingConnection = true; // arm before connect so we catch DISCONNECTED
         err = esp_wifi_connect();
         if (err != ESP_OK) {
             // Serial.printf("[idf_wifi] esp_wifi_connect failed: %d\n", (int)err);
             expectingConnection = false;
-            return false;
+            return LauncherWifiConnectState::Failed;
         }
     }
     // else { Serial.printf("[idf_wifi] Still waiting for connection...\n"); }
@@ -188,11 +204,13 @@ bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeou
     EventBits_t bits = xEventGroupWaitBits(
         wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms)
     );
-    bool connected = (bits & WIFI_CONNECTED_BIT) != 0;
-    // Serial.printf(
-    //     "[idf_wifi] wait result bits=0x%lx -> %s\n", (unsigned long)bits, connected ? "OK" : "waiting/fail"
-    // );
-    return connected;
+    if ((bits & WIFI_CONNECTED_BIT) != 0) return LauncherWifiConnectState::Connected;
+    if ((bits & WIFI_FAIL_BIT) != 0) return LauncherWifiConnectState::Failed;
+    return LauncherWifiConnectState::Pending;
+}
+
+bool launcherWifiConnect(const char *ssid, const char *password, uint32_t timeout_ms) {
+    return launcherWifiConnectStatus(ssid, password, timeout_ms) == LauncherWifiConnectState::Connected;
 }
 
 int launcherWifiScan(std::vector<LauncherWifiAp> &out) {
@@ -255,6 +273,7 @@ bool launcherWifiStartAp(const char *ssid, const char *password, uint8_t channel
 bool launcherWifiStop() {
     if (!wifiInitialized) return true;
     expectingConnection = false;
+    wifiConnectRetryCount = 0;
     xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     esp_wifi_disconnect();
     esp_err_t err = esp_wifi_stop();
@@ -263,10 +282,9 @@ bool launcherWifiStop() {
 }
 
 bool launcherWifiIsConnected() {
-    wifi_ap_record_t ap = {};
-    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) return true;
     if (!wifiEvents) return false;
-    return (xEventGroupGetBits(wifiEvents) & WIFI_CONNECTED_BIT) != 0;
+    if ((xEventGroupGetBits(wifiEvents) & WIFI_CONNECTED_BIT) == 0) return false;
+    return staHasIpAddress();
 }
 
 std::string launcherWifiLocalIp() { return ipFromNetif(staNetif); }

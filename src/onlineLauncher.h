@@ -14,13 +14,14 @@ void installFirmware(
 );
 void installFirmwareFromManifest(String fid, String version, String installedName = "");
 
-void connectWifi();
+bool connectWifi();
+bool ensureWifiConnected(String ssid = "", int encryptation = 0, bool isAP = false);
 
 void ota_function();
 
 void downloadFirmware(String fid, String file, String fileName, String folder = "/downloads/");
 
-void wifiConnect(String ssid, int encryptation, bool isAP = false);
+bool wifiConnect(String ssid, int encryptation, bool isAP = false);
 
 bool GetJsonFromLauncherHub(
     uint8_t page = 1, String order = "downloads", bool star = false, String query = ""

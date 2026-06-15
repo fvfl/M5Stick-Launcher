@@ -5,19 +5,17 @@
 #include "idf/idf_update.h"
 #include "idf/idf_web_server.h"
 #include "idf/idf_wifi.h"
+#include "install_shared.h"
 #include "idf/launcher_platform.h"
 #include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "nvs.h"
 #include "onlineLauncher.h"
-#include "app_registry.h"
 #include "partition_install_layout.h"
 #include "partition_table_model.h"
 #include "sd_functions.h"
 #include "settings.h"
 #include <globals.h>
-#include <algorithm>
-#include <map>
 #include <vector>
 
 #include <SD.h>
@@ -31,13 +29,39 @@ struct Config {
     int webserverporthttp;
 };
 
-struct WebParamMap {
-    std::map<String, String> values;
+struct WebParamEntry {
+    String key;
+    String value;
+};
 
-    bool has(const char *key) const { return values.find(String(key)) != values.end(); }
+struct SessionEntry {
+    String token;
+    unsigned long lastSeen = 0;
+};
+
+struct WebParamMap {
+    std::vector<WebParamEntry> values;
+
+    bool has(const char *key) const {
+        for (const WebParamEntry &entry : values) {
+            if (entry.key == key) return true;
+        }
+        return false;
+    }
     String get(const char *key) const {
-        auto it = values.find(String(key));
-        return it == values.end() ? String("") : it->second;
+        for (const WebParamEntry &entry : values) {
+            if (entry.key == key) return entry.value;
+        }
+        return "";
+    }
+    void set(const String &key, const String &value) {
+        for (WebParamEntry &entry : values) {
+            if (entry.key == key) {
+                entry.value = value;
+                return;
+            }
+        }
+        values.push_back({key, value});
     }
 };
 
@@ -52,7 +76,7 @@ const char *host = "launcher";
 bool shouldReboot = false;
 String uploadFolder = "";
 
-std::map<String, unsigned long> sessions;
+std::vector<SessionEntry> sessions;
 bool sessionTokenLoaded = false;
 String persistedSessionToken;
 
@@ -89,9 +113,37 @@ bool failWebInstall(const String &message, uint32_t delayMs = 3000, bool clearCo
     return false;
 }
 
-String webInstallDefaultDataLabel(uint8_t subtype) {
-    if (subtype == 0x81) return "vfs";
-    return "spiffs";
+int findSessionIndex(const String &token) {
+    for (size_t i = 0; i < sessions.size(); ++i) {
+        if (sessions[i].token == token) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void setSessionToken(const String &token, unsigned long lastSeen) {
+    int index = findSessionIndex(token);
+    if (index >= 0) {
+        sessions[index].lastSeen = lastSeen;
+        return;
+    }
+    sessions.push_back({token, lastSeen});
+}
+
+void clearSessions() { sessions.clear(); }
+
+void removeSessionToken(const String &token) {
+    int index = findSessionIndex(token);
+    if (index < 0) return;
+    sessions.erase(sessions.begin() + index);
+}
+
+void addWebInstallStage(const WebInstallStage &stage) {
+    size_t insertAt = webInstallCtx.stages.size();
+    while (insertAt > 0 && webInstallCtx.stages[insertAt - 1].sourceOffset > stage.sourceOffset) {
+        --insertAt;
+    }
+    webInstallCtx.stages.insert(webInstallCtx.stages.begin() + insertAt, stage);
+    webInstallCtx.totalCopySize += stage.copySize;
 }
 
 bool prepareWebDataPartition(
@@ -196,30 +248,6 @@ bool patchLegacyUpdatedDataPartition(LauncherUpdateTarget target) {
            !failWebInstall(patchError.length() ? patchError : "LittleFS patch failed");
 }
 
-void saveInstalledWebAppMetadata() {
-    if (webInstallCtx.appEntry.offset == 0) {
-        lastInstalledApp = "WebUI File";
-        return;
-    }
-
-    String installedLabel = String(webInstallCtx.appEntry.label);
-    for (const LauncherAppMetadata &registeredApp : launcherLoadAppRegistry()) {
-        if (!launcherPartitionFindByLabel(webInstallCtx.table, registeredApp.label.c_str())) {
-            launcherRemoveAppMetadata(registeredApp.label.c_str());
-        }
-    }
-
-    LauncherAppMetadata metadata;
-    metadata.name = launcherAppNameFromFile(webInstallCtx.sourceName);
-    if (metadata.name.isEmpty()) metadata.name = installedLabel;
-    metadata.label = installedLabel;
-    for (const WebInstallStage &stage : webInstallCtx.stages) {
-        if (!stage.appImage && stage.subtype == 0x81) metadata.fatLabels.push_back(String(stage.entry.label));
-    }
-    launcherSaveAppMetadata(metadata);
-    lastInstalledApp = metadata.name;
-}
-
 bool finalizeWebInstall() {
     if (webInstallCtx.currentStage != webInstallCtx.stages.size() ||
         webInstallCtx.totalWritten != webInstallCtx.totalCopySize) {
@@ -235,7 +263,15 @@ bool finalizeWebInstall() {
         return failWebInstall(tableError.length() ? tableError : "Boot failed", 3000, true);
     }
 
-    saveInstalledWebAppMetadata();
+    {
+        std::vector<String> fatLabels;
+        for (const WebInstallStage &stage : webInstallCtx.stages) {
+            if (!stage.appImage && stage.subtype == 0x81) fatLabels.push_back(String(stage.entry.label));
+        }
+        launcherSaveInstalledAppMetadata(
+            webInstallCtx.table, webInstallCtx.appEntry, webInstallCtx.sourceName, "", fatLabels
+        );
+    }
     clearWebInstallContext();
     saveIntoNVS();
     displayRedStripe("Restart your device");
@@ -258,6 +294,7 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
     clearWebInstallContext();
     if (!launcherPartitionReadCurrent(webInstallCtx.table, &error)) return false;
     webInstallCtx.sourceName = manifest["sourceName"].as<String>();
+    webInstallCtx.totalCopySize = 0;
 
     bool hasApp = false;
     uint32_t appOffset = 0;
@@ -291,7 +328,7 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
 
         const uint8_t subtype = static_cast<uint8_t>(part["subtype"] | 0xFF);
         String label = part["label"].as<String>();
-        if (label.isEmpty()) label = webInstallDefaultDataLabel(subtype);
+        if (label.isEmpty()) label = launcherInstallDefaultDataLabel(subtype);
         if (subtype == 0x81) {
             LauncherInstallFatPartition fatPartition;
             fatPartition.label = label;
@@ -317,9 +354,8 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
         return false;
     }
 
-    String appSource = launcherAppNameFromFile(webInstallCtx.sourceName);
-    if (appSource.isEmpty()) appSource = "WebUI File";
-    String appLabel = launcherPartitionNextAppLabel(webInstallCtx.table, appSource);
+    String appLabel =
+        launcherInstallNextAppLabel(webInstallCtx.table, webInstallCtx.sourceName, "", "WebUI File");
     LauncherPartitionEntry spiffsEntry;
     bool hasSpiffsEntry = false;
 
@@ -346,7 +382,7 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
     appStage.sourceOffset = appOffset;
     appStage.copySize = appSize;
     appStage.entry = webInstallCtx.appEntry;
-    webInstallCtx.stages.push_back(appStage);
+    addWebInstallStage(appStage);
     if (hasSpiffsEntry && spiffsCopySize > 0) {
         WebInstallStage stage;
         stage.appImage = false;
@@ -354,7 +390,7 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
         stage.sourceOffset = spiffsOffset;
         stage.copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
         stage.entry = spiffsEntry;
-        webInstallCtx.stages.push_back(stage);
+        addWebInstallStage(stage);
     }
     for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
         if (!fatPartition.hasEntry || fatPartition.copySize == 0) continue;
@@ -364,17 +400,8 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
         stage.sourceOffset = fatPartition.sourceOffset;
         stage.copySize = fatPartition.copySize;
         stage.entry = fatPartition.entry;
-        webInstallCtx.stages.push_back(stage);
+        addWebInstallStage(stage);
     }
-
-    std::sort(
-        webInstallCtx.stages.begin(),
-        webInstallCtx.stages.end(),
-        [](const WebInstallStage &a, const WebInstallStage &b) { return a.sourceOffset < b.sourceOffset; }
-    );
-
-    webInstallCtx.totalCopySize = 0;
-    for (const WebInstallStage &stage : webInstallCtx.stages) webInstallCtx.totalCopySize += stage.copySize;
     webInstallCtx.active = !webInstallCtx.stages.empty();
     return webInstallCtx.active;
 }
@@ -394,9 +421,8 @@ bool prepareWebInstallContext(int commandValue, size_t uploadSize, const WebPara
     stage.copySize = static_cast<uint32_t>(uploadSize);
 
     if (stage.appImage) {
-        String sourceLabel = launcherAppNameFromFile(webInstallCtx.sourceName);
-        if (sourceLabel.isEmpty()) sourceLabel = "WebUI File";
-        String appLabel = launcherPartitionNextAppLabel(webInstallCtx.table, sourceLabel);
+        String appLabel =
+            launcherInstallNextAppLabel(webInstallCtx.table, webInstallCtx.sourceName, "", "WebUI File");
         if (!launcherPartitionCreateOtaApp(
                 webInstallCtx.table, stage.copySize, appLabel.c_str(), &webInstallCtx.appEntry, &error
             )) {
@@ -408,7 +434,7 @@ bool prepareWebInstallContext(int commandValue, size_t uploadSize, const WebPara
                               ? static_cast<uint8_t>(params.get("subtype").toInt())
                               : 0x82;
         String label = params.get("label");
-        if (label.isEmpty()) label = webInstallDefaultDataLabel(subtype);
+        if (label.isEmpty()) label = launcherInstallDefaultDataLabel(subtype);
         const uint32_t declaredSize =
             params.has("declaredSize") ? static_cast<uint32_t>(params.get("declaredSize").toInt()) : stage.copySize;
         if (!prepareWebDataPartition(
@@ -420,8 +446,8 @@ bool prepareWebInstallContext(int commandValue, size_t uploadSize, const WebPara
     }
 
     if (!launcherPartitionValidate(webInstallCtx.table, &error)) return false;
-    webInstallCtx.stages.push_back(stage);
-    webInstallCtx.totalCopySize = stage.copySize;
+    webInstallCtx.totalCopySize = 0;
+    addWebInstallStage(stage);
     webInstallCtx.active = true;
     return true;
 }
@@ -465,8 +491,7 @@ bool writeWebInstallData(const uint8_t *data, size_t len) {
 **  Display options to launch the WebUI
 **********************************************************************/
 void webUIMyNet() {
-    if (!launcherWifiIsConnected()) connectWifi();
-    if (launcherWifiIsConnected()) startWebUi("", 0, false);
+    startWebUi("", 0, false);
 }
 
 /**********************************************************************
@@ -485,9 +510,9 @@ void loopOptionsWebUi() {
 
 String humanReadableSize(uint64_t bytes) {
     if (bytes < 1024) return String(bytes) + " B";
-    else if (bytes < (1024 * 1024)) return String(bytes / 1024.0) + " kB";
-    else if (bytes < (1024 * 1024 * 1024)) return String(bytes / 1024.0 / 1024.0) + " MB";
-    else return String(bytes / 1024.0 / 1024.0 / 1024.0) + " GB";
+    if (bytes < (1024ULL * 1024ULL)) return String((bytes + 1023) / 1024) + " kB";
+    if (bytes < (1024ULL * 1024ULL * 1024ULL)) return String((bytes + 1048575) / 1048576) + " MB";
+    return String((bytes + 1073741823ULL) / 1073741824ULL) + " GB";
 }
 
 String listFiles(String folder) {
@@ -524,7 +549,7 @@ void ensurePersistedSessionLoaded() {
     if (sessionTokenLoaded) return;
     sessionTokenLoaded = true;
     persistedSessionToken = loadSessionToken();
-    if (!persistedSessionToken.isEmpty()) sessions[persistedSessionToken] = launcherMillis();
+    if (!persistedSessionToken.isEmpty()) setSessionToken(persistedSessionToken, launcherMillis());
 }
 
 String generateToken(int length = 24) {
@@ -559,7 +584,7 @@ void parseUrlEncoded(const String &body, WebParamMap &params) {
         if (amp < 0) amp = body.length();
         String pair = body.substring(start, amp);
         int eq = pair.indexOf('=');
-        if (eq >= 0) params.values[urlDecode(pair.substring(0, eq))] = urlDecode(pair.substring(eq + 1));
+        if (eq >= 0) params.set(urlDecode(pair.substring(0, eq)), urlDecode(pair.substring(eq + 1)));
         if (amp == body.length()) break;
         start = amp + 1;
     }
@@ -638,7 +663,7 @@ void parseMultipartFields(const String &body, const String &contentType, WebPara
         int dataStart = headerEnd + 4;
         int next = body.indexOf("\r\n" + boundary, dataStart);
         if (next < 0) break;
-        if (!name.isEmpty() && filename.isEmpty()) params.values[name] = body.substring(dataStart, next);
+        if (!name.isEmpty() && filename.isEmpty()) params.set(name, body.substring(dataStart, next));
         pos = next + 2;
     }
 }
@@ -697,9 +722,9 @@ bool checkUserWebAuth(httpd_req_t *req, bool onFailureReturnLoginPage = false) {
         int end = cookie.indexOf(';', start);
         if (end == -1) end = cookie.length();
         String token = cookie.substring(start, end);
-        auto it = sessions.find(token);
-        if (it != sessions.end()) {
-            it->second = launcherMillis();
+        int sessionIndex = findSessionIndex(token);
+        if (sessionIndex >= 0) {
+            sessions[sessionIndex].lastSeen = launcherMillis();
             return true;
         }
     }
@@ -889,8 +914,8 @@ esp_err_t loginHandler(httpd_req_t *req) {
     if (params.has("username") && params.has("password") && params.get("username") == wui_usr &&
         params.get("password") == wui_pwd) {
         String token = generateToken();
-        sessions.clear();
-        sessions[token] = launcherMillis();
+        clearSessions();
+        setSessionToken(token, launcherMillis());
         saveSessionToken(token);
         sessionTokenLoaded = true;
         persistedSessionToken = token;
@@ -916,7 +941,7 @@ esp_err_t logoutHandler(httpd_req_t *req) {
         int start = idx + 13;
         int end = cookie.indexOf(';', start);
         if (end == -1) end = cookie.length();
-        sessions.erase(cookie.substring(start, end));
+        removeSessionToken(cookie.substring(start, end));
         saveSessionToken("");
         sessionTokenLoaded = true;
         persistedSessionToken = "";
@@ -929,11 +954,7 @@ esp_err_t logoutHandler(httpd_req_t *req) {
 }
 
 esp_err_t loggedOutHandler(httpd_req_t *req) {
-#ifdef PART_04MB
-    sendText(req, "text/html", "");
-#else
     serveWebUIFile(req, "text/html", true, logout_html, logout_html_size);
-#endif
     return ESP_OK;
 }
 
@@ -1500,7 +1521,7 @@ void startWebUi(String ssid, int encryptation, bool mode_ap) {
     config.webserverporthttp = default_webserverporthttp;
 
     if (launcherWifiIsConnected() && mode_ap) launcherWifiStop();
-    if (!launcherWifiIsConnected() || mode_ap) wifiConnect(ssid, encryptation, mode_ap);
+    if (!ensureWifiConnected(ssid, encryptation, mode_ap)) return;
     vTaskDelay(pdMS_TO_TICKS(250));
 
     launcherConsolePrintln("Configuring Webserver ...");

@@ -1,6 +1,7 @@
 #include "onlineLauncher.h"
 #include "app_registry.h"
 #include "display.h"
+#include "install_shared.h"
 #include "idf/idf_http_client.h"
 #include "idf/idf_update.h"
 #include "idf/idf_wifi.h"
@@ -17,11 +18,13 @@
 
 #define M5_SERVER_PATH "https://m5burner-cdn.m5stack.com/firmware/"
 
+constexpr int kWifiConnectAttempts = 20;
+
 /***************************************************************************************
 ** Function name: wifiConnect
 ** Description:   Connects to wifiNetwork
 ***************************************************************************************/
-void wifiConnect(String ssid, int encryptation, bool isAP) {
+bool wifiConnect(String ssid, int encryptation, bool isAP) {
     if (!isAP) {
         bool found = false;
         bool wrongPass = false;
@@ -41,7 +44,8 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
                 pwd = keyboard(pwd, 63, "Network Password:");
                 if (pwd == String(KEY_ESCAPE)) {
                     returnToMenu = true;
-                    goto END;
+                    launcherDelayMs(0);
+                    return false;
                 }
             }
 
@@ -67,22 +71,23 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
 
         int count = 0;
-        bool connected = false;
-        while (!connected) {
-            connected = launcherWifiConnect(ssid.c_str(), pwd.c_str(), 500);
-            if (connected) break;
+        LauncherWifiConnectState connectState = LauncherWifiConnectState::Pending;
+        while (connectState != LauncherWifiConnectState::Connected) {
+            connectState = launcherWifiConnectStatus(ssid.c_str(), pwd.c_str(), 500);
+            if (connectState == LauncherWifiConnectState::Connected) break;
             vTaskDelay(500 / portTICK_PERIOD_MS);
             tftprint(".", 10);
             count++;
-            if (count > 10) {
-                wrongPass = true;
+            if (connectState == LauncherWifiConnectState::Failed || count > kWifiConnectAttempts) {
+                wrongPass = (connectState == LauncherWifiConnectState::Failed && encryptation > 0);
                 options = {
                     {"Retry",     [&]() { yield(); }            },
                     {"Main Menu", [&]() { returnToMenu = true; }},
                 };
                 loopOptions(options);
                 if (!returnToMenu) goto Retry;
-                else goto END;
+                launcherDelayMs(0);
+                return false;
             }
             tft->display(false);
         }
@@ -95,10 +100,10 @@ void wifiConnect(String ssid, int encryptation, bool isAP) {
         vTaskDelay(250 / portTICK_PERIOD_MS);
         launcherConsolePrintf("IP: %s\n", launcherWifiApIp().c_str());
     }
-END:
     launcherDelayMs(0);
+    return isAP || launcherWifiIsConnected();
 }
-void connectWifi() {
+bool connectWifi() {
     displayRedStripe("Scanning...");
 #if CONFIG_ESP_HOSTED_ENABLED
     launcherWifiStop();
@@ -119,6 +124,14 @@ void connectWifi() {
                        }});
     options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
     loopOptions(options);
+    return launcherWifiIsConnected();
+}
+
+bool ensureWifiConnected(String ssid, int encryptation, bool isAP) {
+    if (launcherWifiIsConnected() && !isAP) return true;
+    if (isAP) return wifiConnect(ssid, encryptation, true);
+    if (!ssid.isEmpty()) return wifiConnect(ssid, encryptation, false);
+    return connectWifi();
 }
 /***************************************************************************************
 ** Function name: ota_function
@@ -127,8 +140,7 @@ void connectWifi() {
 void ota_function() {
 #ifndef DISABLE_OTA
     bool fav = false;
-    if (!launcherWifiIsConnected()) connectWifi();
-    if (launcherWifiIsConnected()) {
+    if (ensureWifiConnected()) {
         // Debug
         // Serial.printf("Favorite size: %d\n", favorite.size());
         // serializeJsonPretty(favorite, Serial);
@@ -438,9 +450,7 @@ bool installFirmwareDynamic(
     }
     if (appPartitionSize == 0 || appPartitionSize < updateSize) appPartitionSize = updateSize;
 
-    String labelSource = installedName;
-    if (labelSource.isEmpty()) labelSource = launcherAppNameFromFile(file);
-    String appLabel = launcherPartitionNextAppLabel(table, labelSource);
+    String appLabel = launcherInstallNextAppLabel(table, file, installedName);
     LauncherPartitionEntry appEntry;
     LauncherPartitionEntry spiffsEntry;
     bool hasSpiffsEntry = false;
@@ -527,23 +537,11 @@ bool installFirmwareDynamic(
     }
 
     {
-        String installedLabel = String(appEntry.label);
-        for (const LauncherAppMetadata &registeredApp : launcherLoadAppRegistry()) {
-            if (!launcherPartitionFindByLabel(table, registeredApp.label.c_str())) {
-                launcherRemoveAppMetadata(registeredApp.label.c_str());
-            }
-        }
-
-        LauncherAppMetadata metadata;
-        metadata.name = installedName;
-        if (metadata.name.isEmpty()) metadata.name = launcherAppNameFromFile(file);
-        if (metadata.name.isEmpty()) metadata.name = installedLabel;
-        metadata.label = installedLabel;
+        std::vector<String> fatLabels;
         for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-            if (fatPartition.hasEntry) metadata.fatLabels.push_back(String(fatPartition.entry.label));
+            if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
         }
-        launcherSaveAppMetadata(metadata);
-        lastInstalledApp = metadata.name;
+        launcherSaveInstalledAppMetadata(table, appEntry, file, installedName, fatLabels);
     }
 
     saveIntoNVS();
@@ -613,13 +611,21 @@ String encodeQueryValue(const String &value) {
     return encoded;
 }
 
+String normalizeExtraQuery(String extra) {
+    extra.trim();
+    while (extra.startsWith("/") || extra.startsWith("\\")) { extra.remove(0, 1); }
+    if (extra.length() == 0) return extra;
+    if (!extra.startsWith("&") && !extra.startsWith("?")) extra = "&" + extra;
+    return extra;
+}
+
 bool GetJsonFromLauncherHub(uint8_t page, String order, bool star, String query) {
     String q = "&order_by=" + order;
     q += page > 1 ? "&page=" + String(page) : "";
     q += query.length() > 0 ? "&q=" + encodeQueryValue(query) : "";
     q += star ? "&star=1" : "";
 #ifdef OTA_EXTRA
-    q += OTA_EXTRA;
+    q += normalizeExtraQuery(String(OTA_EXTRA));
 #endif
     String serverUrl = "https://api.launcherhub.net/firmwares?category=" + String(OTA_TAG) + q;
 
@@ -886,9 +892,7 @@ bool installExtFirmware(String url) {
                 char labelBuf[17] = {0};
                 memcpy(labelBuf, bytes + 12, 16);
                 labelBuf[16] = '\0';
-                if (labelBuf[0] != '\0') {
-                    spiffsLabel = String(labelBuf);
-                }
+                if (labelBuf[0] != '\0') { spiffsLabel = String(labelBuf); }
             }
         }
         size_t temp_size = 0;

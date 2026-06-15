@@ -1,9 +1,9 @@
 #include "sd_functions.h"
-#include "app_registry.h"
 #include "display.h"
 #include "esp_log.h"
 #include "idf/idf_update.h"
 #include "idf/launcher_platform.h"
+#include "install_shared.h"
 #include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "partition_install_layout.h"
@@ -443,7 +443,7 @@ bool performUpdate(Stream &updateSource, size_t updateSize, int command) {
     resumeSdInstallInput();
     return success;
 }
-static String installedAppNameFromPath(const String &path) { return launcherAppNameFromFile(path); }
+static String installedAppNameFromPath(const String &path) { return launcherInstallAppDisplayName(path); }
 
 static bool flashRawFromSd(
     File &file, uint32_t sourceOffset, size_t imageSize, const LauncherPartitionEntry &target, bool appImage
@@ -659,22 +659,11 @@ static bool installFromSdDynamic(
     }
 
     {
-        String installedLabel = String(appEntry.label);
-        for (const LauncherAppMetadata &registeredApp : launcherLoadAppRegistry()) {
-            if (!launcherPartitionFindByLabel(table, registeredApp.label.c_str())) {
-                launcherRemoveAppMetadata(registeredApp.label.c_str());
-            }
-        }
-
-        LauncherAppMetadata metadata;
-        metadata.name = installedAppNameFromPath(path);
-        if (metadata.name.isEmpty()) metadata.name = installedLabel;
-        metadata.label = installedLabel;
+        std::vector<String> fatLabels;
         for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-            if (fatPartition.hasEntry) metadata.fatLabels.push_back(String(fatPartition.entry.label));
+            if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
         }
-        launcherSaveAppMetadata(metadata);
-        lastInstalledApp = metadata.name;
+        launcherSaveInstalledAppMetadata(table, appEntry, path, installedAppNameFromPath(path), fatLabels);
         saveIntoNVS();
     }
 
