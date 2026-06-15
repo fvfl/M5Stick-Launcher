@@ -22,6 +22,9 @@ void _setup_gpio() {
     // stay on from M5.begin() so the keyboard's MCU is booted by probe time;
     // _post_setup_gpio() turns it off when no keyboard is found.
     M5.Power.setExtOutput(false);
+#else
+    M5.Power.setExtOutput(true); // CardKB2 needs Grove 5V
+    delay(100);
 #endif
     /*
   | Device  | SCK   | MISO  | MOSI  | CS    | GDO0/CE   |

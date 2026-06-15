@@ -146,14 +146,96 @@ function callOTA() {
     _("drop-area").style.display = 'none';
     _("fileInput").click();
 }
+function readLe32(bytes, offset) {
+    return ((bytes[offset]) |
+        (bytes[offset + 1] << 8) |
+        (bytes[offset + 2] << 16) |
+        (bytes[offset + 3] << 24)) >>> 0;
+}
+function readPartitionLabel(bytes, offset) {
+    let label = '';
+    for (let i = 0; i < 16; i++) {
+        const value = bytes[offset + i];
+        if (!value) break;
+        label += String.fromCharCode(value);
+    }
+    return label;
+}
+function alignUp(value, alignment) {
+    return Math.ceil(value / alignment) * alignment;
+}
+function measureEspImageSize(data, imageOffset) {
+    if (imageOffset + 24 > data.length) return 0;
+    const magic = data[imageOffset];
+    const segmentCount = data[imageOffset + 1];
+    const hashAppended = data[imageOffset + 23];
+    if (magic !== 0xE9 || segmentCount === 0 || segmentCount > 16) return 0;
+
+    let cursor = imageOffset + 24;
+    for (let i = 0; i < segmentCount; i++) {
+        if (cursor + 8 > data.length) return 0;
+        const segmentSize = readLe32(data, cursor + 4);
+        cursor += 8;
+        if (segmentSize > data.length || cursor > data.length - segmentSize) return 0;
+        cursor += segmentSize;
+    }
+
+    let end = alignUp(cursor, 16) + 1;
+    if (hashAppended) end += 32;
+    end = alignUp(end, 16);
+    if (end <= imageOffset || end > data.length) return 0;
+    return end - imageOffset;
+}
+function buildOtaManifest(file, partitions) {
+    return {
+        sourceName: file.name,
+        parts: partitions.map(partition => ({
+            kind: partition.kind,
+            label: partition.label || '',
+            subtype: partition.subtype,
+            sourceOffset: partition.offset,
+            copySize: partition.size,
+            declaredSize: partition.declaredSize || partition.size
+        }))
+    };
+}
+function renderOtaActions(file, manifest) {
+    const outputDiv = _('analysisOutput');
+    const spiffsInfo = _('spiffsInfo');
+    outputDiv.innerHTML = '';
+    outputDiv.style.display = 'block';
+    spiffsInfo.style.display = 'none';
+
+    manifest.parts.forEach((partition) => {
+        const meta = document.createElement('div');
+        meta.style.fontSize = '0.85em';
+        meta.style.opacity = '0.8';
+        meta.textContent =
+            `${partition.kind.toUpperCase()} offset 0x${partition.sourceOffset.toString(16)} size 0x${partition.copySize.toString(16)}` +
+            (partition.label ? ` label ${partition.label}` : '');
+        outputDiv.appendChild(meta);
+    });
+
+    if (manifest.parts.length === 0) {
+        outputDiv.textContent = 'No installable partitions found in this file.';
+        return;
+    }
+
+    const button = document.createElement('button');
+    button.textContent = 'Start Update';
+    button.onclick = () => uploadPackage(file, manifest);
+    outputDiv.appendChild(button);
+
+    if (manifest.parts.some(partition => partition.kind === 'data')) {
+        spiffsInfo.style.display = 'block';
+        spiffsInfo.innerHTML =
+            '<p><b>Data partition</b>: this can be SPIFFS, LittleFS, or FAT depending on the firmware package.</p>';
+    }
+}
 function analyzeFile() {
     const fileInput = _('fileInput');
     const outputDiv = _('analysisOutput');
-    const uploadAppBtn = _('uploadApp');
-    const uploadSpiffsBtn = _('uploadSpiffs');
     outputDiv.style.display = 'none';
-    uploadAppBtn.style.display = 'none';
-    uploadSpiffsBtn.style.display = 'none';
     let pass = true;
     if (fileInput.files.length === 0) {
         window.alert('Please, select a file.');
@@ -167,64 +249,70 @@ function analyzeFile() {
     const reader = new FileReader();
     reader.onload = function (e) {
         const data = new Uint8Array(reader.result);
-        let start_point = 0;
-        let spiffs_offset = 0;
-        let spiffs_size = 0;
-        let app_size = 0;
-        let spiffs = false;
-        const MAX_APP = 0x470000;
-        const MAX_SPIFFS = 0x100000;
-        const first_slice = data.slice(0x8000, 0x8000 + 16);
+        let appOffset = 0;
+        let appSize = 0;
+        const partitions = [];
+        const first_slice = data.slice(0x8000, 0x8000 + 32);
         const byte0 = first_slice[0];
         const byte1 = first_slice[1];
         const byte2 = first_slice[2];
         if (byte0 === 0xaa && byte1 === 0x50 && byte2 === 0x01 && pass === true) {
             pass = false;
-            start_point = 0x10000;
-            for (let i = 0; i < 0xA0; i += 0x20) {
+            for (let i = 0; i < 0x1000; i += 0x20) {
                 const pos = 0x8000 + i;
-                if (pos + 16 > data.length) break;
-                const slice = data.slice(pos, pos + 16);
-                const byte3 = slice[3];
-                const byte6 = slice[6];
-                if ([0x00, 0x10, 0x20].includes(byte3) && byte6 === 0x01) {
-                    app_size = (slice[10] << 16) | (slice[11] << 8) | 0x00;
-                    if (data.length < (app_size + 0x10000)) app_size = data.length - 0x10000;
-                    if (app_size > MAX_APP) app_size = MAX_APP;
-                }
-                if (byte3 === 0x82) {
-                    spiffs_offset = (slice[6] << 16) | (slice[7] << 8) | slice[8];
-                    spiffs_size = (slice[10] << 16) | (slice[11] << 8);
-                    if (data.length < spiffs_offset) spiffs = false;
-                    else if (spiffs_size > MAX_SPIFFS) {
-                        spiffs_size = MAX_SPIFFS;
-                        spiffs = true;
+                if (pos + 32 > data.length) break;
+                const slice = data.slice(pos, pos + 32);
+                if ((slice[0] === 0xEB && slice[1] === 0xEB) || (slice[0] === 0xFF && slice[1] === 0xFF)) break;
+                const type = slice[2];
+                const subtype = slice[3];
+                const offset = readLe32(slice, 4);
+                const declaredSize = readLe32(slice, 8);
+                const label = readPartitionLabel(slice, 12);
+                if (type === 0x00 && [0x00, 0x10, 0x20].includes(subtype)) {
+                    appOffset = offset || 0x10000;
+                    const measuredAppSize = measureEspImageSize(data, appOffset);
+                    appSize = declaredSize;
+                    if (data.length < (appOffset + appSize)) appSize = data.length - appOffset;
+                    if (measuredAppSize > 0 && (appSize === 0 || measuredAppSize < appSize)) {
+                        appSize = measuredAppSize;
                     }
-                    if (spiffs && data.length < (spiffs_offset + spiffs_size)) spiffs_size = data.length - spiffs_offset;
+                }
+                if (type === 0x01 && [0x81, 0x82, 0x83].includes(subtype) && offset < data.length) {
+                    let size = declaredSize;
+                    if (data.length < (offset + size)) size = data.length - offset;
+                    if (size > 0) {
+                        partitions.push({
+                            kind: 'data',
+                            subtype,
+                            label,
+                            offset,
+                            size,
+                            declaredSize
+                        });
+                    }
                 }
             }
         }
         else if (pass === true) {
             pass = false;
-            start_point = 0x0;
-            app_size = data.length;
-            spiffs = false;
+            appOffset = 0x0;
+            appSize = measureEspImageSize(data, 0) || data.length;
         }
-        const appBlob = new Blob([data.slice(start_point, start_point + app_size)], { type: 'application/octet-stream' });
-        const spiffsBlob = spiffs ? new Blob([data.slice(spiffs_offset, spiffs_offset + spiffs_size)], { type: 'application/octet-stream' }) : null;
-        if (app_size > 0) {
-            uploadAppBtn.style.display = 'inline';
-            uploadAppBtn.onclick = () => uploadSlice(appBlob, app_size, file.name + '-app.bin', 0);
+        if (appSize > 0) {
+            partitions.unshift({
+                kind: 'app',
+                subtype: 0,
+                label: 'app',
+                offset: appOffset,
+                size: appSize,
+                declaredSize: appSize
+            });
         }
-        if (spiffs) {
-            uploadSpiffsBtn.style.display = 'inline';
-            _("spiffsInfo").style.display = 'block';
-            uploadSpiffsBtn.onclick = () => uploadSlice(spiffsBlob, spiffs_size, file.name + '-spiffs.bin', 100);
-        }
+        renderOtaActions(file, buildOtaManifest(file, partitions));
     };
     reader.readAsArrayBuffer(file);
 }
-function uploadSlice(blobData, c_size, fileName, comm) {
+function uploadPackage(file, manifest) {
     _("updetails").innerHTML = "Preparing...";
     totalFiles = 1;
     completedFiles = 0;
@@ -235,7 +323,7 @@ function uploadSlice(blobData, c_size, fileName, comm) {
             fileProgressDiv.innerHTML = `<p>Updating...</p><p><progress id="otaprb" value="0" max="100" style="width:100%;"></progress></p>`;
             _("updetails").appendChild(fileProgressDiv);
             const formdata2 = new FormData();
-            formdata2.append("file1", blobData, fileName);
+            formdata2.append("file1", file, file.name);
             const ajax2 = new XMLHttpRequest();
             ajax2.open("POST", "/OTAFILE");
             ajax2.upload.addEventListener("progress", function (event) {
@@ -252,8 +340,9 @@ function uploadSlice(blobData, c_size, fileName, comm) {
         console.error("Initial OTA request failed.");
     };
     const formdata = new FormData();
-    formdata.append("command", comm);
-    formdata.append("size", c_size);
+    formdata.append("command", 0);
+    formdata.append("size", file.size);
+    formdata.append("manifest", JSON.stringify(manifest));
     ajax.open("POST", "/OTA", true);
     ajax.send(formdata);
 }
@@ -361,8 +450,6 @@ function listFilesButton(folders) {
     _("OTAdetails").style.display = 'none';
     _("analysisOutput").style.display = 'none';
     _("spiffsInfo").style.display = 'none';
-    _("uploadApp").style.display = 'none';
-    _("uploadSpiffs").style.display = 'none';
 }
 function renameFile(filePath, oldName) {
     const actualFolder = _("actualFolder").value;

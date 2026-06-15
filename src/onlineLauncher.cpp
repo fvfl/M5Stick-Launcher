@@ -859,9 +859,15 @@ bool installExtFirmware(String url) {
             }
             if (bytes[3] == 0x81) {
                 LauncherInstallFatPartition fatPartition;
-                if (fatPartitions.empty()) fatPartition.label = "sys";
-                else if (fatPartitions.size() == 1) fatPartition.label = "vfs";
-                else fatPartition.label = String("fat") + String(fatPartitions.size());
+                char labelBuf[17] = {0};
+                memcpy(labelBuf, bytes + 12, 16);
+                labelBuf[16] = '\0';
+                fatPartition.label = String(labelBuf);
+                if (fatPartition.label.isEmpty()) {
+                    if (fatPartitions.empty()) fatPartition.label = "sys";
+                    else if (fatPartitions.size() == 1) fatPartition.label = "vfs";
+                    else fatPartition.label = String("fat") + String(fatPartitions.size());
+                }
                 fatPartition.sourceOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 bytes[0x0C] = 0;
                 uint32_t declaredSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];

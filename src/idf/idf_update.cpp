@@ -61,10 +61,16 @@ void setError(int error) {
 const esp_partition_t *findPartition(LauncherUpdateTarget target) {
     switch (target) {
         case LAUNCHER_UPDATE_APP: return esp_ota_get_next_update_partition(nullptr);
-        case LAUNCHER_UPDATE_SPIFFS:
-            return esp_partition_find_first(
-                ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr
-            );
+        case LAUNCHER_UPDATE_SPIFFS: {
+            const esp_partition_t *partition =
+                esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+            if (!partition) {
+                partition = esp_partition_find_first(
+                    ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_LITTLEFS, nullptr
+                );
+            }
+            return partition;
+        }
         case LAUNCHER_UPDATE_FAT_VFS:
             return esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "vfs");
         case LAUNCHER_UPDATE_FAT_SYS:

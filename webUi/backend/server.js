@@ -17,6 +17,8 @@ const NVS_FILE  = path.join(__dirname, 'nvs_mock.json');
 // ── State ─────────────────────────────────────────────────────────────────────
 const sessions = new Map();  // token → timestamp
 
+let otaContext = null;
+
 let nvs = {};
 try { nvs = JSON.parse(fs.readFileSync(NVS_FILE, 'utf8')); } catch {}
 if (!Object.keys(nvs).length) {
@@ -65,6 +67,10 @@ function readBody(req) {
     req.on('end',  () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+function clearOtaContext() {
+  otaContext = null;
 }
 
 // Safe path resolution — never escape ROOT_DIR
@@ -131,6 +137,103 @@ function parseMultipart(body, boundary) {
       : content.toString();
   }
   return result;
+}
+
+function parseParams(body, contentType) {
+  if ((contentType || '').includes('multipart/form-data')) {
+    const bm = contentType.match(/boundary=([^\s;]+)/);
+    if (!bm) return {};
+    const parsed = parseMultipart(body, bm[1]);
+    const params = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      params[key] = typeof value === 'string' ? value : value.toString();
+    }
+    return params;
+  }
+
+  const params = {};
+  new URLSearchParams(body.toString()).forEach((v, k) => { params[k] = v; });
+  return params;
+}
+
+function normalizeOtaPart(part, fileSize) {
+  if (!part || typeof part !== 'object') throw new Error('Invalid manifest part');
+
+  const normalized = {
+    kind: typeof part.kind === 'string' ? part.kind : '',
+    label: typeof part.label === 'string' ? part.label : '',
+    subtype: Number(part.subtype),
+    sourceOffset: Number(part.sourceOffset),
+    copySize: Number(part.copySize),
+    declaredSize: Number(part.declaredSize ?? part.copySize),
+  };
+
+  if (!['app', 'data'].includes(normalized.kind)) throw new Error('Invalid manifest part kind');
+  if (!Number.isInteger(normalized.subtype) || normalized.subtype < 0 || normalized.subtype > 0xFF) {
+    throw new Error('Invalid manifest subtype');
+  }
+  if (!Number.isInteger(normalized.sourceOffset) || normalized.sourceOffset < 0) {
+    throw new Error('Invalid manifest sourceOffset');
+  }
+  if (!Number.isInteger(normalized.copySize) || normalized.copySize <= 0) {
+    throw new Error('Invalid manifest copySize');
+  }
+  if (!Number.isInteger(normalized.declaredSize) || normalized.declaredSize <= 0) {
+    throw new Error('Invalid manifest declaredSize');
+  }
+  if (normalized.sourceOffset > fileSize || normalized.copySize > fileSize - normalized.sourceOffset) {
+    throw new Error('Manifest range exceeds file');
+  }
+
+  return normalized;
+}
+
+function prepareOtaContext(params) {
+  const fileSize = Number(params.size);
+  if (!Number.isInteger(fileSize) || fileSize <= 0) throw new Error('Invalid OTA size');
+
+  if (!params.manifest) {
+    clearOtaContext();
+    return { active: false, legacy: true, fileSize, command: Number(params.command) || 0 };
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(params.manifest);
+  } catch {
+    throw new Error('Bad manifest');
+  }
+
+  if (!manifest || !Array.isArray(manifest.parts) || manifest.parts.length === 0) {
+    throw new Error('Missing parts');
+  }
+
+  const parts = manifest.parts.map((part) => normalizeOtaPart(part, fileSize));
+  const appParts = parts.filter((part) => part.kind === 'app');
+  if (appParts.length !== 1) throw new Error('Missing app part');
+
+  parts.sort((a, b) => a.sourceOffset - b.sourceOffset);
+  otaContext = {
+    active: true,
+    sourceName: typeof manifest.sourceName === 'string' ? manifest.sourceName : '',
+    fileSize,
+    parts,
+    totalCopySize: parts.reduce((sum, part) => sum + part.copySize, 0),
+    totalWritten: 0,
+    receivedFileSize: 0,
+  };
+  return otaContext;
+}
+
+function logPreparedOtaContext(ctx) {
+  if (!ctx.active) return;
+  console.log(`[OTA] prepared source=${ctx.sourceName || 'unknown'} fileSize=${ctx.fileSize} totalCopySize=${ctx.totalCopySize}`);
+  for (const part of ctx.parts) {
+    const label = part.label ? ` label=${part.label}` : '';
+    console.log(
+      `[OTA] part kind=${part.kind} subtype=0x${part.subtype.toString(16)} offset=0x${part.sourceOffset.toString(16)} copy=0x${part.copySize.toString(16)} declared=0x${part.declaredSize.toString(16)}${label}`
+    );
+  }
 }
 
 // ── Directory listing (matches listFiles() in webInterface.cpp) ───────────────
@@ -270,6 +373,12 @@ const server = http.createServer(async (req, res) => {
     return ok('Rebooting (simulated)');
   }
 
+  if (pathname === '/OTA' && method === 'GET' && Object.prototype.hasOwnProperty.call(query, 'update')) {
+    clearOtaContext();
+    console.log('[OTA] update mode enabled (simulated)');
+    return ok('Update');
+  }
+
   // GET /listfiles?folder=X
   if (pathname === '/listfiles' && method === 'GET') {
     return ok(listFilesResponse(query.folder || '/'));
@@ -403,13 +512,61 @@ const server = http.createServer(async (req, res) => {
 
   // POST /OTA
   if (pathname === '/OTA' && method === 'POST') {
-    console.log('[OTA] request received (simulated)');
-    return ok('OK');
+    const body = await readBody(req);
+    const params = parseParams(body, req.headers['content-type'] || '');
+    if (!Object.prototype.hasOwnProperty.call(params, 'command')) return err(400, 'Invalid OTA request');
+
+    try {
+      const ctx = prepareOtaContext(params);
+      if (ctx.active) logPreparedOtaContext(ctx);
+      else console.log(`[OTA] legacy request received command=${ctx.command} size=${ctx.fileSize} (simulated)`);
+      return ok('OK');
+    } catch (error) {
+      clearOtaContext();
+      return err(400, error.message || 'Install prep failed');
+    }
   }
 
   // POST /OTAFILE
   if (pathname === '/OTAFILE' && method === 'POST') {
-    console.log('[OTAFILE] upload received (simulated)');
+    const body = await readBody(req);
+    const ct = req.headers['content-type'] || '';
+    const bm = ct.match(/boundary=([^\s;]+)/);
+    if (!bm) return err(400, 'Missing multipart boundary');
+
+    const parts = parseMultipart(body, bm[1]);
+    const upload = parts['file1'];
+    if (!upload || typeof upload !== 'object' || !upload.data) return ok('No file');
+
+    const fileBuffer = upload.data;
+    if (otaContext && otaContext.active) {
+      if (fileBuffer.length !== otaContext.fileSize) {
+        clearOtaContext();
+        return err(400, 'Uploaded file size does not match prepared OTA size');
+      }
+
+      for (const part of otaContext.parts) {
+        const chunk = fileBuffer.subarray(part.sourceOffset, part.sourceOffset + part.copySize);
+        if (chunk.length !== part.copySize) {
+          clearOtaContext();
+          return err(400, 'Manifest range exceeds uploaded file');
+        }
+        otaContext.totalWritten += chunk.length;
+        console.log(
+          `[OTAFILE] wrote kind=${part.kind} subtype=0x${part.subtype.toString(16)} offset=0x${part.sourceOffset.toString(16)} bytes=${chunk.length}` +
+          (part.label ? ` label=${part.label}` : '')
+        );
+      }
+
+      const completed = otaContext.totalWritten === otaContext.totalCopySize;
+      console.log(
+        `[OTAFILE] completed source=${otaContext.sourceName || upload.filename || 'unknown'} totalWritten=${otaContext.totalWritten}/${otaContext.totalCopySize}`
+      );
+      clearOtaContext();
+      return completed ? ok('OK') : err(400, 'Incomplete OTA write');
+    }
+
+    console.log(`[OTAFILE] legacy upload received bytes=${fileBuffer.length} (simulated)`);
     return ok('OK');
   }
 
