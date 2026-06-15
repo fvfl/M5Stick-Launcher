@@ -106,6 +106,7 @@ Things that need to be done in future updates
      * [x] Added support to M5 CardKB2 and CardKB 1.1, support is added to M5 devices in grove I2C Port A of StickC, CPlus, CPlus2 StickS3, CoreS3, Core2 and Core, Thanks to @cddigi
      * [x] E-paper displays now show "Powered Off" when turned off by launcher.
      * [x] Fix WebUI OTA installation
+     * [x] Lilygo T-Watch-Ultra now has OTA installing
 
 * 2.7.2:
      * [x] Adjusted boot logic, now it works as it was before.
