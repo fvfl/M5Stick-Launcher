@@ -11,6 +11,8 @@ constexpr uint32_t LAUNCHER_PARTITION_TABLE_SIZE = 0x1000;
 constexpr uint32_t LAUNCHER_FLASH_SECTOR_SIZE = 0x1000;
 constexpr uint32_t LAUNCHER_APP_PARTITION_ALIGNMENT = 0x10000;
 constexpr size_t LAUNCHER_PARTITION_ENTRY_SIZE = 0x20;
+extern uint32_t LAUNCHER_DEFAULT_SPIFFS_SIZE;
+extern uint32_t LAUNCHER_DEFAULT_FAT_SIZE;
 
 struct LauncherPartitionEntry {
     uint8_t type = 0xFF;
@@ -42,6 +44,7 @@ struct LauncherPartitionPayloadPlan {
     uint32_t copySize = 0;
 };
 
+void launcherPartitionInitDefaultSizes();
 bool launcherPartitionReadCurrent(LauncherPartitionTable &table, String *error = nullptr);
 bool launcherPartitionReadCurrentUnchecked(LauncherPartitionTable &table, String *error = nullptr);
 bool launcherPartitionParse(

@@ -1,11 +1,11 @@
 #include "onlineLauncher.h"
 #include "app_registry.h"
 #include "display.h"
-#include "install_shared.h"
 #include "idf/idf_http_client.h"
 #include "idf/idf_update.h"
 #include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
+#include "install_shared.h"
 #include "littlefs_patch.h"
 #include "mykeyboard.h"
 #include "partition_install_layout.h"
@@ -1048,7 +1048,6 @@ void installFirmware( // adicionar "fid"
         }
     }
 
-#if !defined(PART_04MB)
     for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
         if (fatPartition.copySize > 0) {
             if (!installFAT_OTA(
@@ -1059,7 +1058,6 @@ void installFirmware( // adicionar "fid"
             }
         }
     }
-#endif
 
 Sucesso:
     if (!installedName.isEmpty()) {

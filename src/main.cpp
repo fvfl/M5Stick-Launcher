@@ -205,6 +205,7 @@ void _post_setup_gpio() {}
 void setup() {
     Serial.begin(115200);
     nvs_flash_init();
+    launcherPartitionInitDefaultSizes();
     ensureM5StackUiFlowNVSDefaults();
 
 #if CONFIG_IDF_TARGET_ESP32P4

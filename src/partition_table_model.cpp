@@ -13,6 +13,9 @@
 #include <esp_partition.h>
 #include <mbedtls/md5.h>
 
+uint32_t LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x20000;
+uint32_t LAUNCHER_DEFAULT_FAT_SIZE = 0x50000;
+
 namespace {
 constexpr uint16_t kPartitionMagic = ESP_PARTITION_MAGIC;
 constexpr uint16_t kPartitionMagicMd5 = ESP_PARTITION_MAGIC_MD5;
@@ -164,6 +167,22 @@ bool launcherPartitionReadCurrentInternal(LauncherPartitionTable &table, String 
     );
 }
 } // namespace
+
+void launcherPartitionInitDefaultSizes() {
+    uint32_t flashSize = 0;
+    if (!getFlashSize(flashSize, nullptr)) { return; }
+
+    if (flashSize <= 0x400000) {
+        LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x20000;
+        LAUNCHER_DEFAULT_FAT_SIZE = 0x50000;
+    } else if (flashSize <= 0x800000) {
+        LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x70000;
+        LAUNCHER_DEFAULT_FAT_SIZE = 0x70000;
+    } else {
+        LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x100000;
+        LAUNCHER_DEFAULT_FAT_SIZE = 0x100000;
+    }
+}
 
 bool LauncherPartitionEntry::isApp() const { return type == kTypeApp; }
 

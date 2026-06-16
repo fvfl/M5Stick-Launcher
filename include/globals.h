@@ -56,8 +56,7 @@ struct MenuOptions {
         uint16_t x = 0, uint16_t y = 0, uint16_t w = 0, uint16_t h = 0, uint16_t color = FGCOLOR
     )
         : name(name), text(text), action(action), active(active), selected(selected), x(x), y(y), w(w), h(h),
-          color(color) {
-    }
+          color(color) {}
     MenuOptions()
         : name(""), text(""), action(nullptr), active(true), selected(false), x(0), y(0), w(0), h(0),
           color(FGCOLOR) {}
