@@ -98,6 +98,7 @@
             - { env: "Marauder-v61"               }
             - { env: "Marauder-v7"                }
             - { env: "Marauder-v8"                }
+            - { env: "pancake"                    }
             - { env: "Marauder-Mini"              }
             - { env: "Awok-Mini"                  }
             - { env: "Awok-Touch"                 }
