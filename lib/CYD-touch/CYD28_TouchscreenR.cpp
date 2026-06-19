@@ -36,43 +36,86 @@
 static CYD28_TouchR *isrPinptr;
 void isrPin(void);
 // ------------------------------------------------------------
-bool CYD28_TouchR::begin() {
-    pinMode(CYD28_TouchR_MOSI, OUTPUT);
-    pinMode(CYD28_TouchR_MISO, INPUT);
-    pinMode(CYD28_TouchR_CLK, OUTPUT);
+bool CYD28_TouchR::configurePins(bool hardwareSpi) {
+    if (CYD28_TouchR_CS < 0 || CYD28_TouchR_MISO < 0 || CYD28_TouchR_MOSI < 0 || CYD28_TouchR_CLK < 0) return false;
+
     pinMode(CYD28_TouchR_CS, OUTPUT);
-    digitalWrite(CYD28_TouchR_CLK, LOW);
     digitalWrite(CYD28_TouchR_CS, HIGH);
+
+    if (!hardwareSpi) {
+        pinMode(CYD28_TouchR_MOSI, OUTPUT);
+        pinMode(CYD28_TouchR_MISO, INPUT);
+        pinMode(CYD28_TouchR_CLK, OUTPUT);
+        digitalWrite(CYD28_TouchR_CLK, LOW);
+    }
+
+    return true;
+}
+
+bool CYD28_TouchR::setupInterrupt() {
+    isrPinptr = this;
 #if CYD28_TouchR_IRQ >= 0
-    pinMode(CYD28_TouchR_IRQ, INPUT);
+    pinMode(CYD28_TouchR_IRQ, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(CYD28_TouchR_IRQ), isrPin, FALLING);
 #else
     isrWake = true;
 #endif
-    isrPinptr = this;
+    return true;
+}
+
+bool CYD28_TouchR::probe() {
+    uint16_t samples[3];
+
+    if (_pspi != nullptr) _pspi->beginTransaction(SPI_SETTING);
+    digitalWrite(CYD28_TouchR_CS, LOW);
+    delayMicroseconds(10);
+
+    transfer(0xB1);
+    samples[0] = transfer16(0xC1) >> 3;
+    samples[1] = transfer16(0x91) >> 3;
+    samples[2] = transfer16(0) >> 3;
+
+    digitalWrite(CYD28_TouchR_CS, HIGH);
+    if (_pspi != nullptr) _pspi->endTransaction();
+
+    return samples[0] != 0x1FFF || samples[1] != 0x1FFF || samples[2] != 0x1FFF;
+}
+
+bool CYD28_TouchR::begin() {
+    _started = false;
+    _pspi = nullptr;
+
+    if (!configurePins(false)) return false;
+    setupInterrupt();
+    _started = true;
+
+    if (!probe()) {
+        _started = false;
+        return false;
+    }
     return true;
 }
 
 bool CYD28_TouchR::begin(SPIClass *wspi) {
+    if (wspi == nullptr) return false;
+    _started = false;
     _pspi = wspi;
-    //_pspi->begin();
-    pinMode(CYD28_TouchR_CS, OUTPUT);
-    digitalWrite(CYD28_TouchR_CS, HIGH);
-#if CYD28_TouchR_IRQ >= 0
-    pinMode(CYD28_TouchR_IRQ, INPUT);
-    attachInterrupt(digitalPinToInterrupt(CYD28_TouchR_IRQ), isrPin, FALLING);
-#else
-    isrWake = true;
-#endif
-    isrPinptr = this;
 
+    if (!configurePins(true)) return false;
+    setupInterrupt();
+    _started = true;
+
+    if (!probe()) {
+        _started = false;
+        return false;
+    }
     return true;
 }
 // ------------------------------------------------------------
 ISR_PREFIX
 void isrPin(void) {
     CYD28_TouchR *o = isrPinptr;
-    o->isrWake = true;
+    if (o != nullptr) o->isrWake = true;
 }
 // ------------------------------------------------------------
 uint8_t CYD28_TouchR::transfer(uint8_t val) {
@@ -174,12 +217,13 @@ void CYD28_TouchR::update() {
     int16_t data[6];
     int z;
     if (!isrWake) return;
+    if (!_started) return;
     uint32_t now = millis();
     if (now - msraw < MSEC_THRESHOLD) return;
 
-    digitalWrite(CYD28_TouchR_CS, LOW);
-
     if (_pspi != nullptr) _pspi->beginTransaction(SPI_SETTING);
+
+    digitalWrite(CYD28_TouchR_CS, LOW);
 
     transfer(0xB1 /* Z1 */);
     int16_t z1 = transfer16(0xC1 /* Z2 */) >> 3;
@@ -196,9 +240,9 @@ void CYD28_TouchR::update() {
     data[4] = transfer16(0xD0 /* Y */) >> 3;
     data[5] = transfer16(0) >> 3;
 
-    if (_pspi != nullptr) _pspi->endTransaction();
-
     digitalWrite(CYD28_TouchR_CS, HIGH);
+
+    if (_pspi != nullptr) _pspi->endTransaction();
 
     if (z < 0) z = 0;
     if (z < threshold) {

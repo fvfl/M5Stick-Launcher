@@ -18,6 +18,12 @@ IRAM_ATTR void checkPosition() { encoder->tick(); }
 ** Description:   initial setup for the device
 ***************************************************************************************/
 void _setup_gpio() {
+    pinMode(SDCARD_CS, OUTPUT);
+    pinMode(TOUCH_CS, OUTPUT);
+    pinMode(TFT_CS, OUTPUT);
+    digitalWrite(SDCARD_CS, HIGH);
+    digitalWrite(TOUCH_CS, HIGH);
+    digitalWrite(TFT_CS, HIGH);
 #ifdef WAVESENTRY
     launcherGpioInputPullup(ENCODER_KEY);
     encoder = new RotaryEncoder(ENCODER_INA, ENCODER_INB, RotaryEncoder::LatchMode::TWO03);
@@ -35,6 +41,8 @@ void _post_setup_gpio() {
     if (!touch.begin(&SPI)) {
         launcherConsolePrintf("%s\n", String("Touch IC not Started").c_str());
         log_i("Touch IC not Started");
+        delay(100);
+        touch.begin(&SPI);
     } else launcherConsolePrintf("%s\n", String("Touch IC Started").c_str());
 
     pinMode(TFT_BL, OUTPUT);

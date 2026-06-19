@@ -29,6 +29,8 @@ void _post_setup_gpio() {
     if (!touch.begin(&SPI)) {
         launcherConsolePrintf("%s\n", String("Touch IC not Started").c_str());
         log_i("Touch IC not Started");
+        delay(100);
+        touch.begin(&SPI);
     } else launcherConsolePrintf("%s\n", String("Touch IC Started").c_str());
 
     pinMode(TFT_BL, OUTPUT);
