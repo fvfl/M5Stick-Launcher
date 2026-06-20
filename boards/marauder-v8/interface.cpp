@@ -6,6 +6,22 @@
 
 CYD28_TouchR touch(320, 240);
 
+// --- MAX17048 fuel gauge (SDA=GPIO5, SCL=GPIO4) ---
+#define MAX17048_ADDR    0x36
+#define MAX17048_REG_SOC 0x04
+
+int getBattery() {
+    Wire.beginTransmission(MAX17048_ADDR);
+    Wire.write(MAX17048_REG_SOC);
+    if (Wire.endTransmission(false) != 0) return 0;
+    if (Wire.requestFrom((int)MAX17048_ADDR, 2) != 2) return 0;
+    uint8_t hi = Wire.read();
+    Wire.read();
+    if (hi > 100) hi = 100;
+    return (int)hi;
+}
+
+
 /***************************************************************************************
 ** Function name: _setup_gpio()
 ** Location: main.cpp
@@ -26,6 +42,7 @@ void _setup_gpio() {
 ** Description:   second stage gpio setup to make a few functions work
 ***************************************************************************************/
 void _post_setup_gpio() {
+    Wire.begin(5, 4, 400000U); // MAX17048 I2C
     if (!touch.begin(&SPI)) {
         launcherConsolePrintf("%s\n", String("Touch IC not Started").c_str());
         log_i("Touch IC not Started");
