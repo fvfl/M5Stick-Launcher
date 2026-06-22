@@ -737,9 +737,16 @@ void updateFromSD(String path) {
             if (partitionEntry[0x02] == 0x01 && (partitionEntry[3] == 0x82 || partitionEntry[3] == 0x83)) {
                 spiffs_offset = readLe32(partitionEntry + 0x04);
                 const uint32_t declaredSpiffsSize = readLe32(partitionEntry + 0x08);
-                spiffs_size = declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
-                                  ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
-                                  : LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                String declaredLabel = readPartitionLabel(partitionEntry);
+                if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
+                // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
+                if (spiffsLabel == "assets" && declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                    spiffs_size = declaredSpiffsSize;
+                } else if (declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                    spiffs_size = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+                } else {
+                    spiffs_size = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                }
                 spiffs_copy_size = boundedSdPartitionPayload(
                     file,
                     spiffs_offset,
@@ -748,8 +755,6 @@ void updateFromSD(String path) {
                                                                               : spiffs_size
                 );
                 spiffs = true;
-                String declaredLabel = readPartitionLabel(partitionEntry);
-                if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
                 if (file.size() < spiffs_offset) {
                     spiffs_copy_size = 0;
                     launcherConsolePrintf(

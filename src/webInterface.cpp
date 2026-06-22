@@ -157,9 +157,25 @@ bool prepareWebDataPartition(
     }
 
     LauncherPartitionEntry *existing = launcherPartitionFindByLabel(table, label.c_str());
-    const bool useRemaining = declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD;
-    const uint32_t requestedSize =
-        useRemaining ? LAUNCHER_DEFAULT_SPIFFS_SIZE : (declaredSize > 0 ? declaredSize : copySize);
+    // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
+    bool useRemaining;
+    uint32_t requestedSize;
+    if (label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+        useRemaining = false;
+        requestedSize = declaredSize;
+    } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+        useRemaining = true;
+        requestedSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+    } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+        useRemaining = false;
+        requestedSize = declaredSize;
+    } else if (declaredSize > 0) {
+        useRemaining = false;
+        requestedSize = declaredSize;
+    } else {
+        useRemaining = false;
+        requestedSize = copySize;
+    }
 
     if (existing) {
         if (!existing->isData() || existing->subtype != subtype) {
@@ -342,10 +358,15 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
             spiffs = true;
             spiffsOffset = sourceOffset;
             spiffsCopySize = copySize;
-            spiffsSize = declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
-                             ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
-                             : LAUNCHER_DEFAULT_SPIFFS_SIZE;
             spiffsLabel = label;
+            // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
+            if (label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                spiffsSize = declaredSize;
+            } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                spiffsSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+            } else {
+                spiffsSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+            }
         }
     }
 
