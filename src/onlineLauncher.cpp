@@ -703,11 +703,16 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
             uint32_t declaredSize = part["size"] | 0;
             spiffsOffset = part["source_offset"] | 0;
             spiffsCopySize = part["copy_size"] | 0;
-            spiffsSize = declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD
-                             ? LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
-                             : LAUNCHER_DEFAULT_SPIFFS_SIZE;
             String declaredLabel = part["label"].as<String>();
             if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
+            // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
+            if (spiffsLabel == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                spiffsSize = declaredSize;
+            } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                spiffsSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+            } else {
+                spiffsSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+            }
         } else if (type == "data" && subtype == "fat") {
             LauncherInstallFatPartition fatPartition;
             fatPartition.label = part["label"].as<String>();
