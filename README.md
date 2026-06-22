@@ -102,7 +102,7 @@ Things that need to be done in future updates
 * 2.7.3:
      * [x] Lilygo T-Watch-Ultra now has OTA installing
      * [x] Added support to M5 CardKB2 and CardKB 1.1. Support was added to M5 devices using grove I2C Port A for: StickC, StickCPlus 1.1, StickCPlus2, StickS3, Tab5, CoreS3, Core2 and Core, Thanks to @cddigi
-     * [x] Now it creates a SPIFFS partition with the name set in the file, thanks to @QQSHI13
+     * [x] Now it creates a SPIFFS partition with the name set in the file, and added compatibility to xiaozhi-esp32, that needs more SPIFFS storage, thanks to @QQSHI13
      * [x] FAT labeled "sys" and "system" are now copied entirely, and the other partitions (FAT or LittleFS) are properly copied and resized to avoid being re-formatted.
      * [x] E-paper displays now show "Powered Off" when turned off by launcher.
      * [x] Fix M5Stack PaperS3 touchscreen https://github.com/bmorcelli/Launcher/issues/338

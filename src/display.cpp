@@ -1300,7 +1300,10 @@ RESTART:
             {"Text Search",
              [&]() {
                  String _q = keyboard(query, 76, "Search Firmware");
-                 if (_q != String(KEY_ESCAPE)) query = _q;
+                 if (_q != String(KEY_ESCAPE)) {
+                     query = _q;
+                     refined = true;
+                 }
              }},
             {"Back to list", [&]() { yield(); }}
         };
