@@ -31,13 +31,17 @@
 
 #define ISR_PREFIX IRAM_ATTR
 #define MSEC_THRESHOLD 3
-#define SPI_SETTING SPISettings(2000000, MSBFIRST, SPI_MODE0)
+#ifndef SPI_TOUCH_FREQUENCY
+#define SPI_TOUCH_FREQUENCY 2000000
+#endif
+#define SPI_SETTING SPISettings(SPI_TOUCH_FREQUENCY, MSBFIRST, SPI_MODE0)
 
 static CYD28_TouchR *isrPinptr;
 void isrPin(void);
 // ------------------------------------------------------------
 bool CYD28_TouchR::configurePins(bool hardwareSpi) {
-    if (CYD28_TouchR_CS < 0 || CYD28_TouchR_MISO < 0 || CYD28_TouchR_MOSI < 0 || CYD28_TouchR_CLK < 0) return false;
+    if (CYD28_TouchR_CS < 0 || CYD28_TouchR_MISO < 0 || CYD28_TouchR_MOSI < 0 || CYD28_TouchR_CLK < 0)
+        return false;
 
     pinMode(CYD28_TouchR_CS, OUTPUT);
     digitalWrite(CYD28_TouchR_CS, HIGH);
