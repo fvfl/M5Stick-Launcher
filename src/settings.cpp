@@ -24,7 +24,7 @@
 #include <cardkb2.h>
 #endif
 
-// forward declaration 
+// forward declaration
 void defaultValues();
 
 namespace {
@@ -519,29 +519,6 @@ String get_efuse_mac_as_string() {
     }
     return str;
 }
-bool config_exists() {
-    if (!SDM.exists(CONFIG_FILE)) {
-        File conf = SDM.open(CONFIG_FILE, FILE_WRITE, true);
-        ;
-        if (conf) {
-            conf.printf(
-                "[{\"%s\":%d,\"dimmerSet\":10,\"onlyBins\":1,\"bootToApp\":1,\"noDotFiles\":1,\"bright\":100,"
-                "\"askSpiffs\":1,\"wui_usr\":\"admin\",\"wui_pwd\":\"launcher\",\"dwn_path\":\"/downloads/"
-                "\",\"FGCOLOR\":2016,\"BGCOLOR\":0,\"ALCOLOR\":63488,\"even\":13029,\"odd\":12485,\"dev\":"
-                "0,\"wifi\":[{\"ssid\":\"myNetSSID\",\"pwd\":\"myNetPassword\"}], \"favorite\":[]}]",
-                get_efuse_mac_as_string().c_str(),
-                ROTATION
-            );
-        }
-        conf.close();
-        vTaskDelay(pdTICKS_TO_MS(50));
-        log_i("config_exists: config.conf created with default");
-        return false;
-    } else {
-        log_i("config_exists: config.conf exists");
-        return true;
-    }
-}
 
 bool saveIntoNVS() {
     esp_err_t err = ESP_OK;
@@ -833,298 +810,276 @@ bool getWifiFromNVS() {
 **  getConfigurations from EEPROM or JSON
 **********************************************************************/
 void getConfigs() {
-    if (setupSdCard()) {
-        // check if config file exists, otherwise create it with default values
-        config_exists();
-        File file = SDM.open(CONFIG_FILE, FILE_READ);
-        if (file) {
-            DeserializationError error = deserializeJson(settings, file);
-            if (error) {
-                log_i("Failed to read file, using default configuration");
-                goto Default;
-            } else {
-                log_i("getConfigs: deserialized correctly");
-            }
-
-            int count = 0;
-            JsonObject setting = settings[0];
-            if (setting["onlyBins"].is<bool>()) {
-                onlyBins = setting["onlyBins"].as<bool>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["bootToApp"].is<bool>()) {
-                bootToApp = setting["bootToApp"].as<bool>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["noDotFiles"].is<bool>()) {
-                noDotFiles = setting["noDotFiles"].as<bool>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["askSpiffs"].is<bool>()) {
-                askSpiffs = setting["askSpiffs"].as<bool>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["bright"].is<int>()) {
-                bright = setting["bright"].as<int>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["dimmerSet"].is<int>()) {
-                dimmerSet = setting["dimmerSet"].as<int>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            char *mac;
-            if (setting[get_efuse_mac_as_string()].is<int>()) {
-                rotation = setting[get_efuse_mac_as_string()].as<int>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-#ifndef E_PAPER_DISPLAY
-            if (setting["FGCOLOR"].is<uint16_t>()) {
-                FGCOLOR = setting["FGCOLOR"].as<uint16_t>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["BGCOLOR"].is<uint16_t>()) {
-                BGCOLOR = setting["BGCOLOR"].as<uint16_t>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["ALCOLOR"].is<uint16_t>()) {
-                ALCOLOR = setting["ALCOLOR"].as<uint16_t>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["odd"].is<uint16_t>()) {
-                odd_color = setting["odd"].as<uint16_t>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["even"].is<uint16_t>()) {
-                even_color = setting["even"].as<uint16_t>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-#endif
-            if (setting["dev"].is<bool>()) {
-                dev_mode = setting["dev"].as<bool>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["wui_usr"].is<String>()) {
-                wui_usr = setting["wui_usr"].as<String>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["wui_pwd"].is<String>()) {
-                wui_pwd = setting["wui_pwd"].as<String>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["dwn_path"].is<String>()) {
-                dwn_path = setting["dwn_path"].as<String>();
-            } else {
-                count++;
-                log_i("Fail");
-            }
-            if (setting["wifi"].is<JsonArray>()) {
-                for (JsonObject wifiEntry : setting["wifi"].as<JsonArray>()) {
-                    if (wifiEntry["secure"].as<bool>()) {
-                        wifiEntry["pwd"] = wifiPwdDecrypt(wifiEntry["pwd"].as<String>());
-                        wifiEntry.remove("secure");
-                    } else if (!wifiEntry["ssid"].as<String>().isEmpty()) {
-                        ++count; // plain-text entry — trigger re-save with encryption
-                    }
-                }
-            } else {
-                ++count;
-                log_i("Fail");
-            }
-            if (setting["favorite"].is<JsonArray>()) {
-                favorite = setting["favorite"].as<JsonArray>();
-            } else {
-                ++count;
-                log_i("Fail");
-            }
-            if (count > 0) saveConfigs();
-
-            log_i("Brightness: %d", bright);
-            setBrightness(bright);
-            if (dimmerSet > 120) dimmerSet = 10;
-
-            file.close();
-            saveIntoNVS();
-            log_i("Using config.conf setup file");
-        } else {
-        Default:
-            file.close();
-            saveConfigs();
-            log_i("Using settings stored on EEPROM");
-        }
-    } else {
+    if (!setupSdCard()) {
         getFromNVS();
         getWifiFromNVS();
+        return;
     }
+
+    if (!SDM.exists(CONFIG_FILE)) {
+        launcherConsolePrintln("getConfigs: config.conf not found, creating with defaults");
+        defaultValues();
+        saveConfigs();
+        return;
+    }
+
+    File file = SDM.open(CONFIG_FILE, FILE_READ);
+    if (!file) {
+        launcherConsolePrintln("getConfigs: failed to open config.conf, resetting to defaults");
+        defaultValues();
+        saveConfigs();
+        return;
+    }
+
+    DeserializationError error = deserializeJson(settings, file);
+    file.close();
+
+    if (error) {
+        launcherConsolePrintf("getConfigs: parse error (%s), resetting to defaults", error.c_str());
+        settings.clear();
+        defaultValues();
+        saveConfigs();
+        return;
+    }
+
+    log_i("getConfigs: deserialized correctly");
+    int count = 0;
+    JsonObject setting = settings[0];
+
+    if (setting["onlyBins"].is<bool>()) onlyBins = setting["onlyBins"].as<bool>();
+    else {
+        count++;
+        log_i("getConfigs: missing onlyBins");
+    }
+
+    if (setting["bootToApp"].is<bool>()) bootToApp = setting["bootToApp"].as<bool>();
+    else {
+        count++;
+        log_i("getConfigs: missing bootToApp");
+    }
+
+    if (setting["noDotFiles"].is<bool>()) noDotFiles = setting["noDotFiles"].as<bool>();
+    else {
+        count++;
+        log_i("getConfigs: missing noDotFiles");
+    }
+
+    if (setting["askSpiffs"].is<bool>()) askSpiffs = setting["askSpiffs"].as<bool>();
+    else {
+        count++;
+        log_i("getConfigs: missing askSpiffs");
+    }
+
+    if (setting["bright"].is<int>()) bright = setting["bright"].as<int>();
+    else {
+        count++;
+        log_i("getConfigs: missing bright");
+    }
+
+    if (setting["dimmerSet"].is<int>()) dimmerSet = setting["dimmerSet"].as<int>();
+    else {
+        count++;
+        log_i("getConfigs: missing dimmerSet");
+    }
+
+    if (setting[get_efuse_mac_as_string()].is<int>()) rotation = setting[get_efuse_mac_as_string()].as<int>();
+    else {
+        count++;
+        log_i("getConfigs: missing rotation");
+    }
+
+#ifndef E_PAPER_DISPLAY
+    if (setting["FGCOLOR"].is<uint16_t>()) FGCOLOR = setting["FGCOLOR"].as<uint16_t>();
+    else {
+        count++;
+        log_i("getConfigs: missing FGCOLOR");
+    }
+
+    if (setting["BGCOLOR"].is<uint16_t>()) BGCOLOR = setting["BGCOLOR"].as<uint16_t>();
+    else {
+        count++;
+        log_i("getConfigs: missing BGCOLOR");
+    }
+
+    if (setting["ALCOLOR"].is<uint16_t>()) ALCOLOR = setting["ALCOLOR"].as<uint16_t>();
+    else {
+        count++;
+        log_i("getConfigs: missing ALCOLOR");
+    }
+
+    if (setting["odd"].is<uint16_t>()) odd_color = setting["odd"].as<uint16_t>();
+    else {
+        count++;
+        log_i("getConfigs: missing odd");
+    }
+
+    if (setting["even"].is<uint16_t>()) even_color = setting["even"].as<uint16_t>();
+    else {
+        count++;
+        log_i("getConfigs: missing even");
+    }
+#endif
+
+    if (setting["dev"].is<bool>()) dev_mode = setting["dev"].as<bool>();
+    else {
+        count++;
+        log_i("getConfigs: missing dev");
+    }
+
+    if (setting["wui_usr"].is<String>()) wui_usr = setting["wui_usr"].as<String>();
+    else {
+        count++;
+        log_i("getConfigs: missing wui_usr");
+    }
+
+    if (setting["wui_pwd"].is<String>()) wui_pwd = setting["wui_pwd"].as<String>();
+    else {
+        count++;
+        log_i("getConfigs: missing wui_pwd");
+    }
+
+    if (setting["dwn_path"].is<String>()) dwn_path = setting["dwn_path"].as<String>();
+    else {
+        count++;
+        log_i("getConfigs: missing dwn_path");
+    }
+
+    if (setting["wifi"].is<JsonArray>()) {
+        for (JsonObject wifiEntry : setting["wifi"].as<JsonArray>()) {
+            if (wifiEntry["secure"].as<bool>()) {
+                wifiEntry["pwd"] = wifiPwdDecrypt(wifiEntry["pwd"].as<String>());
+                wifiEntry.remove("secure");
+            } else if (!wifiEntry["ssid"].as<String>().isEmpty()) {
+                ++count; // plain-text entry — trigger re-save with encryption
+            }
+        }
+    } else {
+        ++count;
+        log_i("getConfigs: missing wifi");
+    }
+
+    if (setting["favorite"].is<JsonArray>()) {
+        favorite = setting["favorite"].as<JsonArray>();
+    } else {
+        ++count;
+        log_i("getConfigs: missing favorite");
+    }
+
+    if (count > 0) saveConfigs();
+
+    log_i("Brightness: %d", bright);
+    setBrightness(bright);
+    if (dimmerSet > 120) dimmerSet = 10;
+    saveIntoNVS();
+    log_i("getConfigs: loaded from config.conf");
 }
 /*********************************************************************
 **  Function: saveConfigs
 **  save configs into JSON config.conf file
 **********************************************************************/
 void saveConfigs() {
-    bool retry = true;
+    if (!setupSdCard()) {
+        saveIntoNVS();
+        saveWifiIntoNVS();
+        return;
+    }
 
-    while (true) {
-        if (!setupSdCard()) break;
+    // Get (or create) the root settings object — preserves unknown keys like "Installed"
+    JsonObject setting = ensureSettingsRoot();
+    if (setting.isNull()) {
+        launcherConsolePrintln("saveConfigs: failed to prepare settings root");
+        saveIntoNVS();
+        saveWifiIntoNVS();
+        return;
+    }
 
-        if (SDM.remove(CONFIG_FILE)) log_i("config.conf deleted");
-        else log_i("fail deleting config.conf");
+    // Ensure favorite array exists
+    if (!setting["favorite"].is<JsonArray>()) favorite = setting.createNestedArray("favorite");
+    else favorite = setting["favorite"].as<JsonArray>();
 
-        File file = SDM.open(CONFIG_FILE, FILE_WRITE, true);
-        if (!file) {
-            log_i("Failed to create file");
-            SDM.end();
-            sdcardMounted = false;
-            break;
+    // Ensure wifi array has at least a placeholder entry
+    JsonArray wifiList = setting["wifi"].as<JsonArray>();
+    if (wifiList.isNull()) wifiList = setting.createNestedArray("wifi");
+    if (!wifiList.isNull() && wifiList.size() == 0) {
+        JsonObject wifiObj = wifiList.add<JsonObject>();
+        if (!wifiObj.isNull()) {
+            wifiObj["ssid"] = ssid.length() == 0 ? "myNetSSID" : ssid;
+            wifiObj["pwd"] = pwd.length() == 0 ? "myNetPassword" : pwd;
         }
-        log_i("config.conf created");
+    }
 
-        JsonArray settingsArray = settings.as<JsonArray>();
-        if (settingsArray.isNull()) {
-            settings.clear();
-            settingsArray = settings.to<JsonArray>();
-        }
-        if (settingsArray.isNull()) {
-            log_e("saveConfigs: failed to prepare settings array");
-            break;
-        }
+    // Update known settings keys (unknown keys like "Installed" are untouched)
+    setting["onlyBins"] = onlyBins;
+    setting["bootToApp"] = bootToApp;
+    setting["noDotFiles"] = noDotFiles;
+    setting["askSpiffs"] = askSpiffs;
+    setting["bright"] = bright;
+    setting["dimmerSet"] = dimmerSet;
+    setting[get_efuse_mac_as_string()] = rotation;
+    setting["FGCOLOR"] = FGCOLOR;
+    setting["BGCOLOR"] = BGCOLOR;
+    setting["ALCOLOR"] = ALCOLOR;
+    setting["odd"] = odd_color;
+    setting["even"] = even_color;
+    setting["dev"] = dev_mode;
+    setting["wui_usr"] = wui_usr;
+    setting["wui_pwd"] = wui_pwd;
+    setting["dwn_path"] = dwn_path;
 
-        JsonObject setting;
-        if (settingsArray.size() > 0 && settingsArray[0].is<JsonObject>()) {
-            setting = settingsArray[0];
-        } else {
-            settingsArray.clear();
-            setting = settingsArray.add<JsonObject>();
-        }
-        if (setting.isNull()) { setting = settingsArray.add<JsonObject>(); }
-        if (setting.isNull()) {
-            log_e("saveConfigs: failed to create root object");
-            break;
-        }
-        favorite = setting["favorite"].as<JsonArray>();
-        if (favorite.isNull()) favorite = setting.createNestedArray("favorite");
-
-        JsonArray wifiList = setting["wifi"].as<JsonArray>();
-        if (wifiList.isNull()) { wifiList = setting.createNestedArray("wifi"); }
-        if (wifiList.isNull()) {
-            log_e("saveConfigs: failed to create wifi array");
-            break;
-        }
-        if (wifiList.size() == 0) {
-            JsonObject wifiObj = wifiList.add<JsonObject>();
-            if (wifiObj.isNull()) { wifiObj = wifiList.add<JsonObject>(); }
-            if (!wifiObj.isNull()) {
-                wifiObj["ssid"] = ssid.length() == 0 ? "myNetSSID" : ssid;
-                wifiObj["pwd"] = pwd.length() == 0 ? "myNetPassword" : pwd;
-            } else {
-                log_e("saveConfigs: failed to allocate default wifi entry");
-            }
-        }
-        // Update JSON document with current configuration
-        setting["onlyBins"] = onlyBins;
-        setting["bootToApp"] = bootToApp;
-        setting["noDotFiles"] = noDotFiles;
-        setting["askSpiffs"] = askSpiffs;
-        setting["bright"] = bright;
-        setting["dimmerSet"] = dimmerSet;
-        setting[get_efuse_mac_as_string()] = rotation;
-        setting["FGCOLOR"] = FGCOLOR;
-        setting["BGCOLOR"] = BGCOLOR;
-        setting["ALCOLOR"] = ALCOLOR;
-        setting["odd"] = odd_color;
-        setting["even"] = even_color;
-        setting["dev"] = dev_mode;
-        setting["wui_usr"] = wui_usr;
-        setting["wui_pwd"] = wui_pwd;
-        setting["dwn_path"] = dwn_path;
-
-        // Encrypt wifi passwords before writing to SD
-        {
-            JsonArray wl = setting["wifi"].as<JsonArray>();
-            if (!wl.isNull()) {
-                for (JsonObject e : wl) {
-                    String ssid = e["ssid"].as<String>();
-                    if (!ssid.isEmpty()) {
-                        e["pwd"] = wifiPwdEncrypt(e["pwd"].as<String>());
-                        e["secure"] = true;
-                    }
+    // Encrypt wifi passwords before writing to SD
+    {
+        JsonArray wl = setting["wifi"].as<JsonArray>();
+        if (!wl.isNull()) {
+            for (JsonObject e : wl) {
+                if (!e["ssid"].as<String>().isEmpty()) {
+                    e["pwd"] = wifiPwdEncrypt(e["pwd"].as<String>());
+                    e["secure"] = true;
                 }
             }
         }
+    }
 
-        size_t written = serializeJsonPretty(settings, file);
+    // Write to a temp file first, then atomically rename — original is safe if write fails
+    String tmpPath = String(CONFIG_FILE) + ".tmp";
+    if (SDM.exists(tmpPath)) SDM.remove(tmpPath);
+
+    File file = SDM.open(tmpPath, FILE_WRITE, true);
+    size_t written = 0;
+    if (file) {
+        written = serializeJsonPretty(settings, file);
         file.flush();
         file.close();
-
-        // Restore plaintext passwords in memory immediately after write
-        {
-            JsonArray wl = setting["wifi"].as<JsonArray>();
-            if (!wl.isNull()) {
-                for (JsonObject e : wl) {
-                    if (e["secure"].as<bool>()) {
-                        e["pwd"] = wifiPwdDecrypt(e["pwd"].as<String>());
-                        e.remove("secure");
-                    }
-                }
-            }
-        }
-
-        if (written < 5) {
-            if (retry) {
-                log_i("Failed to write to file");
-                SDM.remove(CONFIG_FILE);
-                log_i("Creating default file");
-                config_exists();
-                File defaultFile = SDM.open(CONFIG_FILE, FILE_READ);
-                if (defaultFile) {
-                    DeserializationError err = deserializeJson(settings, defaultFile);
-                    if (err) {
-                        log_i("Failed to deserialize default config: %s", err.c_str());
-                        settings.clear();
-                    }
-                    defaultFile.close();
-                } else {
-                    log_i("Failed to reopen config.conf for recovery");
-                }
-                retry = false;
-                continue;
-            }
-            log_i("Create new file and Rewriting didn't work");
-        } else {
-            log_i("config.conf written successfully");
-        }
-
-        break;
+    } else {
+        launcherConsolePrintln("saveConfigs: failed to open temp file for writing");
     }
+
+    // Restore plaintext passwords in memory immediately after write
+    {
+        JsonArray wl = setting["wifi"].as<JsonArray>();
+        if (!wl.isNull()) {
+            for (JsonObject e : wl) {
+                if (e["secure"].as<bool>()) {
+                    e["pwd"] = wifiPwdDecrypt(e["pwd"].as<String>());
+                    e.remove("secure");
+                }
+            }
+        }
+    }
+
+    if (written >= 5) {
+        if (SDM.exists(CONFIG_FILE)) SDM.remove(CONFIG_FILE);
+        if (SDM.rename(tmpPath, CONFIG_FILE)) {
+            log_i("saveConfigs: config.conf written successfully");
+        } else {
+            launcherConsolePrintf("saveConfigs: rename failed, temp file left at %s", tmpPath.c_str());
+        }
+    } else {
+        launcherConsolePrintf(
+            "saveConfigs: write failed (written=%u), original config.conf preserved", written
+        );
+        if (SDM.exists(tmpPath)) SDM.remove(tmpPath);
+    }
+
     saveIntoNVS();
     saveWifiIntoNVS();
 }
