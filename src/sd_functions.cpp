@@ -663,7 +663,7 @@ static bool installFromSdDynamic(
         for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
             if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
         }
-        launcherSaveInstalledAppMetadata(table, appEntry, path, installedAppNameFromPath(path), fatLabels);
+        launcherSaveInstalledAppMetadata(table, appEntry, path, installedAppNameFromPath(path), fatLabels, hasSpiffsEntry ? spiffsLabel : String());
         saveIntoNVS();
     }
 

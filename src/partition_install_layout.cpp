@@ -34,10 +34,6 @@ bool launcherPrepareInstallDataPartitions(
                     return false;
                 return true;
             }
-            if (spiffsSize != LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE && existing->size < spiffsSize) {
-                error = String("Partition ") + spiffsLabel + " is too small or incompatible";
-                return false;
-            }
             spiffsEntry = *existing;
         } else if (spiffsSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
             if (!launcherPartitionCreateDataInLargestFreeRange(
@@ -61,7 +57,6 @@ bool launcherPrepareInstallDataPartitions(
     for (size_t i = 0; i < fatPartitions.size(); ++i) {
         LauncherInstallFatPartition &fatPartition = fatPartitions[i];
         if (fatPartition.partitionSize == 0) continue;
-        if (fatPartition.label.isEmpty()) fatPartition.label = i == 0 ? "sys" : "vfs";
         const char *label = fatPartition.label.c_str();
         const bool usePayloadSize = strcmp(label, "sys") == 0 || strcmp(label, "system") == 0;
         uint32_t desiredSize =

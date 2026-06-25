@@ -281,11 +281,15 @@ bool finalizeWebInstall() {
 
     {
         std::vector<String> fatLabels;
+        String spiffsLabel;
         for (const WebInstallStage &stage : webInstallCtx.stages) {
-            if (!stage.appImage && stage.subtype == 0x81) fatLabels.push_back(String(stage.entry.label));
+            if (stage.appImage) continue;
+            if (stage.subtype == 0x81) fatLabels.push_back(String(stage.entry.label));
+            else if ((stage.subtype == 0x82 || stage.subtype == 0x83) && spiffsLabel.isEmpty())
+                spiffsLabel = String(stage.entry.label);
         }
         launcherSaveInstalledAppMetadata(
-            webInstallCtx.table, webInstallCtx.appEntry, webInstallCtx.sourceName, "", fatLabels
+            webInstallCtx.table, webInstallCtx.appEntry, webInstallCtx.sourceName, "", fatLabels, spiffsLabel
         );
     }
     clearWebInstallContext();

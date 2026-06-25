@@ -546,7 +546,7 @@ bool installFirmwareDynamic(
         for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
             if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
         }
-        launcherSaveInstalledAppMetadata(table, appEntry, file, installedName, fatLabels);
+        launcherSaveInstalledAppMetadata(table, appEntry, file, installedName, fatLabels, hasSpiffsEntry ? spiffsLabel : String());
     }
 
     saveIntoNVS();

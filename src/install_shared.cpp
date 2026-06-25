@@ -22,7 +22,7 @@ String launcherInstallNextAppLabel(
 
 void launcherSaveInstalledAppMetadata(
     const LauncherPartitionTable &table, const LauncherPartitionEntry &appEntry, const String &sourceName,
-    const String &preferredName, const std::vector<String> &fatLabels
+    const String &preferredName, const std::vector<String> &fatLabels, const String &spiffsLabel
 ) {
     if (appEntry.offset == 0) {
         lastInstalledApp = launcherInstallAppDisplayName(sourceName, preferredName);
@@ -42,6 +42,7 @@ void launcherSaveInstalledAppMetadata(
     if (metadata.name.isEmpty()) metadata.name = installedLabel;
     metadata.label = installedLabel;
     metadata.fatLabels = fatLabels;
+    metadata.spiffsLabel = spiffsLabel;
     launcherSaveAppMetadata(metadata);
     lastInstalledApp = metadata.name;
 }

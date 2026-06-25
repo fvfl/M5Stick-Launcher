@@ -9,6 +9,7 @@ struct LauncherAppMetadata {
     String name;
     String label;
     std::vector<String> fatLabels;
+    String spiffsLabel;
 };
 
 std::vector<LauncherAppMetadata> launcherLoadAppRegistry();
@@ -16,6 +17,7 @@ std::vector<LauncherAppMetadata> launcherListInstalledApps();
 bool launcherSaveAppMetadata(const LauncherAppMetadata &app);
 bool launcherRemoveAppMetadata(const char *label);
 std::vector<String> launcherAppFatLabelsForLabel(const char *label);
+String launcherAppSpiffsLabelForLabel(const char *label);
 void launcherShowAppLauncher();
 void launcherShowAppActions(const char *label);
 String launcherAppDisplayNameForLabel(const char *label);

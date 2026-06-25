@@ -14,7 +14,8 @@ String launcherInstallNextAppLabel(
 
 void launcherSaveInstalledAppMetadata(
     const LauncherPartitionTable &table, const LauncherPartitionEntry &appEntry, const String &sourceName,
-    const String &preferredName, const std::vector<String> &fatLabels
+    const String &preferredName, const std::vector<String> &fatLabels,
+    const String &spiffsLabel = ""
 );
 
 #endif
