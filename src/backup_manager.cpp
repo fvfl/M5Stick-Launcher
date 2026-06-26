@@ -2,13 +2,14 @@
 #include "display.h"
 #include "idf/launcher_platform.h"
 #include "sd_functions.h"
-#include "settings.h"
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <esp_flash.h>
 #include <esp_partition.h>
 #include <globals.h>
 #include <memory>
+
+#define BACKUP_DATA_PATH "/bkp/backupData.json"
 
 String generateAppNum(const String &sdFilepath) {
     uint32_t crc = 0xFFFFFFFF;
@@ -23,8 +24,27 @@ String generateAppNum(const String &sdFilepath) {
     return String(buf);
 }
 
-static JsonObject findInstalledEntry(JsonObject &setting, const String &appNum) {
-    JsonArray arr = setting["Installed"].as<JsonArray>();
+static bool readBackupDoc(JsonDocument &doc) {
+    if (!setupSdCard()) return false;
+    File f = SDM.open(BACKUP_DATA_PATH, FILE_READ);
+    if (!f) return true; // file not yet created — doc stays empty/null, that's OK
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    return err == DeserializationError::Ok || err == DeserializationError::EmptyInput;
+}
+
+static bool writeBackupDoc(const JsonDocument &doc) {
+    if (!setupSdCard()) return false;
+    SDM.mkdir("/bkp");
+    File f = SDM.open(BACKUP_DATA_PATH, FILE_WRITE);
+    if (!f) return false;
+    serializeJson(doc, f);
+    f.close();
+    return true;
+}
+
+static JsonObject findInstalledEntry(JsonDocument &doc, const String &appNum) {
+    JsonArray arr = doc["Installed"].as<JsonArray>();
     if (arr.isNull()) return JsonObject();
     for (JsonObject entry : arr) {
         if (entry["appNum"].as<String>() == appNum) return entry;
@@ -32,19 +52,19 @@ static JsonObject findInstalledEntry(JsonObject &setting, const String &appNum) 
     return JsonObject();
 }
 
-static JsonArray ensureInstalledArray(JsonObject &setting) {
-    JsonArray arr = setting["Installed"].as<JsonArray>();
-    if (arr.isNull()) arr = setting["Installed"].to<JsonArray>();
+static JsonArray ensureInstalledArray(JsonDocument &doc) {
+    JsonArray arr = doc["Installed"].as<JsonArray>();
+    if (arr.isNull()) arr = doc["Installed"].to<JsonArray>();
     return arr;
 }
 
 bool saveInstalledToConfig(const BackupInstallInfo &info) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return false;
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return false;
 
-    JsonObject entry = findInstalledEntry(setting, info.appNum);
+    JsonObject entry = findInstalledEntry(doc, info.appNum);
     if (entry.isNull()) {
-        JsonArray arr = ensureInstalledArray(setting);
+        JsonArray arr = ensureInstalledArray(doc);
         if (arr.isNull()) return false;
         entry = arr.add<JsonObject>();
         if (entry.isNull()) return false;
@@ -78,27 +98,25 @@ bool saveInstalledToConfig(const BackupInstallInfo &info) {
         }
     }
 
-    saveConfigs();
-    return true;
+    return writeBackupDoc(doc);
 }
 
 bool updateInstalledAppName(const String &appNum, const String &newName) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return false;
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return false;
 
-    JsonObject entry = findInstalledEntry(setting, appNum);
+    JsonObject entry = findInstalledEntry(doc, appNum);
     if (entry.isNull()) return false;
 
     entry["appName"] = newName;
-    saveConfigs();
-    return true;
+    return writeBackupDoc(doc);
 }
 
 bool updateInstalledBackupPath(const String &appNum, const String &label, const String &backupPath) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return false;
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return false;
 
-    JsonObject entry = findInstalledEntry(setting, appNum);
+    JsonObject entry = findInstalledEntry(doc, appNum);
     if (entry.isNull()) return false;
 
     JsonArray dataArr = entry["data"].as<JsonArray>();
@@ -107,26 +125,24 @@ bool updateInstalledBackupPath(const String &appNum, const String &label, const 
     for (JsonObject dataEntry : dataArr) {
         if (dataEntry["label"].as<String>() == label) {
             dataEntry["filepath"] = backupPath;
-            saveConfigs();
-            return true;
+            return writeBackupDoc(doc);
         }
     }
     return false;
 }
 
 bool removeInstalledFromConfig(const String &appNum) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return false;
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return false;
 
-    JsonArray arr = setting["Installed"].as<JsonArray>();
+    JsonArray arr = doc["Installed"].as<JsonArray>();
     if (arr.isNull()) return false;
 
     for (size_t i = 0; i < arr.size(); i++) {
         JsonObject entry = arr[i].as<JsonObject>();
         if (!entry.isNull() && entry["appNum"].as<String>() == appNum) {
             arr.remove(i);
-            saveConfigs();
-            return true;
+            return writeBackupDoc(doc);
         }
     }
     return false;
@@ -134,10 +150,10 @@ bool removeInstalledFromConfig(const String &appNum) {
 
 BackupInstallInfo loadInstalledFromConfig(const String &appNum) {
     BackupInstallInfo result;
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return result;
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return result;
 
-    JsonObject entry = findInstalledEntry(setting, appNum);
+    JsonObject entry = findInstalledEntry(doc, appNum);
     if (entry.isNull()) return result;
 
     result.appNum = entry["appNum"].as<String>();
@@ -158,10 +174,10 @@ BackupInstallInfo loadInstalledFromConfig(const String &appNum) {
 }
 
 String findAppNumByFilepath(const String &sdFilepath) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return "";
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return "";
 
-    JsonArray arr = setting["Installed"].as<JsonArray>();
+    JsonArray arr = doc["Installed"].as<JsonArray>();
     if (arr.isNull()) return "";
 
     for (JsonObject entry : arr) {
@@ -172,10 +188,10 @@ String findAppNumByFilepath(const String &sdFilepath) {
 }
 
 String findAppNumByPartitionLabel(const String &partitionLabel) {
-    JsonObject setting = ensureSettingsRoot();
-    if (setting.isNull()) return "";
+    JsonDocument doc;
+    if (!readBackupDoc(doc)) return "";
 
-    JsonArray arr = setting["Installed"].as<JsonArray>();
+    JsonArray arr = doc["Installed"].as<JsonArray>();
     if (arr.isNull()) return "";
 
     for (JsonObject entry : arr) {
@@ -381,7 +397,6 @@ bool restorePartitionFromBackupDirect(
         size_t chunk = min((size_t)sizeof(buf), fileSize - written);
         uint32_t addr = flashOffset + written;
 
-        // Erase one sector before writing if on a sector boundary
         if ((written % sizeof(buf)) == 0) {
             esp_err_t err = esp_flash_erase_region(nullptr, addr, sizeof(buf));
             if (err != ESP_OK) {

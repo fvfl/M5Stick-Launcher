@@ -100,6 +100,8 @@ Things that need to be done in future updates
 
 ## Latest Changelog
 * 2.7.3:
+     * [x] Downloaded firmware update list. Now launcher can check the firmware you downloaded and check if there are new versions ahead, and download all new files directly to your SDCard.
+     * [x] New Backup system. Now it saves the relationship between backup and binary on `config.conf` and restores it when reinstalling. App icon will display backup data, and PMan too. Needs SD Card to use this feature.
      * [x] Lilygo T-Watch-Ultra now has OTA installing
      * [x] Added support to M5 CardKB2 and CardKB 1.1. Support was added to M5 devices using grove I2C Port A for: StickC, StickCPlus 1.1, StickCPlus2, StickS3, Tab5, CoreS3, Core2 and Core, Thanks to @cddigi
      * [x] Now it creates a SPIFFS partition with the name set in the file, and added compatibility to xiaozhi-esp32, that needs more SPIFFS storage, thanks to @QQSHI13

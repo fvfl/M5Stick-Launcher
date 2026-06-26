@@ -1176,7 +1176,8 @@ void loopVersions(String _fid) {
                                            String(fid),
                                            String(file),
                                            String(name) + "." + String(version).substring(0, 10),
-                                           dwn_path
+                                           dwn_path,
+                                           String(version)
                                        );
                                    }});
                 options.push_back({"Add to Favorite", [=] {
@@ -1230,6 +1231,20 @@ RESTART:
         else items = total_firmware - items * (page - 1);
     }
     options.push_back({"[Refine Search]", [&]() { refine = true; }, ALCOLOR});
+
+    if (!doc["items"][0]["file"].as<String>().isEmpty()) {
+        options.push_back({"[Update all]", [=]() {
+            int count = (int)doc["items"].size();
+            for (int i = 0; i < count; i++) {
+                String fid  = doc["items"][i]["fid"].as<String>();
+                String file = doc["items"][i]["file"].as<String>();
+                String name = doc["items"][i]["name"].as<String>();
+                String ver  = doc["items"][i]["version"].as<String>();
+                downloadFirmware(fid, file, name + "." + ver.substring(0, 10), dwn_path, ver, true);
+                if (returnToMenu) break;
+            }
+        }, ALCOLOR});
+    }
 
     if (current_page > 1) {
         // Volta uma página

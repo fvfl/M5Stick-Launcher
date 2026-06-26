@@ -287,7 +287,7 @@ String partitionSubtypeName(const LauncherPartitionEntry &entry) {
 
 const char *dataSubtypeName(uint8_t subtype) {
     if (subtype == ESP_PARTITION_SUBTYPE_DATA_FAT) return "FAT";
-    if (subtype == 0x83)                            return "LittleFS";
+    if (subtype == 0x83) return "LittleFS";
     return "SPIFFS";
 }
 
@@ -575,11 +575,6 @@ bool createPartition(
     return true;
 }
 
-bool hasFreeSpaceFor(const LauncherPartitionTable &table, uint32_t requiredSize, uint32_t alignment) {
-    LauncherPartitionRange range;
-    return launcherPartitionFindFreeRange(table, requiredSize, alignment, range, nullptr);
-}
-
 bool rangeHasFreeSpaceFor(const LauncherPartitionRange &range, uint32_t requiredSize, uint32_t alignment) {
     LauncherPartitionRange normalized;
     return normalizeFreeSliderRange(range, requiredSize, alignment, normalized);
@@ -717,17 +712,20 @@ void partList() {
                              String appNum = generateAppNum(selectedBin);
                              BackupInstallInfo info = loadInstalledFromConfig(appNum);
                              if (info.appNum.isEmpty()) {
-                                 info.appNum     = appNum;
+                                 info.appNum = appNum;
                                  info.sdFilepath = selectedBin;
-                                 info.appName    = launcherAppNameFromFile(selectedBin);
+                                 info.appName = launcherAppNameFromFile(selectedBin);
                              }
                              bool alreadyIn = false;
                              for (const auto &bp : info.partitions)
-                                 if (bp.label == String(entry.label)) { alreadyIn = true; break; }
+                                 if (bp.label == String(entry.label)) {
+                                     alreadyIn = true;
+                                     break;
+                                 }
                              if (!alreadyIn) {
                                  BackupPartitionInfo bp;
                                  bp.label = String(entry.label);
-                                 bp.type  = dataSubtypeName(entry.subtype);
+                                 bp.type = dataSubtypeName(entry.subtype);
                                  info.partitions.push_back(bp);
                              }
                              saveInstalledToConfig(info);
@@ -1013,10 +1011,8 @@ bool attachPartition(String _from, String _to) {
 
             if (bytes[3] == 0x81 || bytes[3] == 0x82 || bytes[3] == 0x83) {
                 // Offset is a uint32 at bytes 4-7, little-endian (ESP-IDF partition table format)
-                offset = (uint32_t)bytes[0x04]
-                       | ((uint32_t)bytes[0x05] << 8)
-                       | ((uint32_t)bytes[0x06] << 16)
-                       | ((uint32_t)bytes[0x07] << 24);
+                offset = (uint32_t)bytes[0x04] | ((uint32_t)bytes[0x05] << 8) |
+                         ((uint32_t)bytes[0x06] << 16) | ((uint32_t)bytes[0x07] << 24);
                 launcherConsolePrintf("offset=%d\n", offset);
             }
         }

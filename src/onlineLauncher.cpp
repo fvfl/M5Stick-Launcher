@@ -146,21 +146,32 @@ bool ensureWifiConnected(String ssid, int encryptation, bool isAP) {
 void ota_function() {
 #ifndef DISABLE_OTA
     bool fav = false;
+    bool upd = false;
     if (ensureWifiConnected()) {
         // Debug
         // Serial.printf("Favorite size: %d\n", favorite.size());
         // serializeJsonPretty(favorite, Serial);
         // Debug
-        if (favorite.size() > 0) {
-            options = {
-                {"OTA List",      [&]() { fav = false; }        },
-                {"Favorite List", [&]() { fav = true; }         },
-                {"Main Menu",     [=]() { returnToMenu = true; }}
-            };
+        String dwnJsonPath = dwn_path;
+        if (!dwnJsonPath.startsWith("/")) dwnJsonPath = "/" + dwnJsonPath;
+        if (!dwnJsonPath.endsWith("/")) dwnJsonPath += "/";
+        dwnJsonPath += "downloaded.json";
+        bool hasDownloads = sdcardMounted && SDM.exists(dwnJsonPath);
+        if (favorite.size() > 0 || hasDownloads) {
+            options.clear();
+            options.push_back({"OTA List", [&]() {
+                                   fav = false;
+                                   upd = false;
+                               }});
+            if (favorite.size() > 0) options.push_back({"Favorite List", [&]() { fav = true; }});
+            if (hasDownloads) options.push_back({"Check for Updates", [&]() { upd = true; }});
+            options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
             loopOptions(options);
         }
         if (returnToMenu) return;
-        if (fav) {
+        if (upd) {
+            if (checkForUpdates()) loopFirmware();
+        } else if (fav) {
             int idx = 0;
             auto NavMenu = [&](int fw) {
                 options.clear();
@@ -707,7 +718,100 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
 ** Function name: downloadFirmware
 ** Description:   Downloads the firmware and save into the SDCard
 ***************************************************************************************/
-void downloadFirmware(String fid, String file_url, String fileName, String folder) { // Adicionar "fid"
+void saveDownloadedFirmware(const String &folder, const String &fid, const String &version) {
+    if (fid.isEmpty() || version.isEmpty()) return;
+    if (!setupSdCard()) return;
+    String path = folder;
+    if (!path.startsWith("/")) path = "/" + path;
+    if (!path.endsWith("/")) path += "/";
+    path += "downloaded.json";
+
+    JsonDocument dwnDoc;
+    File f = SDM.open(path, FILE_READ);
+    if (f) {
+        deserializeJson(dwnDoc, f);
+        f.close();
+    }
+    JsonArray arr = dwnDoc.as<JsonArray>();
+    if (arr.isNull()) {
+        dwnDoc.clear();
+        arr = dwnDoc.to<JsonArray>();
+    }
+    JsonObject obj;
+    if (arr.size() > 0) obj = arr[0].as<JsonObject>();
+    if (obj.isNull()) obj = arr.add<JsonObject>();
+    obj[fid] = version;
+
+    f = SDM.open(path, FILE_WRITE);
+    if (f) {
+        serializeJson(dwnDoc, f);
+        f.close();
+    }
+}
+
+bool checkForUpdates() {
+    if (!setupSdCard()) return false;
+    String path = dwn_path;
+    if (!path.startsWith("/")) path = "/" + path;
+    if (!path.endsWith("/")) path += "/";
+    path += "downloaded.json";
+
+    File f = SDM.open(path, FILE_READ);
+    if (!f) {
+        displayRedStripe("No downloads found");
+        launcherDelayMs(1500);
+        return false;
+    }
+    String body;
+    while (f.available()) body += (char)f.read();
+    f.close();
+
+    if (body.isEmpty() || body == "[]" || body == "[{}]") {
+        displayRedStripe("No downloads found");
+        launcherDelayMs(1500);
+        return false;
+    }
+
+    displayRedStripe("Checking updates...");
+    pauseInputHandlerTask();
+    String serverUrl = String("https://api.launcherhub.net/updateList");
+    String response;
+    LauncherHttpResponse httpResp;
+    bool ok = launcherHttpPost(serverUrl.c_str(), body.c_str(), body.length(), response, 65536, &httpResp);
+    resumeInputHandlerTask();
+
+    if (!ok || response.isEmpty()) {
+        displayRedStripe("Update check failed");
+        launcherDelayMs(1500);
+        return false;
+    }
+
+    doc.clear();
+    DeserializationError err = deserializeJson(doc, response);
+    if (err) {
+        displayRedStripe("Bad server response");
+        launcherDelayMs(1500);
+        return false;
+    }
+
+    total_firmware = doc["total"] | 0;
+
+    if (total_firmware == 0) {
+        displayRedStripe("No updates found");
+        launcherDelayMs(1500);
+        return false;
+    }
+
+    // loopFirmware() reads doc["page_size"] and doc["page"] to build the list;
+    // inject them so all update results fit on one page
+    doc["page_size"] = (int)total_firmware;
+    doc["page"] = 1;
+    num_pages = 1;
+    current_page = 1;
+    return true;
+}
+
+void downloadFirmware(String fid, String file_url, String fileName, String folder, String version, bool autoAdvance) {
     displayRedStripe("Preparing..");
     if (!file_url.startsWith("https://")) file_url = M5_SERVER_PATH + file_url;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file_url;
@@ -766,12 +870,15 @@ retry:
     if (!ok || (response.content_length > 0 && sdSize != (size_t)response.content_length)) {
         SDM.remove(filePath);
         displayRedStripe("Download FAILED");
-        while (!check(SelPress)) yield();
+        if (autoAdvance) launcherDelayMs(1500);
+        else while (!check(SelPress)) yield();
     } else {
         progressHandler(100, 100);
         launcherConsolePrintln("File successfully downloaded..");
+        saveDownloadedFirmware(folder, fid, version);
         displayRedStripe(" Downloaded ");
-        while (!check(SelPress)) yield();
+        if (autoAdvance) launcherDelayMs(1000);
+        else while (!check(SelPress)) yield();
     }
     wakeUpScreen();
 }

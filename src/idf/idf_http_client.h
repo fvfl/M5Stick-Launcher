@@ -25,5 +25,9 @@ bool launcherHttpGetRange(
     const char *url, uint32_t offset, uint32_t size, LauncherHttpChunkCb cb, void *ctx,
     LauncherHttpResponse *response = nullptr, const char *hwid = nullptr
 );
+bool launcherHttpPost(
+    const char *url, const char *body, size_t bodyLen, String &out, size_t maxSize = 65536,
+    LauncherHttpResponse *response = nullptr
+);
 
 #endif

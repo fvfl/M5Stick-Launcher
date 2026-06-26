@@ -75,15 +75,6 @@ bool setupSdCard() {
 }
 
 /***************************************************************************************
-** Function name: closeSdCard
-** Description:   Turn Off SDCard, set sdcardMounted state to false
-***************************************************************************************/
-void closeSdCard() {
-    SDM.end();
-    sdcardMounted = false;
-}
-
-/***************************************************************************************
 ** Function name: deleteFromSd
 ** Description:   delete file or folder
 ***************************************************************************************/
@@ -571,8 +562,7 @@ static bool installFromSdDynamic(
     if (!prevInstall.appNum.isEmpty()) {
         std::vector<String> restorable;
         for (const auto &bp : prevInstall.partitions) {
-            if (!bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath))
-                restorable.push_back(bp.label);
+            if (!bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath)) restorable.push_back(bp.label);
         }
         if (!restorable.empty()) {
             if (autoBackup) {
@@ -591,37 +581,37 @@ static bool installFromSdDynamic(
     }
 
     pauseSdInstallInput();
-        bool success = false;
-        displayRedStripe("Installing APP");
-        prog_handler = 0;
-        if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
-            displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
+    bool success = false;
+    displayRedStripe("Installing APP");
+    prog_handler = 0;
+    if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
+        displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
+        launcherDelayMs(2000);
+        goto DONE;
+    }
+
+    for (const auto &dp : dataPartitions) {
+        if (!dp.hasEntry || dp.copySize == 0) continue;
+        if (shouldRestore) {
+            bool willRestore = false;
+            for (const auto &bp : prevInstall.partitions) {
+                if (bp.label == dp.label && !bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath)) {
+                    willRestore = true;
+                    break;
+                }
+            }
+            if (willRestore) continue;
+        }
+        const char *typeStr = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
+        displayRedStripe(String("Installing ") + typeStr);
+        prog_handler = 1;
+        const uint32_t copySize = dp.copySize > dp.entry.size ? dp.entry.size : dp.copySize;
+        if (!flashRawFromSd(file, dp.sourceOffset, copySize, dp.entry, false)) {
+            displayRedStripe(String(typeStr) + ": " + launcherUpdateLastErrorName());
             launcherDelayMs(2000);
             goto DONE;
         }
-
-        for (const auto &dp : dataPartitions) {
-            if (!dp.hasEntry || dp.copySize == 0) continue;
-            if (shouldRestore) {
-                bool willRestore = false;
-                for (const auto &bp : prevInstall.partitions) {
-                    if (bp.label == dp.label && !bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath)) {
-                        willRestore = true;
-                        break;
-                    }
-                }
-                if (willRestore) continue;
-            }
-            const char *typeStr = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
-            displayRedStripe(String("Installing ") + typeStr);
-            prog_handler = 1;
-            const uint32_t copySize = dp.copySize > dp.entry.size ? dp.entry.size : dp.copySize;
-            if (!flashRawFromSd(file, dp.sourceOffset, copySize, dp.entry, false)) {
-                displayRedStripe(String(typeStr) + ": " + launcherUpdateLastErrorName());
-                launcherDelayMs(2000);
-                goto DONE;
-            }
-        }
+    }
 
     displayRedStripe("Writing table");
     if (!launcherPartitionWriteGeneratedTable(table, &error)) {
@@ -646,8 +636,7 @@ static bool installFromSdDynamic(
                 for (const auto &dp : dataPartitions) {
                     if (dp.label == bp.label && dp.hasEntry) {
                         restored = restorePartitionFromBackupDirect(
-                            bp.label.c_str(), bp.lastBackupPath.c_str(),
-                            dp.entry.offset, dp.entry.size
+                            bp.label.c_str(), bp.lastBackupPath.c_str(), dp.entry.offset, dp.entry.size
                         );
                         break;
                     }
@@ -655,9 +644,7 @@ static bool installFromSdDynamic(
                 if (!restored) {
                     restored = restorePartitionFromBackup(bp.label.c_str(), bp.lastBackupPath.c_str());
                 }
-                if (!restored) {
-                    log_w("[Restore] Failed: %s", bp.label.c_str());
-                }
+                if (!restored) { log_w("[Restore] Failed: %s", bp.label.c_str()); }
             }
         }
     }

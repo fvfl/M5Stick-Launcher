@@ -992,7 +992,7 @@ void saveConfigs() {
         return;
     }
 
-    // Get (or create) the root settings object — preserves unknown keys like "Installed"
+    // Get (or create) the root settings object — preserves any unknown keys
     JsonObject setting = ensureSettingsRoot();
     if (setting.isNull()) {
         launcherConsolePrintln("saveConfigs: failed to prepare settings root");
@@ -1016,7 +1016,7 @@ void saveConfigs() {
         }
     }
 
-    // Update known settings keys (unknown keys like "Installed" are untouched)
+    // Update known settings keys (unknown keys are untouched)
     setting["onlyBins"] = onlyBins;
     setting["bootToApp"] = bootToApp;
     setting["noDotFiles"] = noDotFiles;

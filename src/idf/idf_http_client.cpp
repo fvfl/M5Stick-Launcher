@@ -129,3 +129,42 @@ bool launcherHttpGetRange(
     String range = "bytes=" + String(offset) + "-" + String(offset + size - 1);
     return executeGet(url, cb, ctx, response, "Range", range.c_str(), "HWID", hwid);
 }
+
+bool launcherHttpPost(
+    const char *url, const char *body, size_t bodyLen, String &out, size_t maxSize,
+    LauncherHttpResponse *response
+) {
+    out = "";
+    StringSink sink = {&out, maxSize};
+    LauncherHttpResponse localResponse;
+    LauncherHttpResponse *resp = response ? response : &localResponse;
+    *resp = LauncherHttpResponse();
+    HttpRequestContext request = {resp, stringChunkCb, &sink, true};
+
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = kTimeoutMs;
+    config.buffer_size = kHttpRxBufferSize;
+    config.buffer_size_tx = kHttpTxBufferSize;
+    config.max_redirection_count = kMaxRedirects;
+    config.event_handler = httpEventHandler;
+    config.user_data = &request;
+    config.cert_pem = kRootCAs;
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) return false;
+
+    esp_http_client_set_header(client, "Accept-Encoding", "identity");
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, body, (int)bodyLen);
+
+    esp_err_t err = esp_http_client_perform(client);
+    int64_t contentLength = esp_http_client_get_content_length(client);
+    if (contentLength >= 0) resp->content_length = contentLength;
+    resp->status = esp_http_client_get_status_code(client);
+    resp->transport_error = static_cast<int>(err);
+
+    esp_http_client_cleanup(client);
+    return err == ESP_OK && request.callbackOk && resp->status >= 200 && resp->status < 300;
+}
