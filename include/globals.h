@@ -167,11 +167,6 @@ extern inline bool check(volatile bool &btn) {
 #define U_FAT_vfs 300
 #define U_FAT_sys 400
 
-extern uint32_t MAX_APP;
-extern uint32_t MAX_SPIFFS;
-extern uint32_t MAX_FAT_vfs;
-extern uint32_t MAX_FAT_sys;
-
 // Screen sleep control variables
 extern unsigned long previousMillis;
 extern bool isSleeping;
@@ -217,6 +212,8 @@ extern String fileToCopy;
 extern bool onlyBins;
 
 extern bool noDotFiles;
+
+extern bool autoBackup;
 
 extern int rotation;
 

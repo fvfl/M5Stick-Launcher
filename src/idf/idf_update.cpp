@@ -58,27 +58,6 @@ void setError(int error) {
     ctx.running = false;
 }
 
-const esp_partition_t *findPartition(LauncherUpdateTarget target) {
-    switch (target) {
-        case LAUNCHER_UPDATE_APP: return esp_ota_get_next_update_partition(nullptr);
-        case LAUNCHER_UPDATE_SPIFFS: {
-            const esp_partition_t *partition =
-                esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
-            if (!partition) {
-                partition = esp_partition_find_first(
-                    ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_LITTLEFS, nullptr
-                );
-            }
-            return partition;
-        }
-        case LAUNCHER_UPDATE_FAT_VFS:
-            return esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "vfs");
-        case LAUNCHER_UPDATE_FAT_SYS:
-            return esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "sys");
-    }
-    return nullptr;
-}
-
 bool isBootableAppPartition(const esp_partition_t *partition) {
     uint8_t byte = 0;
     return partition && esp_partition_read(partition, 0, &byte, 1) == ESP_OK &&
@@ -283,34 +262,6 @@ bool writeData(const uint8_t *data, size_t len) {
 }
 } // namespace
 
-bool launcherUpdateBegin(LauncherUpdateTarget target, size_t size) {
-    ctx = LauncherUpdateContext();
-    ctx.target = target;
-    ctx.size = size;
-
-    if (size == 0) {
-        setError(LAUNCHER_UPDATE_ERROR_SIZE);
-        return false;
-    }
-
-    ctx.partition = findPartition(target);
-    if (!ctx.partition) {
-        setError(LAUNCHER_UPDATE_ERROR_NO_PARTITION);
-        return false;
-    }
-    ctx.partition_size = ctx.partition->size;
-
-    if (size > ctx.partition_size) {
-        setError(LAUNCHER_UPDATE_ERROR_SIZE);
-        return false;
-    }
-
-    ctx.running = true;
-    ctx.error = LAUNCHER_UPDATE_ERROR_OK;
-    ctx.app_header_pending = target == LAUNCHER_UPDATE_APP;
-    return true;
-}
-
 size_t launcherUpdateWrite(const uint8_t *data, size_t len) {
     if (!ctx.running || ctx.error != LAUNCHER_UPDATE_ERROR_OK || !data || len == 0) return 0;
 
@@ -321,7 +272,7 @@ size_t launcherUpdateWrite(const uint8_t *data, size_t len) {
     return write_len;
 }
 
-bool launcherUpdateEnd() {
+bool launcherRawUpdateEnd() {
     if (!ctx.running || ctx.error != LAUNCHER_UPDATE_ERROR_OK) return false;
     if (ctx.raw && !flushRawTail()) return false;
     if (ctx.written != ctx.size) {
@@ -389,46 +340,13 @@ const char *launcherUpdateLastErrorName() {
     }
 }
 
-bool launcherUpdateStream(
-    Stream &source, size_t size, LauncherUpdateTarget target, LauncherUpdateProgress cb
-) {
-    if (!launcherUpdateBegin(target, size)) return false;
-
-    uint8_t buffer[1024];
-    size_t written = 0;
-    if (cb) cb(0, size);
-
-    while (written < size) {
-        const size_t to_read = std::min(sizeof(buffer), size - written);
-        const int bytes_read = source.readBytes(buffer, to_read);
-        if (bytes_read <= 0) {
-            setError(LAUNCHER_UPDATE_ERROR_STREAM);
-            return false;
-        }
-        if (launcherUpdateWrite(buffer, bytes_read) != static_cast<size_t>(bytes_read)) return false;
-        written += bytes_read;
-        if (cb) cb(written, size);
-        launcherDelayMs(1);
-    }
-
-    return launcherUpdateEnd();
-}
-
-bool launcherUpdateTargetFromCommand(int command, LauncherUpdateTarget &target) {
-    switch (command) {
-        case LAUNCHER_UPDATE_COMMAND_FLASH: target = LAUNCHER_UPDATE_APP; return true;
-        case LAUNCHER_UPDATE_COMMAND_SPIFFS: target = LAUNCHER_UPDATE_SPIFFS; return true;
-        default: return false;
-    }
-}
-
 bool launcherRawUpdateBegin(uint32_t address, size_t partitionSize, size_t imageSize, bool appImage) {
     ctx = LauncherUpdateContext();
     ctx.raw = true;
     ctx.raw_address = address;
     ctx.partition_size = partitionSize;
     ctx.size = imageSize;
-    ctx.target = appImage ? LAUNCHER_UPDATE_APP : LAUNCHER_UPDATE_SPIFFS;
+    ctx.target = appImage ? LAUNCHER_UPDATE_APP : LAUNCHER_UPDATE_DATA;
 
     if (address == 0 || partitionSize == 0 || imageSize == 0) {
         setError(LAUNCHER_UPDATE_ERROR_BAD_ARGUMENT);
@@ -451,8 +369,6 @@ bool launcherRawUpdateBegin(uint32_t address, size_t partitionSize, size_t image
 }
 
 size_t launcherRawUpdateWrite(const uint8_t *data, size_t len) { return launcherUpdateWrite(data, len); }
-
-bool launcherRawUpdateEnd() { return launcherUpdateEnd(); }
 
 bool launcherRawErase(uint32_t address, size_t size) {
     ctx.error = LAUNCHER_UPDATE_ERROR_OK;

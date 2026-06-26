@@ -1,5 +1,6 @@
 #include "onlineLauncher.h"
 #include "app_registry.h"
+#include "backup_manager.h"
 #include "display.h"
 #include "idf/idf_http_client.h"
 #include "idf/idf_update.h"
@@ -315,13 +316,6 @@ bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
     return true;
 }
 
-struct HttpUpdateContext {
-    LauncherUpdateTarget target;
-    size_t expected;
-    size_t written;
-    bool started;
-};
-
 struct RawHttpUpdateContext {
     uint32_t address;
     size_t partitionSize;
@@ -330,25 +324,6 @@ struct RawHttpUpdateContext {
     bool appImage;
     bool started;
 };
-
-bool launcherUpdateHttpCb(const uint8_t *data, size_t len, void *ctx) {
-    HttpUpdateContext *updateCtx = static_cast<HttpUpdateContext *>(ctx);
-    if (!updateCtx) return false;
-    if (!updateCtx->started) {
-        if (!launcherUpdateBegin(updateCtx->target, updateCtx->expected)) return false;
-        updateCtx->started = true;
-        progressHandler(0, updateCtx->expected);
-    }
-    const size_t remaining =
-        updateCtx->written < updateCtx->expected ? updateCtx->expected - updateCtx->written : 0;
-    const size_t writeLen = len > remaining ? remaining : len;
-    if (writeLen == 0) return true;
-    size_t wrote = launcherUpdateWrite(data, writeLen);
-    if (wrote != writeLen) { return false; }
-    updateCtx->written += wrote;
-    progressHandler(updateCtx->written, updateCtx->expected);
-    return true;
-}
 
 bool launcherRawUpdateHttpCb(const uint8_t *data, size_t len, void *ctx) {
     RawHttpUpdateContext *updateCtx = static_cast<RawHttpUpdateContext *>(ctx);
@@ -416,9 +391,8 @@ bool flashRawRangeFromHttp(
 
 bool installFirmwareDynamic(
     const String &fileAddr, const String &file, uint32_t appSize, uint32_t appPartitionSize,
-    uint32_t appOffset, bool spiffs, uint32_t spiffsOffset, uint32_t spiffsSize, uint32_t spiffsCopySize,
-    bool nb, std::vector<LauncherInstallFatPartition> &fatPartitions, const String &installedName,
-    const String &spiffsLabel
+    uint32_t appOffset, bool nb, std::vector<LauncherInstallDataPartition> &dataPartitions,
+    const String &installedName
 ) {
     String error;
     LauncherPartitionTable table;
@@ -457,22 +431,8 @@ bool installFirmwareDynamic(
 
     String appLabel = launcherInstallNextAppLabel(table, file, installedName);
     LauncherPartitionEntry appEntry;
-    LauncherPartitionEntry spiffsEntry;
-    bool hasSpiffsEntry = false;
 
-    if (!launcherSelectInstallLayout(
-            table,
-            appPartitionSize,
-            appLabel,
-            spiffs,
-            spiffsSize,
-            fatPartitions,
-            appEntry,
-            spiffsEntry,
-            hasSpiffsEntry,
-            error,
-            spiffsLabel
-        )) {
+    if (!launcherSelectInstallLayout(table, appPartitionSize, appLabel, dataPartitions, appEntry, error)) {
         displayRedStripe(error.length() ? error : "No install space");
         launcherDelayMs(2000);
         return false;
@@ -489,39 +449,15 @@ bool installFirmwareDynamic(
         goto DONE;
     }
 
-    if (hasSpiffsEntry) {
-        if (spiffsCopySize > 0) {
-            const uint32_t copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
-            if (copySize > 0) {
-                displayRedStripe("Installing SPIFFS");
-                prog_handler = 1;
-                progressHandler(0, copySize);
-                if (!flashRawRangeFromHttp(
-                        fileAddr, spiffsOffset, copySize, spiffsEntry, false, hwid.c_str()
-                    )) {
-                    displayRedStripe(String("SPIFFS: ") + launcherUpdateLastErrorName());
-                    launcherDelayMs(2000);
-                    goto DONE;
-                }
-            }
-        }
-    }
-
-    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        if (!fatPartition.hasEntry) continue;
-        if (fatPartition.copySize == 0) continue;
-        displayRedStripe("Installing FAT");
+    for (const auto &dp : dataPartitions) {
+        if (!dp.hasEntry || dp.copySize == 0) continue;
+        const char *typeStr = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
+        displayRedStripe(String("Installing ") + typeStr);
         prog_handler = 1;
-        progressHandler(0, fatPartition.copySize);
-        if (!flashRawRangeFromHttp(
-                fileAddr,
-                fatPartition.sourceOffset,
-                fatPartition.copySize,
-                fatPartition.entry,
-                false,
-                hwid.c_str()
-            )) {
-            displayRedStripe(String("FAT: ") + launcherUpdateLastErrorName());
+        const uint32_t copySize = dp.copySize > dp.entry.size ? dp.entry.size : dp.copySize;
+        progressHandler(0, copySize);
+        if (!flashRawRangeFromHttp(fileAddr, dp.sourceOffset, copySize, dp.entry, false, hwid.c_str())) {
+            displayRedStripe(String(typeStr) + ": " + launcherUpdateLastErrorName());
             launcherDelayMs(2000);
             goto DONE;
         }
@@ -543,10 +479,30 @@ bool installFirmwareDynamic(
 
     {
         std::vector<String> fatLabels;
-        for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-            if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
+        String registeredSpiffsLabel;
+        for (const auto &dp : dataPartitions) {
+            if (!dp.hasEntry) continue;
+            if (dp.subtype == 0x81) fatLabels.push_back(dp.label);
+            else registeredSpiffsLabel = dp.label;
         }
-        launcherSaveInstalledAppMetadata(table, appEntry, file, installedName, fatLabels, hasSpiffsEntry ? spiffsLabel : String());
+        launcherSaveInstalledAppMetadata(
+            table, appEntry, file, installedName, fatLabels, registeredSpiffsLabel
+        );
+
+        String appNum = generateAppNum(file);
+        BackupInstallInfo bkInfo;
+        bkInfo.appNum = appNum;
+        bkInfo.sdFilepath = file;
+        bkInfo.appName = installedName.isEmpty() ? String(appEntry.label) : installedName;
+        for (const auto &dp : dataPartitions) {
+            if (!dp.hasEntry) continue;
+            BackupPartitionInfo part;
+            part.label = dp.label;
+            part.type = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
+            bkInfo.partitions.push_back(part);
+        }
+        saveInstalledToConfig(bkInfo);
+        if (autoBackup && !bkInfo.partitions.empty()) backupAllPartitionsForApp(appNum);
     }
 
     saveIntoNVS();
@@ -682,13 +638,7 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
     uint32_t appPartitionSize = appCopySize;
     bool nb = appOffset == 0;
 
-    bool spiffs = false;
-    uint32_t spiffsOffset = 0;
-    uint32_t spiffsSize = 0;
-    uint32_t spiffsCopySize = 0;
-    String spiffsLabel = "spiffs";
-
-    std::vector<LauncherInstallFatPartition> fatPartitions;
+    std::vector<LauncherInstallDataPartition> dataPartitions;
 
     for (JsonObject part : partitions) {
         String type = part["type"].as<String>();
@@ -699,32 +649,38 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
             appPartitionSize = appCopySize;
             nb = appOffset == 0;
         } else if (type == "data" && (subtype == "spiffs" || subtype == "littlefs")) {
-            spiffs = true;
+            LauncherInstallDataPartition dp;
+            dp.subtype = (subtype == "littlefs") ? 0x83 : 0x82;
             uint32_t declaredSize = part["size"] | 0;
-            spiffsOffset = part["source_offset"] | 0;
-            spiffsCopySize = part["copy_size"] | 0;
-            String declaredLabel = part["label"].as<String>();
-            if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
-            // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
-            if (spiffsLabel == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
-                spiffsSize = declaredSize;
+            dp.sourceOffset = part["source_offset"] | 0;
+            dp.copySize = part["copy_size"] | 0;
+            dp.label = part["label"].as<String>();
+            if (dp.label.isEmpty()) dp.label = "spiffs";
+            if (dp.label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                dp.partitionSize = declaredSize;
             } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
-                spiffsSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+                dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
             } else {
-                spiffsSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
             }
+            dataPartitions.push_back(dp);
         } else if (type == "data" && subtype == "fat") {
-            LauncherInstallFatPartition fatPartition;
-            fatPartition.label = part["label"].as<String>();
-            if (fatPartition.label.isEmpty()) { fatPartition.label = fatPartitions.empty() ? "sys" : "vfs"; }
+            LauncherInstallDataPartition dp;
+            dp.subtype = 0x81;
+            dp.label = part["label"].as<String>();
+            bool hasExistingFat = std::any_of(
+                dataPartitions.begin(), dataPartitions.end(), [](const LauncherInstallDataPartition &d) {
+                    return d.subtype == 0x81;
+                }
+            );
             uint32_t declaredSize = part["size"] | 0;
-            fatPartition.sourceOffset = part["source_offset"] | 0;
+            dp.sourceOffset = part["source_offset"] | 0;
             uint32_t requestedCopySize = part["copy_size"] | 0;
             LauncherPartitionPayloadPlan payload =
-                launcherPartitionFatPayloadPlan(fatPartition.label.c_str(), declaredSize, requestedCopySize);
-            fatPartition.partitionSize = payload.partitionSize;
-            fatPartition.copySize = payload.copySize;
-            fatPartitions.push_back(fatPartition);
+                launcherPartitionFatPayloadPlan(dp.label.c_str(), declaredSize, requestedCopySize);
+            dp.partitionSize = payload.partitionSize;
+            dp.copySize = payload.copySize;
+            dataPartitions.push_back(dp);
         }
     }
 
@@ -742,19 +698,7 @@ void installFirmwareFromManifest(String fid, String version, String installedNam
     if (!manifestName.isEmpty()) installedName = manifestName;
 
     if (!installFirmwareDynamic(
-            fileAddr,
-            file,
-            appCopySize,
-            appPartitionSize,
-            appOffset,
-            spiffs,
-            spiffsOffset,
-            spiffsSize,
-            spiffsCopySize,
-            nb,
-            fatPartitions,
-            installedName,
-            spiffsLabel
+            fileAddr, file, appCopySize, appPartitionSize, appOffset, nb, dataPartitions, installedName
         )) {
         launcherDelayMs(2500);
     }
@@ -837,14 +781,10 @@ retry:
 ***************************************************************************************/
 bool installExtFirmware(String url) {
     size_t file_size;
-    bool spiffs = 0;
-    uint32_t spiffs_offset = 0;
-    uint32_t spiffs_size = 0;
-    String spiffsLabel = "spiffs";
     bool nb = 1;
-    std::vector<LauncherInstallFatPartition> fatPartitions;
+    std::vector<LauncherInstallDataPartition> dataPartitions;
     uint8_t bytes[32];
-    if (!url.startsWith("https://")) {
+    if (!url.startsWith("http")) {
         displayRedStripe("Invalid link");
         launcherDelayMs(2000);
         return false;
@@ -874,65 +814,42 @@ bool installExtFirmware(String url) {
                 }
             }
             if (bytes[3] == 0x81) {
-                LauncherInstallFatPartition fatPartition;
                 char labelBuf[17] = {0};
                 memcpy(labelBuf, bytes + 12, 16);
-                labelBuf[16] = '\0';
-                fatPartition.label = String(labelBuf);
-                if (fatPartition.label.isEmpty()) {
-                    if (fatPartitions.empty()) fatPartition.label = "sys";
-                    else if (fatPartitions.size() == 1) fatPartition.label = "vfs";
-                    else fatPartition.label = String("fat") + String(fatPartitions.size());
-                }
-                fatPartition.sourceOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
+                if (labelBuf[0] == '\0') continue;
+                LauncherInstallDataPartition dp;
+                dp.subtype = 0x81;
+                dp.label = String(labelBuf);
+                dp.sourceOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
                 bytes[0x0C] = 0;
                 uint32_t declaredSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
                 LauncherPartitionPayloadPlan payload =
-                    launcherPartitionFatPayloadPlan(fatPartition.label.c_str(), declaredSize, declaredSize);
-                fatPartition.partitionSize = payload.partitionSize;
-                fatPartition.copySize = payload.copySize;
-                fatPartitions.push_back(fatPartition);
+                    launcherPartitionFatPayloadPlan(dp.label.c_str(), declaredSize, declaredSize);
+                dp.partitionSize = payload.partitionSize;
+                dp.copySize = payload.copySize;
+                dataPartitions.push_back(dp);
             }
             if (bytes[3] == 0x82 || bytes[3] == 0x83) {
-                spiffs = true;
-                spiffs_offset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
-                bytes[0x0C] = 0;
-                spiffs_size = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
-                // Read the actual partition label from the table entry
                 char labelBuf[17] = {0};
                 memcpy(labelBuf, bytes + 12, 16);
-                labelBuf[16] = '\0';
-                if (labelBuf[0] != '\0') { spiffsLabel = String(labelBuf); }
+                if (labelBuf[0] == '\0') continue;
+                LauncherInstallDataPartition dp;
+                dp.subtype = bytes[3];
+                dp.label = String(labelBuf);
+                dp.sourceOffset = (bytes[0x06] << 16) | (bytes[0x07] << 8) | bytes[0x08];
+                bytes[0x0C] = 0;
+                dp.partitionSize = (bytes[0x0A] << 16) | (bytes[0x0B] << 8) | bytes[0x0C];
+                dp.copySize = dp.partitionSize;
+                dataPartitions.push_back(dp);
             }
         }
-        size_t temp_size = 0;
-        if (file_size < MAX_APP || PartitionSize <= MAX_APP) {
-            temp_size = PartitionSize;
-            temp_size += PartitionOffset;
-            if (file_size <= temp_size) {
-                PartitionSize = file_size;
-                PartitionSize -= PartitionOffset;
-            }
-        }
-        if (file_size >= spiffs_offset && spiffs_size > MAX_SPIFFS) {
-            spiffs_size = MAX_SPIFFS;
-            temp_size = spiffs_offset + spiffs_size;
-            if (file_size <= temp_size) { spiffs_size = file_size - spiffs_offset; }
+        if (file_size < PartitionOffset + PartitionSize) PartitionSize = file_size - PartitionOffset;
+        for (auto &dp : dataPartitions) {
+            if (dp.subtype != 0x81 && file_size < dp.sourceOffset + dp.copySize)
+                dp.copySize = file_size - dp.sourceOffset;
         }
     }
-    installFirmware(
-        "",
-        url,
-        PartitionSize,
-        PartitionOffset,
-        spiffs,
-        spiffs_offset,
-        spiffs_size,
-        nb,
-        fatPartitions,
-        "External OTA",
-        spiffsLabel
-    );
+    installFirmware("", url, PartitionSize, PartitionOffset, nb, dataPartitions, "External OTA");
     return true;
 }
 
@@ -940,141 +857,43 @@ bool installExtFirmware(String url) {
 ** Function name: installFirmware
 ** Description:   installs Firmware using OTA
 ***************************************************************************************/
-void installFirmware( // adicionar "fid"
-    String fid, String file, uint32_t app_size, uint32_t app_offset, bool spiffs, uint32_t spiffs_offset, uint32_t spiffs_size, bool nb,
-    std::vector<LauncherInstallFatPartition> &fatPartitions, String installedName, const String &spiffsLabel
+void installFirmware(
+    String fid, String file, uint32_t app_size, uint32_t app_offset, bool nb,
+    std::vector<LauncherInstallDataPartition> &dataPartitions, String installedName
 ) {
     if (!file.startsWith("https://")) file = M5_SERVER_PATH + file;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file;
     if (fid == "") fileAddr = file;
 
-    uint32_t spiffsCopySize = spiffs_size;
-
-    // Release RAM Memory from Json Objects
-    if (askSpiffs == false) spiffsCopySize = 0;
-    if (spiffs && askSpiffs && spiffsCopySize > 0) {
-        bool copySpiffs = true;
-        options = {
-            {"SPIFFS No",  [&]() { copySpiffs = false; }},
-            {"SPIFFS Yes", [&]() { copySpiffs = true; } },
-        };
-        loopOptions(options);
-        if (!copySpiffs) spiffsCopySize = 0;
+    {
+        auto spiffsIt = std::find_if(
+            dataPartitions.begin(), dataPartitions.end(), [](const LauncherInstallDataPartition &d) {
+                return d.subtype != 0x81;
+            }
+        );
+        if (spiffsIt != dataPartitions.end()) {
+            if (!askSpiffs) {
+                spiffsIt->copySize = 0;
+            } else if (spiffsIt->copySize > 0) {
+                bool copySpiffs = true;
+                options = {
+                    {"SPIFFS No",  [&]() { copySpiffs = false; }},
+                    {"SPIFFS Yes", [&]() { copySpiffs = true; } },
+                };
+                loopOptions(options);
+                if (!copySpiffs) spiffsIt->copySize = 0;
+            }
+        }
     }
-
-    if (spiffs && spiffs_size > MAX_SPIFFS) spiffs_size = MAX_SPIFFS;
-    if (app_size > MAX_APP) app_size = MAX_APP;
-    if (app_size > MAX_APP) app_size = MAX_APP;
 
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FW");
 
     if (!installFirmwareDynamic(
-            fileAddr,
-            file,
-            app_size,
-            app_size,
-            app_offset,
-            spiffs,
-            spiffs_offset,
-            spiffs_size,
-            spiffsCopySize,
-            nb,
-            fatPartitions,
-            installedName,
-            spiffsLabel
+            fileAddr, file, app_size, app_size, app_offset, nb, dataPartitions, installedName
         )) {
         launcherDelayMs(2500);
     }
-    return;
-
-    /* Install App */
-    prog_handler = 0;
-    tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
-    progressHandler(0, 500);
-    pauseInputHandlerTask();
-    size_t updateSize = app_size;
-    HttpUpdateContext appUpdate = {LAUNCHER_UPDATE_APP, updateSize, 0, false};
-    bool success = false;
-    String hwid = String(launcherWifiMac().c_str());
-    if (nb && updateSize == 0 && !getRemoteFileSize(fileAddr, updateSize, hwid.c_str())) goto SAIR;
-    appUpdate.expected = updateSize;
-    success =
-        nb ? launcherHttpGetRange(
-                 fileAddr.c_str(), 0, updateSize, launcherUpdateHttpCb, &appUpdate, nullptr, hwid.c_str()
-             )
-           : launcherHttpGetRange(
-                 fileAddr.c_str(),
-                 app_offset,
-                 updateSize,
-                 launcherUpdateHttpCb,
-                 &appUpdate,
-                 nullptr,
-                 hwid.c_str()
-             );
-    if (success) success = launcherUpdateEnd();
-    if (!success) {
-        displayRedStripe(String("OTA: ") + launcherUpdateLastErrorName());
-        launcherDelayMs(2000);
-        goto SAIR;
-    }
-    displayRedStripe("Post Install Cleanup");
-    launcherClearCoredump();
-
-    // Do not request to api.launcherhub.net a second time, go straight to the file
-    // Requests must be done to "file" link directly
-    if (spiffs) {
-        prog_handler = 1;
-        tft->fillRect(5, 60, tftWidth - 10, 16, ALCOLOR);
-        setTftDisplay(5, 60, WHITE, FM, ALCOLOR);
-
-        tft->println(" Preparing SPIFFS");
-        // Format Spiffs partition
-        if (!SPIFFS.begin(true)) {
-            displayRedStripe("Fail to start SPIFFS");
-            launcherDelayMs(2500);
-        } else {
-            displayRedStripe("Formatting SPIFFS");
-            SPIFFS.format();
-            SPIFFS.end();
-        }
-        displayRedStripe("Connecting SPIFFs");
-
-        // Install Spiffs
-        progressHandler(0, 500);
-        HttpUpdateContext spiffsUpdate = {LAUNCHER_UPDATE_SPIFFS, spiffs_size, 0, false};
-        bool spiffsOk = launcherHttpGetRange(
-                            file.c_str(), spiffs_offset, spiffs_size, launcherUpdateHttpCb, &spiffsUpdate
-                        ) &&
-                        launcherUpdateEnd();
-        if (!spiffsOk) {
-            displayRedStripe("SPIFFS Failed");
-            launcherDelayMs(2500);
-        }
-    }
-
-    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        if (fatPartition.copySize > 0) {
-            if (!installFAT_OTA(
-                    file, fatPartition.sourceOffset, fatPartition.copySize, fatPartition.label.c_str()
-                )) {
-                displayRedStripe("FAT Failed");
-                launcherDelayMs(2500);
-            }
-        }
-    }
-
-Sucesso:
-    if (!installedName.isEmpty()) {
-        lastInstalledApp = installedName;
-        saveIntoNVS();
-    }
-    reboot();
-
-// Só chega aqui se der errado
-SAIR:
-    resumeInputHandlerTask();
-    launcherDelayMs(2000);
 }
 
 /***************************************************************************************
@@ -1087,14 +906,29 @@ bool installFAT_OTA(String file, uint32_t offset, uint32_t size, const char *lab
     tft->fillRect(7, 40, tftWidth - 14, 88, BGCOLOR); // Erase the information below the firmware name
     displayRedStripe("Connecting FAT");
 
-    LauncherUpdateTarget target =
-        strcmp(label, "sys") == 0 ? LAUNCHER_UPDATE_FAT_SYS : LAUNCHER_UPDATE_FAT_VFS;
-    HttpUpdateContext fatUpdate = {target, size, 0, false};
+    const esp_partition_t *partition =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, label);
+    if (!partition) {
+        displayRedStripe("Partition not found");
+        launcherDelayMs(2500);
+        return false;
+    }
+
+    RawHttpUpdateContext fatUpdate = {partition->address, partition->size, size, 0, false, false};
     displayRedStripe("Installing FAT");
     pauseInputHandlerTask();
-    bool ok = launcherHttpGetRange(file.c_str(), offset, size, launcherUpdateHttpCb, &fatUpdate) &&
-              launcherUpdateEnd();
+    bool ok = launcherHttpGetRange(file.c_str(), offset, size, launcherRawUpdateHttpCb, &fatUpdate) &&
+              fatUpdate.written == size && launcherRawUpdateEnd();
     resumeInputHandlerTask();
+    if (ok) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(partition->address, partition->size, &patchError)) {
+            launcherConsolePrintf(
+                "LittleFS patch failed after FAT OTA label=%s: %s\n", label, patchError.c_str()
+            );
+            ok = false;
+        }
+    }
     vTaskDelay(pdTICKS_TO_MS(500));
     return ok;
 }

@@ -1,4 +1,5 @@
 #include "sd_functions.h"
+#include "backup_manager.h"
 #include "display.h"
 #include "esp_log.h"
 #include "idf/idf_update.h"
@@ -412,37 +413,6 @@ RESTART:
     return fileToUse;
 }
 
-/***************************************************************************************
-** Function name: performUpdate
-** Description:   this function performs the update
-***************************************************************************************/
-bool performUpdate(Stream &updateSource, size_t updateSize, int command) {
-    bool success = false;
-    tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
-    progressHandler(0, 500);
-
-    pauseSdInstallInput();
-    LauncherUpdateTarget target;
-    if (launcherUpdateTargetFromCommand(command, target)) {
-        prog_handler = target == LAUNCHER_UPDATE_APP ? 0 : 1;
-        log_i("updateSize = %d", updateSize);
-        if (launcherUpdateStream(updateSource, updateSize, target, progressHandler) &&
-            launcherUpdateIsFinished()) {
-            log_i("Update successfully completed. Rebooting.");
-            displayRedStripe("Post Install Cleanup");
-            launcherClearCoredump();
-            success = true;
-        } else {
-            log_i("Error Occurred. Error #: %d", launcherUpdateLastError());
-        }
-    } else {
-        uint8_t error = launcherUpdateLastError();
-        displayRedStripe("E:" + String(error) + "-Wrong Partition Scheme");
-        launcherDelayMs(2500);
-    }
-    resumeSdInstallInput();
-    return success;
-}
 static String installedAppNameFromPath(const String &path) { return launcherInstallAppDisplayName(path); }
 
 static bool flashRawFromSd(
@@ -563,9 +533,8 @@ static uint32_t effectiveSdAppSize(File &file, uint32_t appOffset, uint32_t fall
 }
 
 static bool installFromSdDynamic(
-    File &file, const String &path, uint32_t appSize, uint32_t appOffset, bool spiffs, uint32_t spiffsOffset,
-    uint32_t spiffsSize, uint32_t spiffsCopySize, std::vector<LauncherInstallFatPartition> &fatPartitions,
-    const String &spiffsLabel
+    File &file, const String &path, uint32_t appSize, uint32_t appOffset,
+    std::vector<LauncherInstallDataPartition> &dataPartitions
 ) {
     String error;
     LauncherPartitionTable table;
@@ -583,22 +552,8 @@ static bool installFromSdDynamic(
 
     String appLabel = launcherPartitionNextAppLabel(table, installedAppNameFromPath(path));
     LauncherPartitionEntry appEntry;
-    LauncherPartitionEntry spiffsEntry;
-    bool hasSpiffsEntry = false;
 
-    if (!launcherSelectInstallLayout(
-            table,
-            appSize,
-            appLabel,
-            spiffs,
-            spiffsSize,
-            fatPartitions,
-            appEntry,
-            spiffsEntry,
-            hasSpiffsEntry,
-            error,
-            spiffsLabel
-        )) {
+    if (!launcherSelectInstallLayout(table, appSize, appLabel, dataPartitions, appEntry, error)) {
         launcherConsolePrintf("SD install layout failed: %s\n", error.c_str());
         displayRedStripe(error.length() ? error : "No install space");
         launcherDelayMs(2000);
@@ -610,39 +565,63 @@ static bool installFromSdDynamic(
         return false;
     }
 
+    String appNum = generateAppNum(path);
+    bool shouldRestore = false;
+    BackupInstallInfo prevInstall = loadInstalledFromConfig(appNum);
+    if (!prevInstall.appNum.isEmpty()) {
+        std::vector<String> restorable;
+        for (const auto &bp : prevInstall.partitions) {
+            if (!bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath))
+                restorable.push_back(bp.label);
+        }
+        if (!restorable.empty()) {
+            if (autoBackup) {
+                int choice = -1;
+                std::vector<Option> opts = {
+                    {"Restore Data",  [&]() { choice = 0; }},
+                    {"Fresh Install", [&]() { choice = 1; }},
+                };
+                displayRedStripe("Previous backup found. Restore?");
+                loopOptions(opts);
+                shouldRestore = (choice == 0);
+            } else {
+                shouldRestore = true;
+            }
+        }
+    }
+
     pauseSdInstallInput();
-    bool success = false;
-    displayRedStripe("Installing APP");
-    prog_handler = 0;
-    if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
-        displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
-        launcherDelayMs(2000);
-        goto DONE;
-    }
-
-    if (hasSpiffsEntry && spiffsCopySize > 0) {
-        const uint32_t copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
-        displayRedStripe("Installing SPIFFS");
-        prog_handler = 1;
-        if (!flashRawFromSd(file, spiffsOffset, copySize, spiffsEntry, false)) {
-            displayRedStripe(String("SPIFFS: ") + launcherUpdateLastErrorName());
+        bool success = false;
+        displayRedStripe("Installing APP");
+        prog_handler = 0;
+        if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
+            displayRedStripe(String("APP: ") + launcherUpdateLastErrorName());
             launcherDelayMs(2000);
             goto DONE;
         }
-    }
 
-    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        if (!fatPartition.hasEntry || fatPartition.copySize == 0) continue;
-        displayRedStripe(String("Installing ") + fatPartition.label);
-        prog_handler = 1;
-        if (!flashRawFromSd(
-                file, fatPartition.sourceOffset, fatPartition.copySize, fatPartition.entry, false
-            )) {
-            displayRedStripe(String("FAT: ") + launcherUpdateLastErrorName());
-            launcherDelayMs(2000);
-            goto DONE;
+        for (const auto &dp : dataPartitions) {
+            if (!dp.hasEntry || dp.copySize == 0) continue;
+            if (shouldRestore) {
+                bool willRestore = false;
+                for (const auto &bp : prevInstall.partitions) {
+                    if (bp.label == dp.label && !bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath)) {
+                        willRestore = true;
+                        break;
+                    }
+                }
+                if (willRestore) continue;
+            }
+            const char *typeStr = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
+            displayRedStripe(String("Installing ") + typeStr);
+            prog_handler = 1;
+            const uint32_t copySize = dp.copySize > dp.entry.size ? dp.entry.size : dp.copySize;
+            if (!flashRawFromSd(file, dp.sourceOffset, copySize, dp.entry, false)) {
+                displayRedStripe(String(typeStr) + ": " + launcherUpdateLastErrorName());
+                launcherDelayMs(2000);
+                goto DONE;
+            }
         }
-    }
 
     displayRedStripe("Writing table");
     if (!launcherPartitionWriteGeneratedTable(table, &error)) {
@@ -658,13 +637,63 @@ static bool installFromSdDynamic(
         goto DONE;
     }
 
+    if (shouldRestore) {
+        for (const auto &bp : prevInstall.partitions) {
+            if (!bp.lastBackupPath.isEmpty() && SDM.exists(bp.lastBackupPath)) {
+                // Prefer direct write using the freshly written partition table entry,
+                // since the IDF partition cache still reflects the old table.
+                bool restored = false;
+                for (const auto &dp : dataPartitions) {
+                    if (dp.label == bp.label && dp.hasEntry) {
+                        restored = restorePartitionFromBackupDirect(
+                            bp.label.c_str(), bp.lastBackupPath.c_str(),
+                            dp.entry.offset, dp.entry.size
+                        );
+                        break;
+                    }
+                }
+                if (!restored) {
+                    restored = restorePartitionFromBackup(bp.label.c_str(), bp.lastBackupPath.c_str());
+                }
+                if (!restored) {
+                    log_w("[Restore] Failed: %s", bp.label.c_str());
+                }
+            }
+        }
+    }
+
     {
         std::vector<String> fatLabels;
-        for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-            if (fatPartition.hasEntry) fatLabels.push_back(String(fatPartition.entry.label));
+        String registeredSpiffsLabel;
+        for (const auto &dp : dataPartitions) {
+            if (!dp.hasEntry) continue;
+            if (dp.subtype == 0x81) fatLabels.push_back(dp.label);
+            else registeredSpiffsLabel = dp.label;
         }
-        launcherSaveInstalledAppMetadata(table, appEntry, path, installedAppNameFromPath(path), fatLabels, hasSpiffsEntry ? spiffsLabel : String());
+        launcherSaveInstalledAppMetadata(
+            table, appEntry, path, installedAppNameFromPath(path), fatLabels, registeredSpiffsLabel
+        );
         saveIntoNVS();
+
+        BackupInstallInfo bkInfo;
+        bkInfo.appNum = appNum;
+        bkInfo.sdFilepath = path;
+        bkInfo.appName = installedAppNameFromPath(path);
+        for (const auto &dp : dataPartitions) {
+            if (!dp.hasEntry) continue;
+            BackupPartitionInfo part;
+            part.label = dp.label;
+            part.type = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
+            for (const auto &bp : prevInstall.partitions) {
+                if (bp.label == part.label && !bp.lastBackupPath.isEmpty()) {
+                    part.lastBackupPath = bp.lastBackupPath;
+                    break;
+                }
+            }
+            bkInfo.partitions.push_back(part);
+        }
+        saveInstalledToConfig(bkInfo);
+        if (autoBackup && !bkInfo.partitions.empty() && !shouldRestore) { backupAllPartitionsForApp(appNum); }
     }
 
     success = true;
@@ -676,18 +705,13 @@ DONE:
 
 /***************************************************************************************
 ** Function name: updateFromSD
-** Description:   this function analyse the .bin and calls performUpdate
+** Description:   this function analyse the .bin and calls installFromSdDynamic
 ***************************************************************************************/
 void updateFromSD(String path) {
     uint8_t partitionEntry[LAUNCHER_PARTITION_ENTRY_SIZE];
-    uint32_t spiffs_offset = 0;
-    uint32_t spiffs_size = 0;
-    uint32_t spiffs_copy_size = 0;
     uint32_t app_size = 0;
     uint32_t app_offset = 0;
-    bool spiffs = false;
-    String spiffsLabel = "spiffs";
-    std::vector<LauncherInstallFatPartition> fatPartitions;
+    std::vector<LauncherInstallDataPartition> dataPartitions;
 
     File file = SDM.open(path);
 
@@ -697,8 +721,7 @@ void updateFromSD(String path) {
 
     if (partitionEntry[0] != 0xAA || partitionEntry[1] != 0x50 || partitionEntry[2] != 0x01) {
         app_size = effectiveSdAppSize(file, 0, file.size());
-        std::vector<LauncherInstallFatPartition> fatPartitions;
-        if (!installFromSdDynamic(file, path, app_size, 0, false, 0, 0, 0, fatPartitions, spiffsLabel)) { goto Exit; }
+        if (!installFromSdDynamic(file, path, app_size, 0, dataPartitions)) { goto Exit; }
         file.close();
         tft->fillScreen(BGCOLOR);
         FREE_TFT
@@ -735,54 +758,53 @@ void updateFromSD(String path) {
             }
 
             if (partitionEntry[0x02] == 0x01 && (partitionEntry[3] == 0x82 || partitionEntry[3] == 0x83)) {
-                spiffs_offset = readLe32(partitionEntry + 0x04);
-                const uint32_t declaredSpiffsSize = readLe32(partitionEntry + 0x08);
+                LauncherInstallDataPartition dp;
+                dp.subtype = partitionEntry[3];
+                dp.sourceOffset = readLe32(partitionEntry + 0x04);
+                const uint32_t declaredSize = readLe32(partitionEntry + 0x08);
                 String declaredLabel = readPartitionLabel(partitionEntry);
-                if (!declaredLabel.isEmpty()) spiffsLabel = declaredLabel;
+                dp.label = declaredLabel.isEmpty() ? "spiffs" : declaredLabel;
                 // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
-                if (spiffsLabel == "assets" && declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
-                    spiffs_size = declaredSpiffsSize;
-                } else if (declaredSpiffsSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
-                    spiffs_size = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+                if (dp.label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                    dp.partitionSize = declaredSize;
+                } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                    dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
                 } else {
-                    spiffs_size = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                    dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
                 }
-                spiffs_copy_size = boundedSdPartitionPayload(
+                dp.copySize = boundedSdPartitionPayload(
                     file,
-                    spiffs_offset,
-                    declaredSpiffsSize,
-                    spiffs_size == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE ? declaredSpiffsSize
-                                                                              : spiffs_size
+                    dp.sourceOffset,
+                    declaredSize,
+                    dp.partitionSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE ? declaredSize
+                                                                                   : dp.partitionSize
                 );
-                spiffs = true;
-                if (file.size() < spiffs_offset) {
-                    spiffs_copy_size = 0;
+                if (file.size() < dp.sourceOffset) {
+                    dp.copySize = 0;
                     launcherConsolePrintf(
-                        "Found SPIFFS table entry without payload: create 0x%06X, copy 0\n", spiffs_size
+                        "Found SPIFFS table entry without payload: create 0x%06X, copy 0\n", dp.partitionSize
                     );
                 }
+                dataPartitions.push_back(dp);
             }
 
             if (partitionEntry[0x02] == 0x01 && partitionEntry[3] == 0x81) {
-                LauncherInstallFatPartition fatPartition;
-                fatPartition.label = readPartitionLabel(partitionEntry);
+                LauncherInstallDataPartition dp;
+                dp.subtype = 0x81;
+                dp.label = readPartitionLabel(partitionEntry);
                 uint32_t declaredSize = readLe32(partitionEntry + 0x08);
-                fatPartition.sourceOffset = readLe32(partitionEntry + 0x04);
-                if (fatPartition.label.isEmpty()) {
-                    fatPartition.label = fatPartitions.empty() ? "sys" : "vfs";
-                }
-                uint32_t offset = fatPartition.sourceOffset;
-                uint32_t availableSize = offset != 0 && file.size() > offset ? file.size() - offset : 0;
-                LauncherPartitionPayloadPlan payload = launcherPartitionFatPayloadPlan(
-                    fatPartition.label.c_str(), declaredSize, 0, availableSize
-                );
-                fatPartition.partitionSize = payload.partitionSize;
-                fatPartition.copySize = payload.copySize;
-                fatPartitions.push_back(fatPartition);
+                dp.sourceOffset = readLe32(partitionEntry + 0x04);
+                uint32_t availableSize =
+                    dp.sourceOffset != 0 && file.size() > dp.sourceOffset ? file.size() - dp.sourceOffset : 0;
+                LauncherPartitionPayloadPlan payload =
+                    launcherPartitionFatPayloadPlan(dp.label.c_str(), declaredSize, 0, availableSize);
+                dp.partitionSize = payload.partitionSize;
+                dp.copySize = payload.copySize;
+                dataPartitions.push_back(dp);
                 launcherConsolePrintf(
                     "Found FAT %s at 0x%06X: create 0x%06X, copy 0x%06X of declared 0x%06X\n",
-                    fatPartition.label.c_str(),
-                    offset,
+                    dp.label.c_str(),
+                    dp.sourceOffset,
                     payload.partitionSize,
                     payload.copySize,
                     declaredSize
@@ -790,47 +812,38 @@ void updateFromSD(String path) {
             }
         }
 
-        // log_i("Appsize: %d", app_size);
-        // log_i("Spiffsize: %d", spiffs_size);
-        // log_i("FAT count: %d", fatPartitions.size());
-        // log_i("------------------------");
-
         prog_handler = 0; // Install flash update
-        if (askSpiffs == false) spiffs_copy_size = 0;
-        if (spiffs && askSpiffs && spiffs_copy_size > 0) {
-            bool copySpiffs = true;
-            options = {
-                {"SPIFFS No",  [&]() { copySpiffs = false; } },
-                {"SPIFFS Yes", [&]() { copySpiffs = true; }  },
-                {"Cancel",     [&]() { returnToMenu = true; }}
-            };
-            if (loopOptions(options) < 0 || returnToMenu) {
-                file.close();
-                tft->fillScreen(BGCOLOR);
-                return;
+        {
+            auto spiffsIt = std::find_if(
+                dataPartitions.begin(), dataPartitions.end(), [](const LauncherInstallDataPartition &d) {
+                    return d.subtype != 0x81;
+                }
+            );
+            if (spiffsIt != dataPartitions.end()) {
+                if (!askSpiffs) {
+                    spiffsIt->copySize = 0;
+                } else if (spiffsIt->copySize > 0) {
+                    bool copySpiffs = true;
+                    options = {
+                        {"SPIFFS No",  [&]() { copySpiffs = false; } },
+                        {"SPIFFS Yes", [&]() { copySpiffs = true; }  },
+                        {"Cancel",     [&]() { returnToMenu = true; }}
+                    };
+                    if (loopOptions(options) < 0 || returnToMenu) {
+                        file.close();
+                        tft->fillScreen(BGCOLOR);
+                        return;
+                    }
+                    if (!copySpiffs) spiffsIt->copySize = 0;
+                    tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
+                }
             }
-            if (!copySpiffs) spiffs_copy_size = 0;
-            tft->fillRoundRect(6, 6, tftWidth - 12, tftHeight - 12, 5, BGCOLOR);
         }
 
         log_i("Appsize: %d", app_size);
-        log_i("Spiffsize: %d", spiffs_size);
-        log_i("FAT count: %d", fatPartitions.size());
+        log_i("Data partitions: %d", dataPartitions.size());
 
-        if (!installFromSdDynamic(
-                file,
-                path,
-                app_size,
-                app_offset,
-                spiffs,
-                spiffs_offset,
-                spiffs_size,
-                spiffs_copy_size,
-                fatPartitions,
-                spiffsLabel
-            )) {
-            goto Exit;
-        }
+        if (!installFromSdDynamic(file, path, app_size, app_offset, dataPartitions)) { goto Exit; }
         displayRedStripe("Complete");
         launcherDelayMs(1000);
         FREE_TFT
@@ -842,35 +855,39 @@ Exit:
 }
 
 /***************************************************************************************
-** Function name: performFATUpdate
-** Description:   this function performs the update
+** Function name: performDATAUpdate
+** Description:   this function performs the update of any data partition by label
 ***************************************************************************************/
-bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label) {
+bool performDATAUpdate(Stream &updateSource, size_t updateSize, const char *label) {
+    prog_handler = 1;
     progressHandler(0, 500);
-    displayRedStripe("Updating FAT");
-    log_i("Updating FAT partition: %s", label);
+    displayRedStripe("Updating partition");
+    log_i("Updating DATA partition: %s", label);
 
-    LauncherUpdateTarget target =
-        strcmp(label, "sys") == 0 ? LAUNCHER_UPDATE_FAT_SYS : LAUNCHER_UPDATE_FAT_VFS;
-    if (!launcherUpdateStream(updateSource, updateSize, target, progressHandler)) {
+    const esp_partition_t *partition =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, label);
+    if (!partition) {
+        log_i("FAIL: partition not found: %s", label);
+        return false;
+    }
+
+    if (!launcherRawUpdateStream(
+            updateSource, partition->address, partition->size, updateSize, false, progressHandler
+        )) {
         log_i("FAIL updating %s", label);
         return false;
     }
 
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, label);
-    if (partition) {
-        String patchError;
-        if (!launcherPatchReducedLittlefsSuperblocks(partition->address, partition->size, &patchError)) {
-            launcherConsolePrintf(
-                "LittleFS patch failed after FAT restore label=%s offset=0x%08X size=0x%08X: %s\n",
-                label,
-                partition->address,
-                partition->size,
-                patchError.c_str()
-            );
-            return false;
-        }
+    String patchError;
+    if (!launcherPatchReducedLittlefsSuperblocks(partition->address, partition->size, &patchError)) {
+        launcherConsolePrintf(
+            "LittleFS patch failed after DATA restore label=%s offset=0x%08X size=0x%08X: %s\n",
+            label,
+            partition->address,
+            partition->size,
+            patchError.c_str()
+        );
+        return false;
     }
 
     log_i("Success updating %s", label);

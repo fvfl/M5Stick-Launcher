@@ -31,10 +31,6 @@ SET_LOOP_TASK_STACK_SIZE(16384)
 #endif
 
 // Public Globals
-uint32_t MAX_SPIFFS = 0;
-uint32_t MAX_APP = 0;
-uint32_t MAX_FAT_vfs = 0;
-uint32_t MAX_FAT_sys = 0;
 #ifdef USE_M5GFX
 uint16_t FGCOLOR = BLACK;
 uint16_t ALCOLOR = BLACK;
@@ -109,6 +105,7 @@ bool sdcardMounted;
 bool onlyBins;
 bool bootToApp = true;
 bool noDotFiles;
+bool autoBackup = true;
 bool returnToMenu;
 bool update;
 bool askSpiffs;
@@ -141,49 +138,6 @@ uint8_t buff[1024] = {0};
 #include "settings.h"
 #include "webInterface.h"
 
-/*********************************************************************
-**  Function: get_partition_sizes
-**  Get the size of the partitions to be used when installing
-*********************************************************************/
-void get_partition_sizes() {
-    // Obter a tabela de partições
-    const esp_partition_t *partition;
-    esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, NULL);
-
-    // Iterar sobre as partições do tipo APP
-    while (it != NULL) {
-        partition = esp_partition_get(it);
-        if (partition != NULL && partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0) {
-            MAX_APP = partition->size;
-        }
-        it = esp_partition_next(it);
-    }
-    if (it != NULL) esp_partition_iterator_release(it);
-
-    // Iterar sobre as partições do tipo DATA
-    it = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
-    while (it != NULL) {
-        partition = esp_partition_get(it);
-        if (partition != NULL) {
-            if (partition->subtype == ESP_PARTITION_SUBTYPE_DATA_SPIFFS) {
-                MAX_SPIFFS = partition->size;
-            } else if (partition->subtype == ESP_PARTITION_SUBTYPE_DATA_FAT) {
-                log_i("label: %s", partition->label);
-                if (strcmp(partition->label, "vfs") == 0) MAX_FAT_vfs = partition->size;
-                else if (strcmp(partition->label, "sys") == 0) MAX_FAT_sys = partition->size;
-            }
-        }
-        it = esp_partition_next(it);
-    }
-    if (it != NULL) esp_partition_iterator_release(it);
-    if (MAX_SPIFFS == 0 && askSpiffs) askSpiffs = false;
-
-    // Logar os tamanhos das partições
-    ESP_LOGI("Partition Sizes", "MAX_APP: %d", MAX_APP);
-    ESP_LOGI("Partition Sizes", "MAX_SPIFFS: %d", MAX_SPIFFS);
-    ESP_LOGI("Partition Sizes", "MAX_FAT_sys: %d", MAX_FAT_sys);
-    ESP_LOGI("Partition Sizes", "MAX_FAT_vfs: %d", MAX_FAT_vfs);
-}
 /*********************************************************************
 **  Function: _setup_gpio()
 **  Sets up a weak (empty) function to be replaced by /ports/* /interface.h
@@ -279,8 +233,6 @@ void setup() {
 
     // Performs the verification when Launcher is installed through OTA
     partitionCrawler();
-    // Checks the size of partitions and take actions to find the best options (in HEADLESS environment)
-    get_partition_sizes();
 
 #if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
     cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL);

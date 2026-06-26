@@ -1,5 +1,6 @@
 #include "install_shared.h"
 #include "app_registry.h"
+#include "backup_manager.h"
 #include <globals.h>
 
 const char *launcherInstallDefaultDataLabel(uint8_t subtype) {
@@ -43,6 +44,7 @@ void launcherSaveInstalledAppMetadata(
     metadata.label = installedLabel;
     metadata.fatLabels = fatLabels;
     metadata.spiffsLabel = spiffsLabel;
+    metadata.appNum = generateAppNum(sourceName);
     launcherSaveAppMetadata(metadata);
     lastInstalledApp = metadata.name;
 }

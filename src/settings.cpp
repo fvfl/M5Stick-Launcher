@@ -277,6 +277,11 @@ void settings_menu() {
                                    noDotFiles = !noDotFiles;
                                    saveConfigs();
                                }});
+            options.push_back({autoBackup ? "[x] Auto Backup" : "[ ] Auto Backup", [=]() {
+                                   autoBackup = !autoBackup;
+                                   saveConfigs();
+                                   saveIntoNVS();
+                               }});
         }
 
         options.push_back({bootToApp ? "[ ] Boot to Launcher" : "[x] Boot to Launcher", [=]() {
@@ -289,9 +294,6 @@ void settings_menu() {
                            }});
         options.push_back({"Partition Manager", [=]() { partList(); }});
 
-        if (MAX_SPIFFS > 0)
-            options.push_back({"Backup SPIFFS", [=]() { dumpPartition("spiffs", "/bkp/spiffs"); }});
-        if (MAX_SPIFFS > 0) options.push_back({"Restore SPIFFS", [=]() { restorePartition("spiffs"); }});
         if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
         if (dev_mode) options.push_back({"Deactivate Dev", [=]() { dev_mode = false; }});
 #if defined(HAS_RESISTIVE_TOUCH)
@@ -530,6 +532,7 @@ bool saveIntoNVS() {
     err |= nvsHandle->set_item("onlyBins", onlyBins);
     err |= nvsHandle->set_item("bootToApp", bootToApp);
     err |= nvsHandle->set_item("noDotFiles", noDotFiles);
+    err |= nvsHandle->set_item("autoBackup", autoBackup);
     err |= nvsHandle->set_item("askSpiffs", askSpiffs);
     err |= nvsHandle->set_item("rotation", rotation);
     err |= nvsHandle->set_item("FGCOLOR", FGCOLOR);
@@ -638,6 +641,7 @@ void defaultValues() {
     bootToApp = true;
     noDotFiles = true;
     askSpiffs = true;
+    autoBackup = true;
 #if defined(E_PAPER_DISPLAY)
     FGCOLOR = 0x0000;
     BGCOLOR = 0xFFFF;
@@ -683,6 +687,7 @@ bool getFromNVS() {
     err |= nvsHandle->get_item("onlyBins", onlyBins);
     err |= nvsHandle->get_item("bootToApp", bootToApp);
     err |= nvsHandle->get_item("noDotFiles", noDotFiles);
+    err |= nvsHandle->get_item("autoBackup", autoBackup);
     err |= nvsHandle->get_item("askSpiffs", askSpiffs);
     err |= nvsHandle->get_item("rotation", rotation);
     err |= nvsHandle->get_item("FGCOLOR", FGCOLOR);
@@ -864,6 +869,9 @@ void getConfigs() {
         log_i("getConfigs: missing noDotFiles");
     }
 
+    if (setting["autoBackup"].is<bool>()) autoBackup = setting["autoBackup"].as<bool>();
+    else log_i("getConfigs: missing autoBackup");
+
     if (setting["askSpiffs"].is<bool>()) askSpiffs = setting["askSpiffs"].as<bool>();
     else {
         count++;
@@ -1012,6 +1020,7 @@ void saveConfigs() {
     setting["onlyBins"] = onlyBins;
     setting["bootToApp"] = bootToApp;
     setting["noDotFiles"] = noDotFiles;
+    setting["autoBackup"] = autoBackup;
     setting["askSpiffs"] = askSpiffs;
     setting["bright"] = bright;
     setting["dimmerSet"] = dimmerSet;

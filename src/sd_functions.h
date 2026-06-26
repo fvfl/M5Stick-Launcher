@@ -31,10 +31,8 @@ bool sortList(const Option &a, const Option &b);
 
 String loopSD(bool filePicker = false);
 
-bool performUpdate(Stream &updateSource, size_t updateSize, int command);
-
 void updateFromSD(String path);
 
-bool performFATUpdate(Stream &updateSource, size_t updateSize, const char *label = "vfs");
+bool performDATAUpdate(Stream &updateSource, size_t updateSize, const char *label);
 
 #endif

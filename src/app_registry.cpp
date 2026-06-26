@@ -1,4 +1,5 @@
 #include "app_registry.h"
+#include "backup_manager.h"
 #include "display.h"
 #include "idf/launcher_platform.h"
 #include "mykeyboard.h"
@@ -83,9 +84,7 @@ bool saveNvsString(const char *key, const String &value) {
         err = handle->set_string(key, value.c_str());
     }
     if (err == ESP_OK) err = handle->commit();
-    if (err != ESP_OK) {
-        launcherConsolePrintf("App registry: write failed key=%s err=%d\n", key, err);
-    }
+    if (err != ESP_OK) { launcherConsolePrintf("App registry: write failed key=%s err=%d\n", key, err); }
     return err == ESP_OK;
 }
 
@@ -149,6 +148,16 @@ bool saveSpiffsLabelForLabel(const char *label, const String &spiffsLabel) {
     return saveNvsString(dataKeyForLabel("s_", label).c_str(), spiffsLabel);
 }
 
+String loadAppNumForLabel(const char *label) {
+    if (!label || !label[0]) return "";
+    return loadNvsString(dataKeyForLabel("n_", label).c_str(), 8);
+}
+
+bool saveAppNumForLabel(const char *label, const String &appNum) {
+    if (!label || !label[0]) return false;
+    return saveNvsString(dataKeyForLabel("n_", label).c_str(), appNum);
+}
+
 bool confirmAppDelete(const String &title) {
     bool confirmed = false;
     std::vector<Option> confirmOptions = {
@@ -189,6 +198,7 @@ std::vector<LauncherAppMetadata> launcherLoadAppRegistry() {
         app.name = loadAppNameForLabel(entry.label);
         app.fatLabels = loadFatLabelsForLabel(entry.label);
         app.spiffsLabel = loadSpiffsLabelForLabel(entry.label);
+        app.appNum = loadAppNumForLabel(entry.label);
         if (!app.name.isEmpty()) apps.push_back(app);
     }
     return apps;
@@ -200,12 +210,14 @@ bool launcherSaveAppMetadata(const LauncherAppMetadata &app) {
     bool saved = saveAppNameForLabel(app.label.c_str(), app.name);
     if (saved) saved = saveFatLabelsForLabel(app.label.c_str(), app.fatLabels);
     if (saved) saved = saveSpiffsLabelForLabel(app.label.c_str(), app.spiffsLabel);
+    if (saved && !app.appNum.isEmpty()) saved = saveAppNumForLabel(app.label.c_str(), app.appNum);
     launcherConsolePrintf(
-        "App registry: save label=%s name=%s fat=%s spiffs=%s ok=%d\n",
+        "App registry: save label=%s name=%s fat=%s spiffs=%s appNum=%s ok=%d\n",
         app.label.c_str(),
         app.name.c_str(),
         encodeFatLabels(app.fatLabels).c_str(),
         app.spiffsLabel.c_str(),
+        app.appNum.c_str(),
         saved
     );
     return saved;
@@ -226,6 +238,10 @@ bool launcherRemoveAppMetadata(const char *label) {
     if (err == ESP_OK) {
         esp_err_t spiffsErr = handle->erase_item(dataKeyForLabel("s_", label).c_str());
         if (spiffsErr != ESP_OK && spiffsErr != ESP_ERR_NVS_NOT_FOUND) err = spiffsErr;
+    }
+    if (err == ESP_OK) {
+        esp_err_t appNumErr = handle->erase_item(dataKeyForLabel("n_", label).c_str());
+        if (appNumErr != ESP_OK && appNumErr != ESP_ERR_NVS_NOT_FOUND) err = appNumErr;
     }
     if (err == ESP_OK) err = handle->commit();
     if (err != ESP_OK) { launcherConsolePrintf("App registry: remove failed label=%s err=%d\n", label, err); }
@@ -407,6 +423,28 @@ bool launcherDeleteAppByLabel(const char *label) {
 
     if (!confirmAppDelete(confirmMsg)) return false;
 
+    String appNum = loadAppNumForLabel(label);
+    if (autoBackup && !appNum.isEmpty()) {
+        BackupInstallInfo bkInfo = loadInstalledFromConfig(appNum);
+        if (!bkInfo.partitions.empty()) {
+            int choice = -1;
+            std::vector<Option> opts = {
+                {"Backup Data partition", [&]() { choice = 0; }},
+                {"Remove Without Backup", [&]() { choice = 1; }},
+                {"Cancel",                [&]() { choice = 2; }},
+            };
+            displayRedStripe((String("Backup data for ") + appName + "?").c_str());
+            loopOptions(opts);
+            if (choice == 2) return false;
+            if (choice == 0) {
+                if (!backupAllPartitionsForApp(appNum)) {
+                    displayRedStripe("Backup failed");
+                    launcherDelayMs(1500);
+                }
+            }
+        }
+    }
+
     LauncherPartitionTable edited = table;
     edited.entries.erase(edited.entries.begin() + appIndex);
     std::vector<LauncherPartitionEntry> removedEntries;
@@ -425,8 +463,7 @@ bool launcherDeleteAppByLabel(const char *label) {
     if (hasLinkedSpiffs) {
         for (size_t i = 0; i < edited.entries.size(); ++i) {
             LauncherPartitionEntry &entry = edited.entries[i];
-            if (entry.type == ESP_PARTITION_TYPE_DATA &&
-                (entry.subtype == 0x82 || entry.subtype == 0x83) &&
+            if (entry.type == ESP_PARTITION_TYPE_DATA && (entry.subtype == 0x82 || entry.subtype == 0x83) &&
                 linkedSpiffsLabel == String(entry.label)) {
                 removedEntries.push_back(entry);
                 edited.entries.erase(edited.entries.begin() + i);
@@ -513,9 +550,37 @@ bool launcherRenameAppByLabel(const char *label) {
         return false;
     }
 
+    String appNum = loadAppNumForLabel(label);
+    if (!appNum.isEmpty()) { updateInstalledAppName(appNum, newName); }
+
     displayRedStripe("App renamed");
     launcherDelayMs(1000);
     return true;
+}
+
+static void showAppBackupMenu(const String &appNum) {
+    BackupInstallInfo backup = loadInstalledFromConfig(appNum);
+    std::vector<Option> opts;
+
+    for (const auto &bp : backup.partitions) {
+        String status = bp.lastBackupPath.isEmpty() ? " [No backup]" : " [Backed up]";
+        String optLabel = bp.type + ":" + bp.label + status;
+        opts.push_back({optLabel, [appNum, bp]() {
+                            displayRedStripe(("Backing up " + bp.label + "...").c_str());
+                            String path = backupPartition(appNum, bp.label.c_str(), bp.type.c_str());
+                            if (!path.isEmpty()) {
+                                displayRedStripe("Backup saved!");
+                            } else {
+                                displayRedStripe(("Backup failed: " + bp.label).c_str());
+                                launcherDelayMs(2500);
+                                return;
+                            }
+                            launcherDelayMs(1500);
+                        }});
+    }
+
+    opts.push_back({"Back", []() {}});
+    loopOptions(opts);
 }
 
 void launcherShowAppActions(const char *label) {
@@ -527,12 +592,25 @@ void launcherShowAppActions(const char *label) {
 
     String appLabel = String(label);
     String appName = shortAppActionName(loadAppNameForLabel(label), appLabel);
+    String appNum = loadAppNumForLabel(label);
+
     std::vector<Option> appOptions = {
         {String("Launch ") + appName, [appLabel]() { launcherBootAppByLabel(appLabel.c_str()); }  },
         {"Rename App",                [appLabel]() { launcherRenameAppByLabel(appLabel.c_str()); }},
-        {String("Delete ") + appName, [appLabel]() { launcherDeleteAppByLabel(appLabel.c_str()); }},
-        {"Cancel",                    []() {}                                                     },
     };
+
+    if (!appNum.isEmpty()) {
+        BackupInstallInfo backup = loadInstalledFromConfig(appNum);
+        if (!backup.partitions.empty()) {
+            appOptions.push_back({"Backup Data", [appNum]() { showAppBackupMenu(appNum); }});
+        }
+    }
+
+    appOptions.push_back({String("Delete ") + appName, [appLabel]() {
+                              launcherDeleteAppByLabel(appLabel.c_str());
+                          }});
+    appOptions.push_back({"Cancel", []() {}});
+
     loopOptions(appOptions);
 }
 

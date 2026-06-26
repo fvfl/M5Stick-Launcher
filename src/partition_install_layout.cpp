@@ -5,87 +5,82 @@
 #include <algorithm>
 
 bool launcherPrepareInstallDataPartitions(
-    LauncherPartitionTable &table, bool spiffs, uint32_t spiffsSize, LauncherPartitionEntry &spiffsEntry,
-    bool &hasSpiffsEntry, std::vector<LauncherInstallFatPartition> &fatPartitions, String &error,
-    const String &spiffsLabel
+    LauncherPartitionTable &table,
+    std::vector<LauncherInstallDataPartition> &dataPartitions,
+    String &error
 ) {
-    hasSpiffsEntry = false;
-    for (LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        fatPartition.entry = LauncherPartitionEntry();
-        fatPartition.hasEntry = false;
+    for (auto &dp : dataPartitions) {
+        dp.entry = LauncherPartitionEntry();
+        dp.hasEntry = false;
     }
 
-    auto prepareSpiffs = [&]() {
-        LauncherPartitionEntry *existing = launcherPartitionFindByLabel(table, spiffsLabel.c_str());
+    // Fixed-size data partitions (SPIFFS/LittleFS) first so FAT finds accurate free space
+    for (auto &dp : dataPartitions) {
+        if (dp.subtype == 0x81) continue;
+        if (dp.partitionSize == 0 || dp.partitionSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) continue;
+        const uint8_t stype = dp.subtype;
+        LauncherPartitionEntry *existing = launcherPartitionFindByLabel(table, dp.label.c_str());
         if (existing) {
-            if (!existing->isData() || existing->subtype != 0x82) {
-                error = String("Partition ") + spiffsLabel + " is incompatible";
+            if (!existing->isData() || existing->subtype != stype) {
+                error = String("Partition ") + dp.label + " is incompatible";
                 return false;
             }
-            if (spiffsSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
-                uint32_t oldOffset = existing->offset;
-                if (!launcherPartitionRemoveEntryByOffset(table, oldOffset)) {
-                    error = String("Could not resize ") + spiffsLabel + " partition";
-                    return false;
-                }
-                if (!launcherPartitionCreateDataInLargestFreeRange(
-                        table, 0x82, spiffsLabel.c_str(), spiffsEntry, error
-                    ))
-                    return false;
-                return true;
-            }
-            spiffsEntry = *existing;
-        } else if (spiffsSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
-            if (!launcherPartitionCreateDataInLargestFreeRange(
-                    table, 0x82, spiffsLabel.c_str(), spiffsEntry, error
-                ))
-                return false;
+            dp.entry = *existing;
         } else {
-            if (!launcherPartitionFindOrCreateData(
-                    table, 0x82, spiffsLabel.c_str(), spiffsSize, spiffsEntry, error
-                ))
+            if (!launcherPartitionFindOrCreateData(table, stype, dp.label.c_str(), dp.partitionSize, dp.entry, error))
                 return false;
         }
-        hasSpiffsEntry = true;
-        return true;
-    };
-
-    if (spiffs && spiffsSize > 0 && spiffsSize != LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
-        if (!prepareSpiffs()) return false;
+        dp.hasEntry = true;
     }
 
-    for (size_t i = 0; i < fatPartitions.size(); ++i) {
-        LauncherInstallFatPartition &fatPartition = fatPartitions[i];
-        if (fatPartition.partitionSize == 0) continue;
-        const char *label = fatPartition.label.c_str();
+    // FAT partitions
+    for (auto &dp : dataPartitions) {
+        if (dp.subtype != 0x81) continue;
+        if (dp.partitionSize == 0) continue;
+        const char *label = dp.label.c_str();
         const bool usePayloadSize = strcmp(label, "sys") == 0 || strcmp(label, "system") == 0;
-        uint32_t desiredSize =
-            usePayloadSize ? fatPartition.partitionSize : launcherPartitionDefaultFatSize(label);
-        if (!launcherPartitionFindOrCreateData(table, 0x81, label, desiredSize, fatPartition.entry, error))
+        uint32_t desiredSize = usePayloadSize ? dp.partitionSize : launcherPartitionDefaultFatSize(label);
+        if (!launcherPartitionFindOrCreateData(table, 0x81, label, desiredSize, dp.entry, error))
             return false;
-        fatPartition.hasEntry = true;
+        dp.hasEntry = true;
     }
 
-    if (spiffs && spiffsSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
-        if (!prepareSpiffs()) return false;
+    // USE_REMAINING data partitions last (largest available free space)
+    for (auto &dp : dataPartitions) {
+        if (dp.subtype == 0x81) continue;
+        if (dp.partitionSize != LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) continue;
+        const uint8_t stype = dp.subtype;
+        LauncherPartitionEntry *existing = launcherPartitionFindByLabel(table, dp.label.c_str());
+        if (existing) {
+            if (!existing->isData() || existing->subtype != stype) {
+                error = String("Partition ") + dp.label + " is incompatible";
+                return false;
+            }
+            uint32_t oldOffset = existing->offset;
+            if (!launcherPartitionRemoveEntryByOffset(table, oldOffset)) {
+                error = String("Could not resize ") + dp.label + " partition";
+                return false;
+            }
+        }
+        if (!launcherPartitionCreateDataInLargestFreeRange(table, stype, dp.label.c_str(), dp.entry, error))
+            return false;
+        dp.hasEntry = true;
     }
+
     return true;
 }
 
 bool launcherSelectInstallLayout(
-    LauncherPartitionTable &table, size_t updateSize, const String &defaultLabel, bool spiffs,
-    uint32_t spiffsSize, std::vector<LauncherInstallFatPartition> &fatPartitions,
-    LauncherPartitionEntry &appEntry, LauncherPartitionEntry &spiffsEntry, bool &hasSpiffsEntry,
-    String &error, const String &spiffsLabel
+    LauncherPartitionTable &table, size_t updateSize, const String &defaultLabel,
+    std::vector<LauncherInstallDataPartition> &dataPartitions,
+    LauncherPartitionEntry &appEntry, String &error
 ) {
     const uint32_t requiredAppPartitionSize =
         launcherAlignUp(static_cast<uint32_t>(updateSize), LAUNCHER_APP_PARTITION_ALIGNMENT);
     uint32_t requiredInstallSize = requiredAppPartitionSize;
-    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        requiredInstallSize += fatPartition.partitionSize;
-    }
-    if (spiffs && spiffsSize > 0 && spiffsSize != LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE) {
-        requiredInstallSize += spiffsSize;
+    for (const auto &dp : dataPartitions) {
+        if (dp.partitionSize > 0 && dp.partitionSize != LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE)
+            requiredInstallSize += dp.partitionSize;
     }
     std::vector<LauncherPartitionEntry> originalApps;
     for (const LauncherPartitionEntry &entry : table.entries) {
@@ -94,41 +89,29 @@ bool launcherSelectInstallLayout(
 
     LauncherPartitionTable directCandidate = table;
     LauncherPartitionEntry directApp;
-    LauncherPartitionEntry directSpiffs;
-    std::vector<LauncherInstallFatPartition> directFats = fatPartitions;
-    bool directHasSpiffs = false;
+    std::vector<LauncherInstallDataPartition> directPartitions = dataPartitions;
     if (launcherPartitionCreateOtaApp(
             directCandidate, updateSize, defaultLabel.c_str(), &directApp, &error
         ) &&
-        launcherPrepareInstallDataPartitions(
-            directCandidate, spiffs, spiffsSize, directSpiffs, directHasSpiffs, directFats, error, spiffsLabel
-        ) &&
+        launcherPrepareInstallDataPartitions(directCandidate, directPartitions, error) &&
         launcherPartitionValidate(directCandidate, &error)) {
         table = directCandidate;
         appEntry = directApp;
-        spiffsEntry = directSpiffs;
-        hasSpiffsEntry = directHasSpiffs;
-        fatPartitions = directFats;
+        dataPartitions = directPartitions;
         return true;
     }
 
     directCandidate = table;
     directApp = LauncherPartitionEntry();
-    directSpiffs = LauncherPartitionEntry();
-    directFats = fatPartitions;
-    directHasSpiffs = false;
-    if (launcherPrepareInstallDataPartitions(
-            directCandidate, spiffs, spiffsSize, directSpiffs, directHasSpiffs, directFats, error, spiffsLabel
-        ) &&
+    directPartitions = dataPartitions;
+    if (launcherPrepareInstallDataPartitions(directCandidate, directPartitions, error) &&
         launcherPartitionCreateOtaApp(
             directCandidate, updateSize, defaultLabel.c_str(), &directApp, &error
         ) &&
         launcherPartitionValidate(directCandidate, &error)) {
         table = directCandidate;
         appEntry = directApp;
-        spiffsEntry = directSpiffs;
-        hasSpiffsEntry = directHasSpiffs;
-        fatPartitions = directFats;
+        dataPartitions = directPartitions;
         return true;
     }
 
@@ -138,30 +121,17 @@ bool launcherSelectInstallLayout(
             const bool removeSpiffs = removalPass == 1;
             directCandidate = table;
             directApp = LauncherPartitionEntry();
-            directSpiffs = LauncherPartitionEntry();
-            directFats = fatPartitions;
-            directHasSpiffs = false;
+            directPartitions = dataPartitions;
 
             if (!launcherPartitionRemoveInstallDataPartitions(directCandidate, removeSpiffs)) continue;
             if (launcherPartitionCreateOtaApp(
                     directCandidate, updateSize, defaultLabel.c_str(), &directApp, &error
                 ) &&
-                launcherPrepareInstallDataPartitions(
-                    directCandidate,
-                    spiffs,
-                    spiffsSize,
-                    directSpiffs,
-                    directHasSpiffs,
-                    directFats,
-                    error,
-                    spiffsLabel
-                ) &&
+                launcherPrepareInstallDataPartitions(directCandidate, directPartitions, error) &&
                 launcherPartitionValidate(directCandidate, &error)) {
                 table = directCandidate;
                 appEntry = directApp;
-                spiffsEntry = directSpiffs;
-                hasSpiffsEntry = directHasSpiffs;
-                fatPartitions = directFats;
+                dataPartitions = directPartitions;
                 return true;
             }
         }
@@ -176,9 +146,7 @@ bool launcherSelectInstallLayout(
     auto addChoice = [&](const String &label,
                          const LauncherPartitionTable &candidate,
                          const LauncherPartitionEntry &candidateApp,
-                         const LauncherPartitionEntry &candidateSpiffs,
-                         bool candidateHasSpiffs,
-                         const std::vector<LauncherInstallFatPartition> &candidateFats) {
+                         const std::vector<LauncherInstallDataPartition> &candidatePartitions) {
         for (const String &existingLabel : choiceLabels) {
             if (existingLabel == label) return;
         }
@@ -187,49 +155,32 @@ bool launcherSelectInstallLayout(
             {label,
              [&table,
               &appEntry,
-              &spiffsEntry,
-              &hasSpiffsEntry,
-              &fatPartitions,
+              &dataPartitions,
               candidate,
               candidateApp,
-              candidateSpiffs,
-              candidateHasSpiffs,
-              candidateFats]() mutable {
+              candidatePartitions]() mutable {
                  table = candidate;
                  appEntry = candidateApp;
-                 spiffsEntry = candidateSpiffs;
-                 hasSpiffsEntry = candidateHasSpiffs;
-                 fatPartitions = candidateFats;
+                 dataPartitions = candidatePartitions;
              }}
         );
     };
 
     auto addAutoLayoutChoice = [&](const String &label, LauncherPartitionTable candidate) {
         LauncherPartitionEntry candidateApp;
-        LauncherPartitionEntry candidateSpiffs;
-        std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-        bool candidateHasSpiffs = false;
+        std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
 
         if (!launcherPartitionCreateOtaApp(
                 candidate, updateSize, defaultLabel.c_str(), &candidateApp, &error
             )) {
             return;
         }
-        if (!launcherPrepareInstallDataPartitions(
-                candidate,
-                spiffs,
-                spiffsSize,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats,
-                error,
-                spiffsLabel
-            ) ||
+        if (!launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) ||
             !launcherPartitionValidate(candidate, &error)) {
             return;
         }
 
-        addChoice(label, candidate, candidateApp, candidateSpiffs, candidateHasSpiffs, candidateFats);
+        addChoice(label, candidate, candidateApp, candidatePartitions);
     };
 
     for (const LauncherPartitionEntry &entry : original.entries) {
@@ -239,27 +190,14 @@ bool launcherSelectInstallLayout(
         LauncherPartitionEntry candidateApp = entry;
         memset(candidateApp.label, 0, sizeof(candidateApp.label));
         strncpy(candidateApp.label, defaultLabel.c_str(), 15);
-        LauncherPartitionEntry candidateSpiffs;
-        std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-        bool candidateHasSpiffs = false;
-        if (launcherPrepareInstallDataPartitions(
-                candidate,
-                spiffs,
-                spiffsSize,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats,
-                error,
-                spiffsLabel
-            ) &&
+        std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
+        if (launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) &&
             launcherPartitionValidate(candidate, &error)) {
             addChoice(
                 String("Use ") + entry.label + " partition",
                 candidate,
                 candidateApp,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats
+                candidatePartitions
             );
         }
     }
@@ -312,27 +250,14 @@ bool launcherSelectInstallLayout(
             continue;
         }
 
-        LauncherPartitionEntry candidateSpiffs;
-        std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-        bool candidateHasSpiffs = false;
-        if (launcherPrepareInstallDataPartitions(
-                candidate,
-                spiffs,
-                spiffsSize,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats,
-                error,
-                spiffsLabel
-            ) &&
+        std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
+        if (launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) &&
             launcherPartitionValidate(candidate, &error)) {
             addChoice(
                 String("Repartition ") + apps[start].label + " + free",
                 candidate,
                 candidateApp,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats
+                candidatePartitions
             );
         }
     }
@@ -352,19 +277,8 @@ bool launcherSelectInstallLayout(
                 continue;
             }
 
-            LauncherPartitionEntry candidateSpiffs;
-            std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-            bool candidateHasSpiffs = false;
-            if (!launcherPrepareInstallDataPartitions(
-                    candidate,
-                    spiffs,
-                    spiffsSize,
-                    candidateSpiffs,
-                    candidateHasSpiffs,
-                    candidateFats,
-                    error,
-                    spiffsLabel
-                ) ||
+            std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
+            if (!launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) ||
                 !launcherPartitionValidate(candidate, &error)) {
                 continue;
             }
@@ -373,9 +287,7 @@ bool launcherSelectInstallLayout(
                 removeSpiffs ? "Remove data + use free" : "Remove FAT data + use free",
                 candidate,
                 candidateApp,
-                candidateSpiffs,
-                candidateHasSpiffs,
-                candidateFats
+                candidatePartitions
             );
         }
     }
@@ -429,25 +341,14 @@ bool launcherSelectInstallLayout(
                 continue;
             }
 
-            LauncherPartitionEntry candidateSpiffs;
-            std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-            bool candidateHasSpiffs = false;
-            if (!launcherPrepareInstallDataPartitions(
-                    candidate,
-                    spiffs,
-                    spiffsSize,
-                    candidateSpiffs,
-                    candidateHasSpiffs,
-                    candidateFats,
-                    error,
-                    spiffsLabel
-                ) ||
+            std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
+            if (!launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) ||
                 !launcherPartitionValidate(candidate, &error)) {
                 continue;
             }
 
             String label = String("Repartition ") + apps[start].label + "-" + apps[end].label;
-            addChoice(label, candidate, candidateApp, candidateSpiffs, candidateHasSpiffs, candidateFats);
+            addChoice(label, candidate, candidateApp, candidatePartitions);
         }
     }
 
@@ -486,19 +387,8 @@ bool launcherSelectInstallLayout(
                         continue;
                     }
 
-                    LauncherPartitionEntry candidateSpiffs;
-                    std::vector<LauncherInstallFatPartition> candidateFats = fatPartitions;
-                    bool candidateHasSpiffs = false;
-                    if (!launcherPrepareInstallDataPartitions(
-                            candidate,
-                            spiffs,
-                            spiffsSize,
-                            candidateSpiffs,
-                            candidateHasSpiffs,
-                            candidateFats,
-                            error,
-                            spiffsLabel
-                        ) ||
+                    std::vector<LauncherInstallDataPartition> candidatePartitions = dataPartitions;
+                    if (!launcherPrepareInstallDataPartitions(candidate, candidatePartitions, error) ||
                         !launcherPartitionValidate(candidate, &error)) {
                         continue;
                     }
@@ -506,9 +396,7 @@ bool launcherSelectInstallLayout(
                     String label = String("Remove ") + apps[start].label;
                     if (end > start) label += String("-") + apps[end].label;
                     label += removeSpiffs ? " + free + all data" : " + free + FAT data";
-                    addChoice(
-                        label, candidate, candidateApp, candidateSpiffs, candidateHasSpiffs, candidateFats
-                    );
+                    addChoice(label, candidate, candidateApp, candidatePartitions);
                 }
             }
         }

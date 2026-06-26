@@ -20,28 +20,19 @@
 #define LAUNCHER_UPDATE_ERROR_ABORT 12
 
 #define LAUNCHER_UPDATE_COMMAND_FLASH 0
-#define LAUNCHER_UPDATE_COMMAND_SPIFFS 100
 
 enum LauncherUpdateTarget {
     LAUNCHER_UPDATE_APP,
-    LAUNCHER_UPDATE_SPIFFS,
-    LAUNCHER_UPDATE_FAT_VFS,
-    LAUNCHER_UPDATE_FAT_SYS,
+    LAUNCHER_UPDATE_DATA,
 };
 
 using LauncherUpdateProgress = void (*)(size_t written, size_t total);
 
-bool launcherUpdateBegin(LauncherUpdateTarget target, size_t size);
 size_t launcherUpdateWrite(const uint8_t *data, size_t len);
-bool launcherUpdateEnd();
 void launcherUpdateAbort();
 bool launcherUpdateIsFinished();
 int launcherUpdateLastError();
 const char *launcherUpdateLastErrorName();
-bool launcherUpdateStream(
-    Stream &source, size_t size, LauncherUpdateTarget target, LauncherUpdateProgress cb = nullptr
-);
-bool launcherUpdateTargetFromCommand(int command, LauncherUpdateTarget &target);
 
 bool launcherRawUpdateBegin(uint32_t address, size_t partitionSize, size_t imageSize, bool appImage);
 size_t launcherRawUpdateWrite(const uint8_t *data, size_t len);

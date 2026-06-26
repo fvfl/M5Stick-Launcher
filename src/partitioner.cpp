@@ -1,4 +1,6 @@
 #include "partitioner.h"
+#include "app_registry.h"
+#include "backup_manager.h"
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "idf/idf_update.h"
@@ -281,6 +283,12 @@ String partitionSubtypeName(const LauncherPartitionEntry &entry) {
     char out[5] = {0};
     snprintf(out, sizeof(out), "%02X", entry.subtype);
     return String(out);
+}
+
+const char *dataSubtypeName(uint8_t subtype) {
+    if (subtype == ESP_PARTITION_SUBTYPE_DATA_FAT) return "FAT";
+    if (subtype == 0x83)                            return "LittleFS";
+    return "SPIFFS";
 }
 
 bool isProtectedPartition(const LauncherPartitionEntry &entry) {
@@ -663,9 +671,13 @@ void partList() {
                 {partitionRow(entry),
                  [&table, &dirty, entry]() {
                      int selected = 100;
+                     String linkedAppNum =
+                         entry.isData() ? findAppNumByPartitionLabel(String(entry.label)) : String();
                      std::vector<Option> entryOptions = {};
                      entryOptions.push_back({"Details", [&]() { selected = 0; }});
                      if (entry.isData()) {
+                         if (linkedAppNum.isEmpty())
+                             entryOptions.push_back({"Associate to Bin", [&]() { selected = 7; }});
                          entryOptions.push_back({"Backup", [&]() { selected = 5; }});
                          entryOptions.push_back({"Restore data", [&]() { selected = 6; }});
                      }
@@ -684,10 +696,44 @@ void partList() {
                      } else if (selected == 3) {
                          formatPartition(entry, dirty);
                      } else if (selected == 5) {
-                         String outputPath = String("/bkp/") + entry.label;
-                         dumpPartition(entry.label, outputPath.c_str());
+                         if (!linkedAppNum.isEmpty()) {
+                             String typeName = dataSubtypeName(entry.subtype);
+                             String path = backupPartition(linkedAppNum, entry.label, typeName.c_str());
+                             if (path.isEmpty()) {
+                                 displayRedStripe("Backup failed");
+                             } else {
+                                 displayRedStripe("Backup saved!");
+                             }
+                             launcherDelayMs(1500);
+                         } else {
+                             String outputPath = String("/bkp/") + entry.label;
+                             dumpPartition(entry.label, outputPath.c_str());
+                         }
                      } else if (selected == 6) {
                          restorePartition(entry.label);
+                     } else if (selected == 7) {
+                         String selectedBin = loopSD(false);
+                         if (!selectedBin.isEmpty()) {
+                             String appNum = generateAppNum(selectedBin);
+                             BackupInstallInfo info = loadInstalledFromConfig(appNum);
+                             if (info.appNum.isEmpty()) {
+                                 info.appNum     = appNum;
+                                 info.sdFilepath = selectedBin;
+                                 info.appName    = launcherAppNameFromFile(selectedBin);
+                             }
+                             bool alreadyIn = false;
+                             for (const auto &bp : info.partitions)
+                                 if (bp.label == String(entry.label)) { alreadyIn = true; break; }
+                             if (!alreadyIn) {
+                                 BackupPartitionInfo bp;
+                                 bp.label = String(entry.label);
+                                 bp.type  = dataSubtypeName(entry.subtype);
+                                 info.partitions.push_back(bp);
+                             }
+                             saveInstalledToConfig(info);
+                             displayRedStripe(("Linked to " + launcherAppNameFromFile(selectedBin)).c_str());
+                             launcherDelayMs(1500);
+                         }
                      }
                  },
                  isProtectedPartition(entry) ? ALCOLOR : FGCOLOR}
@@ -838,50 +884,19 @@ void restorePartition(const char *partitionLabel) {
     String filepath = loopSD(true);
     tft->fillScreen(BGCOLOR);
     if (filepath == "") return;
-    else {
-        File source = SDM.open(filepath, "r");
-        bool restored = false;
-        if (strcmp(partitionLabel, "spiffs") == 0) {
-            prog_handler = 1;
-            progressHandler(0, 500);
-            restored = launcherUpdateStream(source, source.size(), LAUNCHER_UPDATE_SPIFFS, progressHandler);
-            if (!restored) {
-                source.close();
-                displayRedStripe(launcherUpdateLastErrorName());
-                launcherDelayMs(2500);
-                return;
-            }
-            const esp_partition_t *partition =
-                esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
-            if (partition) {
-                String patchError;
-                if (!launcherPatchReducedLittlefsSuperblocks(
-                        partition->address, partition->size, &patchError
-                    )) {
-                    source.close();
-                    displayRedStripe(patchError.length() ? patchError : "LittleFS patch failed");
-                    launcherDelayMs(2500);
-                    return;
-                }
-            }
-        }
 
-        if (strcmp(partitionLabel, "vfs") == 0) {
-            restored = performFATUpdate(source, source.size(), "vfs");
-        } else if (strcmp(partitionLabel, "sys") == 0) {
-            restored = performFATUpdate(source, source.size(), "sys");
-        } else if (strcmp(partitionLabel, "spiffs") != 0) {
-            source.close();
-            displayRedStripe("Unsupported data");
-            launcherDelayMs(2500);
-            return;
-        }
-        source.close();
-        if (!restored) {
-            displayRedStripe(launcherUpdateLastErrorName());
-            launcherDelayMs(2500);
-            return;
-        }
+    File source = SDM.open(filepath, "r");
+    if (!source) {
+        displayRedStripe("Can't open file");
+        launcherDelayMs(2500);
+        return;
+    }
+    bool restored = performDATAUpdate(source, source.size(), partitionLabel);
+    source.close();
+    if (!restored) {
+        displayRedStripe(launcherUpdateLastErrorName());
+        launcherDelayMs(2500);
+        return;
     }
     launcherDelayMs(100);
     displayRedStripe("    Restored!    ");
@@ -1011,33 +1026,31 @@ bool attachPartition(String _from, String _to) {
     if (!offset) {
         const uint32_t table_offset = 0x8000;
         const uint32_t app_offset = 0x10000;
-        const uint32_t app_size = MAX_APP;
-        const uint32_t spiffs_offset = app_offset + app_size;
-        const uint32_t spiffs_size = MAX_SPIFFS;
-
-        if (app_size == 0 || spiffs_size == 0) {
-            displayRedStripe("Invalid partition sizes");
-            launcherDelayMs(2500);
-            return false;
-        }
-
-        String new_path = _to;
-        int slash_pos = _to.lastIndexOf('/');
-        int dot_pos = _to.lastIndexOf('.');
-
-        int suffix = 1;
-        new_path = _to.substring(0, dot_pos) + "_with_DATA" + _to.substring(dot_pos);
-
-        while (SDM.exists(new_path)) {
-            new_path = _to.substring(0, dot_pos) + "_with_DATA_" + String(suffix) + _to.substring(dot_pos);
-            suffix++;
-        }
 
         File original = SDM.open(_to, FILE_READ);
         if (!original) {
             displayRedStripe("Can't open target");
             launcherDelayMs(2500);
             return false;
+        }
+        const uint32_t app_size = (original.size() + 0xFFFFu) & ~0xFFFFu;
+        const uint32_t spiffs_offset = app_offset + app_size;
+
+        uint32_t spiffs_size = 64 * 1024;
+        {
+            File fromFile = SDM.open(_from, FILE_READ);
+            if (fromFile) {
+                spiffs_size = (fromFile.size() + 0xFFFu) & ~0xFFFu;
+                fromFile.close();
+            }
+        }
+
+        int dot_pos = _to.lastIndexOf('.');
+        int suffix = 1;
+        String new_path = _to.substring(0, dot_pos) + "_with_DATA" + _to.substring(dot_pos);
+        while (SDM.exists(new_path)) {
+            new_path = _to.substring(0, dot_pos) + "_with_DATA_" + String(suffix) + _to.substring(dot_pos);
+            suffix++;
         }
 
         File rebuilt = SDM.open(new_path, FILE_WRITE, true);

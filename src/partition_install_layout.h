@@ -6,7 +6,8 @@
 
 constexpr uint32_t LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE = 0xFFFFFFFF;
 
-struct LauncherInstallFatPartition {
+struct LauncherInstallDataPartition {
+    uint8_t subtype = 0x82;   // 0x81=FAT, 0x82=SPIFFS, 0x83=LittleFS
     String label;
     uint32_t sourceOffset = 0;
     uint32_t partitionSize = 0;
@@ -16,16 +17,15 @@ struct LauncherInstallFatPartition {
 };
 
 bool launcherPrepareInstallDataPartitions(
-    LauncherPartitionTable &table, bool spiffs, uint32_t spiffsSize, LauncherPartitionEntry &spiffsEntry,
-    bool &hasSpiffsEntry, std::vector<LauncherInstallFatPartition> &fatPartitions, String &error,
-    const String &spiffsLabel = "spiffs"
+    LauncherPartitionTable &table,
+    std::vector<LauncherInstallDataPartition> &dataPartitions,
+    String &error
 );
 
 bool launcherSelectInstallLayout(
-    LauncherPartitionTable &table, size_t updateSize, const String &defaultLabel, bool spiffs,
-    uint32_t spiffsSize, std::vector<LauncherInstallFatPartition> &fatPartitions,
-    LauncherPartitionEntry &appEntry, LauncherPartitionEntry &spiffsEntry, bool &hasSpiffsEntry, String &error,
-    const String &spiffsLabel = "spiffs"
+    LauncherPartitionTable &table, size_t updateSize, const String &defaultLabel,
+    std::vector<LauncherInstallDataPartition> &dataPartitions,
+    LauncherPartitionEntry &appEntry, String &error
 );
 
 #endif

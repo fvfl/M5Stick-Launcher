@@ -233,36 +233,6 @@ bool finishWebInstallStage(WebInstallStage &stage) {
     return true;
 }
 
-bool patchLegacyUpdatedDataPartition(LauncherUpdateTarget target) {
-    if (target == LAUNCHER_UPDATE_APP) return true;
-
-    const char *partitionLabel = target == LAUNCHER_UPDATE_FAT_SYS ? "sys"
-                               : target == LAUNCHER_UPDATE_FAT_VFS ? "vfs"
-                                                                   : nullptr;
-    const esp_partition_t *partition = target == LAUNCHER_UPDATE_SPIFFS
-                                           ? esp_partition_find_first(
-                                                 ESP_PARTITION_TYPE_DATA,
-                                                 ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-                                                 nullptr
-                                             )
-                                           : esp_partition_find_first(
-                                                 ESP_PARTITION_TYPE_DATA,
-                                                 ESP_PARTITION_SUBTYPE_DATA_FAT,
-                                                 partitionLabel
-                                             );
-    if (!partition && target == LAUNCHER_UPDATE_SPIFFS) {
-        partition = esp_partition_find_first(
-            ESP_PARTITION_TYPE_DATA,
-            ESP_PARTITION_SUBTYPE_DATA_LITTLEFS,
-            nullptr
-        );
-    }
-    if (!partition) return true;
-
-    String patchError;
-    return launcherPatchReducedLittlefsSuperblocks(partition->address, partition->size, &patchError) ||
-           !failWebInstall(patchError.length() ? patchError : "LittleFS patch failed");
-}
 
 bool finalizeWebInstall() {
     if (webInstallCtx.currentStage != webInstallCtx.stages.size() ||
@@ -320,12 +290,7 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
     uint32_t appOffset = 0;
     uint32_t appSize = 0;
     uint32_t appPartitionSize = 0;
-    bool spiffs = false;
-    uint32_t spiffsOffset = 0;
-    uint32_t spiffsSize = 0;
-    uint32_t spiffsCopySize = 0;
-    String spiffsLabel = "spiffs";
-    std::vector<LauncherInstallFatPartition> fatPartitions;
+    std::vector<LauncherInstallDataPartition> dataPartitions;
 
     for (JsonObject part : parts) {
         String kind = part["kind"].as<String>();
@@ -349,29 +314,29 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
         const uint8_t subtype = static_cast<uint8_t>(part["subtype"] | 0xFF);
         String label = part["label"].as<String>();
         if (label.isEmpty()) label = launcherInstallDefaultDataLabel(subtype);
+        LauncherInstallDataPartition dp;
+        dp.subtype = subtype;
+        dp.label = label;
+        dp.sourceOffset = sourceOffset;
+        dp.copySize = copySize;
         if (subtype == 0x81) {
-            LauncherInstallFatPartition fatPartition;
-            fatPartition.label = label;
-            fatPartition.sourceOffset = sourceOffset;
             LauncherPartitionPayloadPlan payload =
                 launcherPartitionFatPayloadPlan(label.c_str(), declaredSize, copySize);
-            fatPartition.partitionSize = payload.partitionSize;
-            fatPartition.copySize = payload.copySize;
-            fatPartitions.push_back(fatPartition);
+            dp.partitionSize = payload.partitionSize;
+            dp.copySize = payload.copySize;
         } else if (subtype == 0x82 || subtype == 0x83) {
-            spiffs = true;
-            spiffsOffset = sourceOffset;
-            spiffsCopySize = copySize;
-            spiffsLabel = label;
             // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
             if (label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
-                spiffsSize = declaredSize;
+                dp.partitionSize = declaredSize;
             } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
-                spiffsSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
+                dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
             } else {
-                spiffsSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
             }
+        } else {
+            continue;
         }
+        dataPartitions.push_back(dp);
     }
 
     if (!hasApp || appSize == 0) {
@@ -381,21 +346,9 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
 
     String appLabel =
         launcherInstallNextAppLabel(webInstallCtx.table, webInstallCtx.sourceName, "", "WebUI File");
-    LauncherPartitionEntry spiffsEntry;
-    bool hasSpiffsEntry = false;
 
     if (!launcherSelectInstallLayout(
-            webInstallCtx.table,
-            appPartitionSize,
-            appLabel,
-            spiffs,
-            spiffsSize,
-            fatPartitions,
-            webInstallCtx.appEntry,
-            spiffsEntry,
-            hasSpiffsEntry,
-            error,
-            spiffsLabel
+            webInstallCtx.table, appPartitionSize, appLabel, dataPartitions, webInstallCtx.appEntry, error
         )) {
         return false;
     }
@@ -408,23 +361,14 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
     appStage.copySize = appSize;
     appStage.entry = webInstallCtx.appEntry;
     addWebInstallStage(appStage);
-    if (hasSpiffsEntry && spiffsCopySize > 0) {
+    for (const auto &dp : dataPartitions) {
+        if (!dp.hasEntry || dp.copySize == 0) continue;
         WebInstallStage stage;
         stage.appImage = false;
-        stage.subtype = spiffsEntry.subtype;
-        stage.sourceOffset = spiffsOffset;
-        stage.copySize = spiffsCopySize > spiffsEntry.size ? spiffsEntry.size : spiffsCopySize;
-        stage.entry = spiffsEntry;
-        addWebInstallStage(stage);
-    }
-    for (const LauncherInstallFatPartition &fatPartition : fatPartitions) {
-        if (!fatPartition.hasEntry || fatPartition.copySize == 0) continue;
-        WebInstallStage stage;
-        stage.appImage = false;
-        stage.subtype = fatPartition.entry.subtype;
-        stage.sourceOffset = fatPartition.sourceOffset;
-        stage.copySize = fatPartition.copySize;
-        stage.entry = fatPartition.entry;
+        stage.subtype = dp.entry.subtype;
+        stage.sourceOffset = dp.sourceOffset;
+        stage.copySize = dp.copySize > dp.entry.size ? dp.entry.size : dp.copySize;
+        stage.entry = dp.entry;
         addWebInstallStage(stage);
     }
     webInstallCtx.active = !webInstallCtx.stages.empty();
@@ -826,15 +770,6 @@ bool beginUploadTarget(File &file, const String &filename) {
         progressHandler(0, webInstallCtx.totalCopySize);
         return true;
     }
-
-    LauncherUpdateTarget target;
-    if (launcherUpdateTargetFromCommand(command, target) && launcherUpdateBegin(target, file_size)) {
-        prog_handler = target == LAUNCHER_UPDATE_APP ? 0 : 1;
-        progressHandler(0, file_size);
-        return true;
-    }
-    displayRedStripe("FAIL 365: " + String(launcherUpdateLastError()));
-    launcherDelayMs(3000);
     return false;
 }
 
@@ -846,18 +781,7 @@ bool finishUploadTarget(File &file) {
     if (webInstallCtx.active) {
         return finalizeWebInstall();
     }
-
-    if (!launcherUpdateEnd()) {
-        return failWebInstall("Fail 376: " + String(launcherUpdateLastError()), 3000, true);
-    }
-
-    LauncherUpdateTarget target;
-    const bool hasTarget = launcherUpdateTargetFromCommand(command, target);
-    if (hasTarget && !patchLegacyUpdatedDataPartition(target)) return false;
-    lastInstalledApp = "WebUI File";
-    saveIntoNVS();
-    displayRedStripe("Restart your device");
-    return true;
+    return false;
 }
 
 bool streamMultipartUpload(httpd_req_t *req) {
