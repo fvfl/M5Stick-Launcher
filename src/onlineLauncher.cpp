@@ -170,7 +170,7 @@ void ota_function() {
         }
         if (returnToMenu) return;
         if (upd) {
-            if (checkForUpdates()) loopFirmware();
+            if (checkForUpdates()) loopFirmware(true);
         } else if (fav) {
             int idx = 0;
             auto NavMenu = [&](int fw) {
@@ -811,7 +811,9 @@ bool checkForUpdates() {
     return true;
 }
 
-void downloadFirmware(String fid, String file_url, String fileName, String folder, String version, bool autoAdvance) {
+void downloadFirmware(
+    String fid, String file_url, String fileName, String folder, String version, bool autoAdvance
+) {
     displayRedStripe("Preparing..");
     if (!file_url.startsWith("https://")) file_url = M5_SERVER_PATH + file_url;
     String fileAddr = "https://api.launcherhub.net/download?fid=" + fid + "&file=" + file_url;
@@ -871,14 +873,16 @@ retry:
         SDM.remove(filePath);
         displayRedStripe("Download FAILED");
         if (autoAdvance) launcherDelayMs(1500);
-        else while (!check(SelPress)) yield();
+        else
+            while (!check(SelPress)) yield();
     } else {
         progressHandler(100, 100);
         launcherConsolePrintln("File successfully downloaded..");
         saveDownloadedFirmware(folder, fid, version);
         displayRedStripe(" Downloaded ");
         if (autoAdvance) launcherDelayMs(1000);
-        else while (!check(SelPress)) yield();
+        else
+            while (!check(SelPress)) yield();
     }
     wakeUpScreen();
 }

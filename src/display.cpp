@@ -1208,7 +1208,7 @@ SAIR:
 **  Function: loopFirmware
 **  Where you choose which Firmware to see more data
 **********************************************************************/
-void loopFirmware() {
+void loopFirmware(bool isUpdate) {
     int _page = current_page;
     String order_by = "downloads";
     String query = "";
@@ -1219,7 +1219,9 @@ void loopFirmware() {
 
 RESTART:
     currentIndex = -1;
-    if (_page != current_page || refined) {
+    if (isUpdate && index > 0) {
+        checkForUpdates();
+    } else if (_page != current_page || refined) {
         GetJsonFromLauncherHub(current_page, order_by, star, query);
         index = 1;
     }
@@ -1232,7 +1234,7 @@ RESTART:
     }
     options.push_back({"[Refine Search]", [&]() { refine = true; }, ALCOLOR});
 
-    if (!doc["items"][0]["file"].as<String>().isEmpty() && items != 100) {
+    if (sdcardMounted && !doc["items"][0]["file"].as<String>().isEmpty() && isUpdate) {
         options.push_back(
             {"[Update all]",
              [=]() {

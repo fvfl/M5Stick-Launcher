@@ -25,7 +25,7 @@ int loopOptions(
     bool border = true, int index = 0
 );
 void loopVersions(String fid);
-void loopFirmware();
+void loopFirmware(bool isUpdate = false);
 void initDisplay(bool doAll = false); // Início da função e mostra bootscreen
 void initDisplayLoop();
 
