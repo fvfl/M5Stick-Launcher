@@ -3,6 +3,7 @@
 #include "esp_event.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/event_groups.h"
 #include "lwip/ip4_addr.h"
@@ -19,6 +20,9 @@ constexpr EventBits_t WIFI_CONNECTED_BIT = BIT0;
 constexpr EventBits_t WIFI_FAIL_BIT = BIT1;
 constexpr EventBits_t WIFI_STARTED_BIT = BIT2;
 constexpr int kWifiConnectRetryLimit = 5;
+// Delay before a background reconnect attempt after a spontaneous drop, to avoid
+// hammering esp_wifi_connect() in a tight loop when the AP is unavailable.
+constexpr uint64_t kReconnectDelayUs = 3000000; // 3 s
 
 EventGroupHandle_t wifiEvents = nullptr;
 esp_netif_t *staNetif = nullptr;
@@ -29,11 +33,30 @@ bool mdnsStarted = false;
 bool expectingConnection = false; // true only after esp_wifi_connect() is called
 int wifiConnectRetryCount = 0;
 wifi_err_reason_t lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
+// true once we have successfully obtained an IP; enables transparent background
+// reconnection on a spontaneous drop. Cleared when the user explicitly stops STA.
+bool autoReconnect = false;
+esp_timer_handle_t reconnectTimer = nullptr;
 
 bool isWrongPasswordReason(wifi_err_reason_t reason) {
     return reason == WIFI_REASON_AUTH_FAIL || reason == WIFI_REASON_HANDSHAKE_TIMEOUT ||
            reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || reason == WIFI_REASON_802_1X_AUTH_FAILED ||
            reason == WIFI_REASON_AUTH_EXPIRE;
+}
+
+// Fires kReconnectDelayUs after a spontaneous disconnect. Reuses the credentials
+// already stored in the Wi-Fi driver config, so no need to re-supply SSID/password.
+void reconnectTimerCb(void *) {
+    if (!wifiEvents) return;
+    if (!autoReconnect || expectingConnection) return;
+    if ((xEventGroupGetBits(wifiEvents) & WIFI_CONNECTED_BIT) != 0) return;
+    esp_wifi_connect();
+}
+
+void scheduleReconnect() {
+    if (!reconnectTimer) return;
+    esp_timer_stop(reconnectTimer); // no-op (and harmless error) if not running
+    esp_timer_start_once(reconnectTimer, kReconnectDelayUs);
 }
 
 void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void *eventData) {
@@ -54,6 +77,10 @@ void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void 
                 expectingConnection = false;
                 xEventGroupSetBits(wifiEvents, WIFI_FAIL_BIT);
             }
+        } else if (autoReconnect) {
+            // Spontaneous drop after a successful connection (signal loss, AP
+            // reboot, ...). Schedule a delayed, transparent reconnect.
+            scheduleReconnect();
         }
     } else if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_START) {
         xEventGroupSetBits(wifiEvents, WIFI_STARTED_BIT);
@@ -63,6 +90,7 @@ void wifiEventHandler(void *, esp_event_base_t eventBase, int32_t eventId, void 
         expectingConnection = false;
         wifiConnectRetryCount = 0;
         lastDisconnectReason = WIFI_REASON_UNSPECIFIED;
+        autoReconnect = true; // we are connected; arm background reconnection
         xEventGroupClearBits(wifiEvents, WIFI_FAIL_BIT);
         xEventGroupSetBits(wifiEvents, WIFI_CONNECTED_BIT);
     }
@@ -116,6 +144,13 @@ bool ensureWifiInitialized() {
         );
         if (err != ESP_OK) return false;
         handlersRegistered = true;
+    }
+
+    if (!reconnectTimer) {
+        esp_timer_create_args_t targs = {};
+        targs.callback = &reconnectTimerCb;
+        targs.name = "wifi_reconnect";
+        esp_timer_create(&targs, &reconnectTimer);
     }
 
     esp_wifi_set_storage(WIFI_STORAGE_RAM);
@@ -182,6 +217,11 @@ LauncherWifiConnectState launcherWifiConnectStatus(
     // WPA2 handshake (auth + 4-way handshake + DHCP can take 3-5 s).
     if (!expectingConnection) {
         // Serial.printf("[idf_wifi] Connecting to: %s\n", ssid ? ssid : "(null)");
+
+        // Starting a fresh manual connect: cancel any pending background reconnect
+        // so a stray DISCONNECTED from the disconnect below cannot re-arm it.
+        autoReconnect = false;
+        if (reconnectTimer) esp_timer_stop(reconnectTimer);
 
         wifi_config_t config = {};
         strlcpy(reinterpret_cast<char *>(config.sta.ssid), ssid ? ssid : "", sizeof(config.sta.ssid));
@@ -291,6 +331,8 @@ bool launcherWifiStartAp(const char *ssid, const char *password, uint8_t channel
 bool launcherWifiStop() {
     if (!wifiInitialized) return true;
     expectingConnection = false;
+    autoReconnect = false; // explicit stop: do not auto-reconnect in the background
+    if (reconnectTimer) esp_timer_stop(reconnectTimer);
     wifiConnectRetryCount = 0;
     xEventGroupClearBits(wifiEvents, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     esp_wifi_disconnect();

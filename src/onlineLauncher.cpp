@@ -530,35 +530,65 @@ DONE:
 }
 
 bool getInfo(String serverUrl, JsonDocument &_doc) {
-    if (launcherWifiIsConnected()) {
-        pauseInputHandlerTask();
-        resetTftDisplay();
-        tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
-        tft->drawCentreString("Getting info from", tftWidth / 2, tftHeight / 3, 1);
-        tft->drawCentreString("LauncherHub", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
-        tft->display(false);
-        tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
-        const uint8_t maxAttempts = 5;
-        for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {
-            String payload;
-            if (launcherHttpGetToString(serverUrl.c_str(), payload)) {
-                _doc.clear();
-                DeserializationError error = deserializeJson(_doc, payload);
-                if (error) {
-                    displayRedStripe("JSON Parse Failed");
-                    vTaskDelay(1500 / portTICK_PERIOD_MS);
-                    _doc.clear();
-                    resumeInputHandlerTask();
-                    return false;
-                }
-                resumeInputHandlerTask();
-                return true;
-            }
-
-            tftprint(".", 10);
-            vTaskDelay(pdTICKS_TO_MS(500));
-        }
+    if (!launcherWifiIsConnected()) {
+        displayRedStripe("WiFi not connected");
+        vTaskDelay(1500 / portTICK_PERIOD_MS);
+        return false;
     }
+
+    pauseInputHandlerTask();
+    resetTftDisplay();
+    tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
+    tft->drawCentreString("Getting info from", tftWidth / 2, tftHeight / 3, 1);
+    tft->drawCentreString("LauncherHub", tftWidth / 2, tftHeight / 3 + FM * 9, 1);
+    tft->display(false);
+    tft->setCursor(18, tftHeight / 3 + FM * 9 * 2);
+    const uint8_t maxAttempts = 5;
+    for (uint8_t attempt = 0; attempt < maxAttempts; ++attempt) {
+        String payload;
+        LauncherHttpResponse resp;
+        if (launcherHttpGetToString(serverUrl.c_str(), payload, 65536, &resp)) {
+            _doc.clear();
+            DeserializationError error = deserializeJson(_doc, payload);
+            if (error) {
+                displayRedStripe(String("JSON Parse Failed: ") + error.c_str());
+                vTaskDelay(1500 / portTICK_PERIOD_MS);
+                _doc.clear();
+                resumeInputHandlerTask();
+                return false;
+            }
+            resumeInputHandlerTask();
+            return true;
+        }
+
+        // Report why this attempt failed: a transport error (network/TLS/timeout)
+        // surfaces as a negative esp_err_t in transport_error; otherwise the HTTP
+        // status (e.g. 404, 500) explains the failure.
+        String reason;
+        if (resp.status >= 200 && resp.status < 600 && resp.status != 0) {
+            reason = String("HTTP ") + resp.status;
+        } else {
+            reason = String("Net err ") + resp.transport_error;
+        }
+        displayRedStripe(
+            String("GET failed (") + (attempt + 1) + "/" + maxAttempts + "): " + reason
+        );
+
+        // The connection may have dropped mid-flow; abort early instead of burning
+        // the remaining attempts (each can block up to the HTTP timeout).
+        if (!launcherWifiIsConnected()) {
+            displayRedStripe("WiFi lost during fetch");
+            vTaskDelay(1500 / portTICK_PERIOD_MS);
+            resumeInputHandlerTask();
+            return false;
+        }
+
+        tftprint(".", 10);
+        vTaskDelay(pdTICKS_TO_MS(500));
+    }
+
+    displayRedStripe("Server unreachable");
+    vTaskDelay(1500 / portTICK_PERIOD_MS);
     resumeInputHandlerTask();
     return false;
 }

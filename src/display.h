@@ -69,6 +69,8 @@ void drawDeviceBorder();
 
 void drawBatteryStatus(uint8_t bat);
 
+void drawWifiStatus(bool hasBattery = false);
+
 void drawMainMenu(std::vector<MenuOptions> &opt, int index);
 
 void TouchFooter(uint16_t color = FGCOLOR);

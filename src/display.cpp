@@ -1,5 +1,6 @@
 #include "display.h"
 #include "app_registry.h"
+#include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
 #include "mykeyboard.h"
 #include "onlineLauncher.h"
@@ -904,11 +905,37 @@ void drawMainMenu(std::vector<MenuOptions> &opt, int index) {
     drawDeviceBorder();
     int bat = getBattery();
     if (bat > 0) drawBatteryStatus(bat);
+    drawWifiStatus(bat > 0);
     tft->display(false);
 }
 void drawDeviceBorder() {
     tft->drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, FGCOLOR);
     tft->drawLine(5, (6 + 6 + FP * LH + 5), tftWidth - 6, (6 + 6 + FP * LH + 5), FGCOLOR);
+}
+
+void drawWifiStatus(bool hasBattery) {
+    const int size = LH * FP;
+    int u = size / 4;
+    if (u < 1) u = 1;
+    const int gap = 4;
+    int batteryLeft = tftWidth - 5 - (LW * FP * 4 * hasBattery) - RES;
+    int cx = batteryLeft - gap - 3 * u;
+    int by = 7 + (FP * LH + 9) / 2 + u;
+    int dot = u < 2 ? 2 : u;
+    tft->fillRect(cx - 3 * u - 1, by - 4 * u - 1, 6 * u + 3, 4 * u + dot + 2, BGCOLOR);
+    if (!launcherWifiIsConnected()) return;
+    int thick = size / 8;
+    if (thick < 1) thick = 1;
+    for (int k = 1; k <= 3; ++k) {
+        int hw = k * u;
+        int apexY = by - k * u - u;
+        int drop = u;
+        for (int t = 0; t < thick; ++t) {
+            tft->drawLine(cx - hw, apexY + drop + t, cx, apexY + t, FGCOLOR);
+            tft->drawLine(cx, apexY + t, cx + hw, apexY + drop + t, FGCOLOR);
+        }
+    }
+    tft->fillRect(cx - dot / 2, by - dot / 2, dot, dot, FGCOLOR);
 }
 
 void drawBatteryStatus(uint8_t bat) {
@@ -1073,7 +1100,7 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
 **********************************************************************/
 void loopVersions(String _fid) {
     JsonDocument item = getVersionInfo(_fid);
-
+    if (item.isNull()) { return; }
     int versionIndex = 0;
     const char *name = item["name"];
     const char *author = item["author"];
