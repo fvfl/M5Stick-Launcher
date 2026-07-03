@@ -918,7 +918,7 @@ void drawWifiStatus(bool hasBattery) {
     int u = size / 4;
     if (u < 1) u = 1;
     const int gap = 4;
-    int batteryLeft = tftWidth - 5 - (LW * FP * 4 * hasBattery) - RES;
+    int batteryLeft = tftWidth - 5 - (LW * FP * 4 * hasBattery + 40) - RES;
     int cx = batteryLeft - gap - 3 * u;
     int by = 7 + (FP * LH + 9) / 2 + u;
     int dot = u < 2 ? 2 : u;
