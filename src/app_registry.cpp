@@ -4,6 +4,7 @@
 #include "idf/launcher_platform.h"
 #include "mykeyboard.h"
 #include "settings.h"
+#include "utils.h"
 #include <esp_flash.h>
 #include <esp_image_format.h>
 #include <esp_ota_ops.h>
@@ -373,9 +374,7 @@ bool launcherBootAppByLabel(const char *label) {
     lastInstalledApp = launcherAppDisplayNameForLabel(label);
     saveIntoNVS();
 
-    FREE_TFT
-    reboot();
-    return true;
+    return releaseHeapObjectsAndReboot();
 }
 
 bool launcherDeleteAppByLabel(const char *label) {
@@ -491,10 +490,9 @@ bool launcherDeleteAppByLabel(const char *label) {
     }
 
     launcherRemoveAppMetadata(label);
-    displayError("Restart needed");
-    FREE_TFT
-    reboot();
-    return true;
+    displayMsg("Restart needed");
+
+    return releaseHeapObjectsAndReboot();
 }
 
 bool launcherRenameAppByLabel(const char *label) {
@@ -513,7 +511,7 @@ bool launcherRenameAppByLabel(const char *label) {
     String appNum = loadAppNumForLabel(label);
     if (!appNum.isEmpty()) { updateInstalledAppName(appNum, newName); }
 
-    displayError("App renamed");
+    displayMsg("App renamed");
     return true;
 }
 
@@ -531,7 +529,7 @@ static void showAppBackupMenu(const String &appNum) {
                                 displayError("Backup failed: " + bp.label);
                                 return;
                             }
-                            displayError("Backup saved!");
+                            displayMsg("Backup saved!");
                         }});
     }
 

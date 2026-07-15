@@ -323,7 +323,7 @@ String backupPartition(const String &appNum, const char *partitionLabel, const c
     outFile.close();
 
     updateInstalledBackupPath(appNum, String(partitionLabel), outPath);
-    displayError("Backup saved");
+    displayMsg("Backup saved");
     RAM_LOG("backupPartition-end");
     return outPath;
 }
@@ -397,7 +397,7 @@ bool restorePartitionFromBackup(const char *partitionLabel, const char *backupFi
         progressHandler(written, fileSize);
     }
     inFile.close();
-    displayError("Data restored");
+    displayMsg("Data restored");
     RAM_LOG("restorePartition-end");
     return true;
 }
@@ -456,7 +456,7 @@ bool restorePartitionFromBackupDirect(
         progressHandler(written, fileSize);
     }
     inFile.close();
-    displayError("Data restored");
+    displayMsg("Data restored");
     RAM_LOG("restorePartitionDirect-end");
     return true;
 }

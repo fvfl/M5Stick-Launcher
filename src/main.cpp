@@ -326,7 +326,8 @@ void setup() {
     if (launcherBootCurrentApp()) {
         tft->fillScreen(BGCOLOR);
         _setBrightness(0);
-        reboot();
+
+        return (void)releaseHeapObjectsAndReboot();
     }
 
 // If M5 or Enter button is pressed, continue from here
@@ -459,7 +460,7 @@ void loop() {
                 update_sd = sdcardMounted;
             }
             if (!dev_mode && pass_by == 5) {
-                displayError("Dev mode Activated");
+                displayMsg("Dev mode Activated");
                 dev_mode = true;
             }
             drawMainMenu(menuItems, index);

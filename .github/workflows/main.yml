@@ -231,6 +231,10 @@
             cp -f ~/LauncherArtifacts/*/*.bin artifacts
             tree
 
+        - name: Analyze artifact partition usage
+          run: |
+            python support_files/size_analisys.py --on-folder artifacts --output size_analisys.txt
+
         - name: Ensure releases exist and get IDs
           id: get_release
           uses: actions/github-script@v8
@@ -291,38 +295,9 @@
           with:
             name: betaRelease commit (${{ steps.get_sha.outputs.GITHUB_SHA_SHORT }})
             tag_name: beta
-            files: artifacts/**
-            fail_on_unmatched_files: false
-            make_latest: false
-            generate_release_notes: false
-
-        - name: Delete old lastRelease assets
-          uses: actions/github-script@v8
-          if: github.ref_type == 'tag'
-          with:
-            script: |
-              const release_id = ${{ steps.get_release.outputs.last }};
-              const assets = await github.rest.repos.listReleaseAssets({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release_id
-              });
-              for (const asset of assets.data) {
-                await github.rest.repos.deleteReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  asset_id: asset.id
-                });
-              }
-
-        - name: Upload new last asset
-          uses: softprops/action-gh-release@v2
-          if: github.ref_type == 'tag'
-          with:
-            name: lastRelease commit (${{ steps.get_sha.outputs.GITHUB_SHA_SHORT }})
-            tag_name: last
-            prerelease: true
-            files: artifacts/**
+            files: |
+              artifacts/**
+              size_analisys.txt
             fail_on_unmatched_files: false
             make_latest: false
             generate_release_notes: false

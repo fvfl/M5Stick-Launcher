@@ -8,6 +8,7 @@
 #include "ram_profile.h"
 #include "sd_functions.h"
 #include "settings.h"
+#include "utils.h"
 #include <cstring>
 #include <globals.h>
 #include <vector>
@@ -458,6 +459,8 @@ void displayError(String txt, bool waitKeyPress) {
     if (!waitKeyPress) vTaskDelay(pdMS_TO_TICKS(2000));
     while (waitKeyPress && !check(AnyKeyPress)) vTaskDelay(pdMS_TO_TICKS(10));
 }
+
+void displayMsg(String txt, bool waitKeyPress) { displayError(txt, waitKeyPress); }
 
 /***************************************************************************************
 ** Function name: progressHandler
@@ -1259,7 +1262,7 @@ void loopVersions(const String &_fid) {
         }
     }
 Sucesso:
-    if (!returnToMenu) reboot();
+    if (!returnToMenu) { return (void)releaseHeapObjectsAndReboot(); }
 
 // quando sair, redesenhar a tela
 SAIR:

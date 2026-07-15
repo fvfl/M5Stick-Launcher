@@ -526,7 +526,8 @@ DONE:
     if (success) {
         displayRedStripe("Restarting");
         launcherDelayMs(500);
-        reboot();
+
+        return releaseHeapObjectsAndReboot();
     }
     return success;
 }

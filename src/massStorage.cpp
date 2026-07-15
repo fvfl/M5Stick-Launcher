@@ -41,7 +41,7 @@ constexpr tusb_desc_device_t kDeviceDescriptor = {
     0x00, // bDeviceClass    - defined at interface level (fixes macOS MSC enumeration)
     0x00, // bDeviceSubClass - defined at interface level
     0x00, // bDeviceProtocol - defined at interface level
-    CFG_TUD_ENDOINT0_SIZE,
+    CFG_TUD_ENDPOINT0_SIZE,
     0x303A,
     0x1001,
     0x0100,

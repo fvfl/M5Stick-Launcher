@@ -11,6 +11,7 @@
 #include "partition_table_model.h"
 #include "ram_profile.h"
 #include "settings.h"
+#include "utils.h"
 #include <algorithm>
 #include <esp_app_format.h>
 #include <esp_image_format.h>
@@ -740,8 +741,8 @@ void updateFromSD(const String &path) {
         if (!installFromSdDynamic(file, path, app_size, 0, dataPartitions)) { goto Exit; }
         file.close();
         tft->fillScreen(BGCOLOR);
-        FREE_TFT
-        reboot();
+
+        return (void)releaseHeapObjectsAndReboot();
     } else {
         if (!file.seek(0x8000)) goto Exit;
         for (int i = 0; i < LAUNCHER_PARTITION_TABLE_SIZE; i += LAUNCHER_PARTITION_ENTRY_SIZE) {
@@ -860,9 +861,9 @@ void updateFromSD(const String &path) {
         log_i("Data partitions: %d", dataPartitions.size());
 
         if (!installFromSdDynamic(file, path, app_size, app_offset, dataPartitions)) { goto Exit; }
-        displayError("Complete");
-        FREE_TFT
-        reboot();
+        displayMsg("Complete");
+
+        return (void)releaseHeapObjectsAndReboot();
     }
 Exit:
     displayError("Update Error.");

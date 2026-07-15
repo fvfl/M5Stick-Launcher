@@ -16,6 +16,7 @@
 #include "ram_profile.h"
 #include "sd_functions.h"
 #include "settings.h"
+#include "utils.h"
 #include <globals.h>
 #include <memory>
 #include <vector>
@@ -744,12 +745,12 @@ bool writeUploadData(File &file, const uint8_t *data, size_t len, size_t written
     if (!update) return file.write(data, len) == len;
     if (webInstallCtx.active) {
         if (!writeWebInstallData(data, len)) {
-            return failWebInstall("FAIL 330: " + String(launcherUpdateLastError()));
+            return failWebInstall("WebUI Update Fail: " + String(launcherUpdateLastError()));
         }
         return true;
     }
     if (launcherUpdateWrite(data, len) != len) {
-        displayError("FAIL 330");
+        displayError("WebUI Update Fail: " + String(launcherUpdateLastError()));
         return false;
     }
     progressHandler(written + len, file_size);
@@ -1489,10 +1490,7 @@ void startWebUiLoopCommon(bool mode_ap) {
 
     while (1) {
 #endif
-        if (shouldReboot) {
-            FREE_TFT
-            reboot();
-        }
+        if (shouldReboot) { return (void)releaseHeapObjectsAndReboot(); }
         if (updateFromSd_var) {
             updateFromSD(fileToCopy);
             updateFromSd_var = false;

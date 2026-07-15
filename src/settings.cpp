@@ -10,6 +10,7 @@
 #include "partitioner.h"
 #include "powerSave.h"
 #include "sd_functions.h"
+#include "utils.h"
 #include "wifi_crypto.h"
 #include <FS.h>
 #include <SD.h>
@@ -303,9 +304,9 @@ void settings_menu() {
         options.push_back({"Start CardKb", [=]() { cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL); }});
 #endif
         if (dev_mode) options.push_back({"Reset Configs/Wifi", factoryReset});
-        options.push_back({"Restart", [=]() { FREE_TFT reboot(); }});
+        options.push_back({"Restart", [=]() { return (void)releaseHeapObjectsAndReboot(); }});
 #if !defined(CARDPUTER)
-        options.push_back({"Turn-off", [=]() { FREE_TFT powerOff(); }});
+        options.push_back({"Turn-off", [=]() { powerOff(); }});
 #endif
 
         options.push_back({"Main Menu", [=]() { returnToMenu = true; }});
