@@ -215,8 +215,7 @@
       steps:
         - uses: actions/checkout@v5
           with:
-            ref: WebPage
-            fetch-depth: 1
+            submodules: false         
 
         - name: Download all artifacts
           uses: actions/download-artifact@v7
