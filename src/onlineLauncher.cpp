@@ -369,7 +369,7 @@ bool launcherRawUpdateHttpCb(const uint8_t *data, size_t len, void *ctx) {
 
 bool flashRawRangeFromHttp(
     const String &url, uint32_t sourceOffset, size_t imageSize, const LauncherPartitionEntry &target,
-    bool appImage, const char *hwid = nullptr
+    bool appImage, const char *hwid = nullptr, String *errorOut = nullptr
 ) {
     pauseInputHandlerTask();
     RawHttpUpdateContext update = {target.offset, target.size, imageSize, 0, appImage, false};
@@ -381,11 +381,23 @@ bool flashRawRangeFromHttp(
         const uint32_t requestOffset = sourceOffset + update.written;
         const size_t remaining = imageSize - update.written;
         response = LauncherHttpResponse();
+        RAM_LOG("flashRawRangeFromHttp-attempt");
         httpOk = launcherHttpGetRange(
             url.c_str(), requestOffset, remaining, launcherRawUpdateHttpCb, &update, &response, hwid
         );
+        if (!httpOk) {
+            launcherConsolePrintf(
+                "HTTP range fetch failed offset=%u remaining=%u written=%u/%u status=%d transport_err=%d\n",
+                requestOffset,
+                static_cast<unsigned>(remaining),
+                static_cast<unsigned>(update.written),
+                static_cast<unsigned>(imageSize),
+                response.status,
+                response.transport_error
+            );
+        }
         if (httpOk && update.written == imageSize) break;
-        if (update.written == before) break;
+        if (update.written == before && response.status >= 400) break;
         launcherDelayMs(500);
     }
     bool complete = update.written == imageSize;
@@ -402,6 +414,19 @@ bool flashRawRangeFromHttp(
                 patchError.c_str()
             );
             ok = false;
+        }
+    }
+    if (!ok && errorOut) {
+        if (launcherUpdateLastError() != LAUNCHER_UPDATE_ERROR_OK) {
+            *errorOut = launcherUpdateLastErrorName();
+        } else if (!httpOk && response.transport_error != 0) {
+            *errorOut = String("HTTP transport error ") + response.transport_error;
+        } else if (!httpOk && response.status != 0) {
+            *errorOut = String("HTTP status ") + response.status;
+        } else if (!complete) {
+            *errorOut = String("Download incomplete (") + update.written + "/" + imageSize + ")";
+        } else {
+            *errorOut = "Unknown failure";
         }
     }
     resumeInputHandlerTask();
@@ -454,12 +479,16 @@ bool installFirmwareDynamic(
 
     pauseInputHandlerTask();
     bool success = false;
-    displayRedStripe("Installing APP");
     prog_handler = 0;
     progressHandler(0, updateSize);
-    if (!flashRawRangeFromHttp(fileAddr, nb ? 0 : appOffset, updateSize, appEntry, true, hwid.c_str())) {
-        displayError(String("APP: ") + launcherUpdateLastErrorName());
-        goto DONE;
+    {
+        String appError;
+        if (!flashRawRangeFromHttp(
+                fileAddr, nb ? 0 : appOffset, updateSize, appEntry, true, hwid.c_str(), &appError
+            )) {
+            displayError(String("APP: ") + appError);
+            goto DONE;
+        }
     }
 
     for (const auto &dp : dataPartitions) {
@@ -472,8 +501,11 @@ bool installFirmwareDynamic(
         // Data that ships as a separate file is fetched from its own URL at its own
         // source offset; embedded data keeps using the app image URL (fileAddr).
         const String &partAddr = dp.sourceUrl.isEmpty() ? fileAddr : dp.sourceUrl;
-        if (!flashRawRangeFromHttp(partAddr, dp.sourceOffset, copySize, dp.entry, false, hwid.c_str())) {
-            displayError(String(typeStr) + ": " + launcherUpdateLastErrorName());
+        String dpError;
+        if (!flashRawRangeFromHttp(
+                partAddr, dp.sourceOffset, copySize, dp.entry, false, hwid.c_str(), &dpError
+            )) {
+            displayError(String(typeStr) + ": " + dpError);
             goto DONE;
         }
     }
@@ -666,8 +698,6 @@ static String resolveDataPartitionSource(JsonObject part, JsonObject sources) {
 }
 
 void installFirmwareFromManifest(const String &fid, const String &version, String installedName) {
-    displayRedStripe("Getting install info");
-
     JsonDocument detail(launcherJsonAllocator());
     String serverUrl =
         "https://api.launcherhub.net/firmwares?fid=" + fid + "&version=" + encodeQueryValue(version);
