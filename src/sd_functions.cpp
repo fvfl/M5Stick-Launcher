@@ -616,7 +616,6 @@ static bool installFromSdDynamic(
 
     pauseSdInstallInput();
     bool success = false;
-    displayRedStripe("Installing APP");
     prog_handler = 0;
     if (!flashRawFromSd(file, appOffset, appSize, appEntry, true)) {
         displayError(String("APP: ") + launcherUpdateLastErrorName());
