@@ -683,6 +683,14 @@ JsonDocument getVersionInfo(const String &fid) {
     return versions;
 }
 
+// ArduinoJson's ::String converter falls back to serializeJson() (yielding the
+// literal text "null") when the variant isn't a JSON string, so a plain .as<String>()
+// on an absent/optional manifest field (e.g. "data": null) does NOT come back empty.
+// Use this wherever a field may legitimately be null to get a real empty String instead.
+static String jsonOptString(JsonVariantConst v) {
+    return v.is<const char *>() ? String(v.as<const char *>()) : String();
+}
+
 // Resolves the HTTP URL a data partition's payload should be fetched from during an
 // OTA install. Returns empty when the payload is embedded in the app image (manifest
 // "source" is "firmware" or absent); otherwise the direct URL of the matching
@@ -690,9 +698,9 @@ JsonDocument getVersionInfo(const String &fid) {
 static String buildSourceUrl(const String &fid, const String &sourceUrl, bool useProxy);
 
 static String resolveDataPartitionSource(JsonObject part, JsonObject sources) {
-    String src = part["source"].as<String>();
+    String src = jsonOptString(part["source"]);
     if (src.isEmpty() || src == "firmware" || sources.isNull()) return String();
-    String url = sources[src].as<String>();
+    String url = jsonOptString(sources[src]);
     if (url.isEmpty()) return String();
     return buildSourceUrl(String(), url, false);
 }
@@ -1068,10 +1076,10 @@ static bool __attribute__((noinline)) downloadSplitFirmware(
     const String &version, bool autoAdvance
 ) {
     JsonObject sources = install["sources"].as<JsonObject>();
-    String blUrl = sources["bootloader"].as<String>();
-    String partUrl = sources["partitions"].as<String>();
-    String fwUrl = sources["firmware"].as<String>();
-    String dataUrl = sources["data"].as<String>();
+    String blUrl = jsonOptString(sources["bootloader"]);
+    String partUrl = jsonOptString(sources["partitions"]);
+    String fwUrl = jsonOptString(sources["firmware"]);
+    String dataUrl = jsonOptString(sources["data"]);
 
     // A merged/factory firmware ships bootloader+partitions+app inside a single image
     // and has no separate bootloader/partitions sources.
