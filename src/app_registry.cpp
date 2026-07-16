@@ -205,6 +205,17 @@ std::vector<LauncherAppMetadata> launcherLoadAppRegistry() {
     return apps;
 }
 
+bool launcherClearAppRegistry() {
+    esp_err_t err = ESP_OK;
+    auto handle = openNamespace(kNamespace, NVS_READWRITE, err);
+    if (!handle) return false;
+
+    err = handle->erase_all();
+    if (err == ESP_OK) err = handle->commit();
+    if (err != ESP_OK) { launcherConsolePrintf("App registry: erase_all failed err=%d\n", err); }
+    return err == ESP_OK;
+}
+
 bool launcherSaveAppMetadata(const LauncherAppMetadata &app) {
     if (app.label.isEmpty()) return false;
 

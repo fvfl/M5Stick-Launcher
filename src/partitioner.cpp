@@ -587,6 +587,44 @@ bool findFreeSliderRange(
     return false;
 }
 
+bool wipeFlashMemory() {
+    if (!confirmAction("Wipe flash memory?")) return false;
+
+    String error;
+    LauncherPartitionTable current;
+    if (!launcherPartitionReadCurrent(current, &error)) {
+        launcherConsolePrintf("Partition table read failed: %s\n", error.c_str());
+        displayError(error.length() ? error : "Read failed");
+        return false;
+    }
+
+    LauncherPartitionTable target;
+    target.flashSize = current.flashSize;
+    for (const LauncherPartitionEntry &entry : current.entries) {
+        if (isProtectedPartition(entry)) target.entries.push_back(entry);
+    }
+
+    if (!validateOrShow(target)) return false;
+
+    displayRedStripe("Clearing App registry");
+    if (!launcherClearAppRegistry()) {
+        displayError("Registry clear failed");
+        return false;
+    }
+
+    displayRedStripe("Writing table");
+    if (!launcherPartitionWriteGeneratedTable(target, &error)) {
+        launcherConsolePrintf("Partition table write failed: %s\n", error.c_str());
+        displayError(error.length() ? error : "Write failed");
+        return false;
+    }
+
+    displayRedStripe("Restart needed");
+    waitForSelectRelease();
+
+    return releaseHeapObjectsAndReboot();
+}
+
 bool applyPartitionChanges(const LauncherPartitionTable &table) {
     LauncherPartitionTable target = table;
     if (!compactOrShow(target)) return false;
@@ -777,6 +815,15 @@ void partList() {
                          else { displayError(readError.length() ? readError : "Reload failed"); }
                      }
                  }}
+            );
+        }
+        if (dev_mode) {
+            partitionOptions.push_back(
+                {"Wipe Flash memory",
+                 [&]() {
+                     if (wipeFlashMemory()) returnToMenu = true;
+                 },
+                 ALCOLOR}
             );
         }
         partitionOptions.push_back(
