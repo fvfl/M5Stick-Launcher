@@ -123,6 +123,7 @@ void factoryReset() {
     eraseNamespace("l_wifi");
     eraseNamespace("launcher");
     backupConfigFileIfPresent();
+    favorite = JsonArray();
     settings.clear();
     defaultValues();
     saveConfigs();
@@ -132,6 +133,7 @@ void factoryReset() {
 JsonObject ensureSettingsRoot() {
     JsonArray settingsArray = settings.as<JsonArray>();
     if (settingsArray.isNull()) {
+        favorite = JsonArray();
         settings.clear();
         settingsArray = settings.to<JsonArray>();
     }
@@ -144,6 +146,7 @@ JsonObject ensureSettingsRoot() {
     if (settingsArray.size() > 0 && settingsArray[0].is<JsonObject>()) {
         setting = settingsArray[0].as<JsonObject>();
     } else {
+        favorite = JsonArray();
         settingsArray.clear();
         setting = settingsArray.add<JsonObject>();
     }
@@ -837,11 +840,13 @@ void getConfigs() {
         return;
     }
 
+    favorite = JsonArray();
     DeserializationError error = deserializeJson(settings, file);
     file.close();
 
     if (error) {
         launcherConsolePrintf("getConfigs: parse error (%s), resetting to defaults", error.c_str());
+        favorite = JsonArray();
         settings.clear();
         defaultValues();
         saveConfigs();

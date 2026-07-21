@@ -101,12 +101,26 @@ void buildFirmwareListFilter(JsonDocument &filter) {
 }
 
 bool releaseHeapObjectsAndReboot(void) {
+    static volatile bool rebootInProgress = false;
+    if (rebootInProgress) {
+        reboot();
+        return true;
+    }
+    rebootInProgress = true;
+
+    if (xHandle != nullptr) vTaskSuspend(xHandle);
+    esp_wifi_stop();
+
     doc.clear();
     doc.shrinkToFit();
+
+    JsonArray favorites = settings["favorite"].as<JsonArray>();
+    if (!favorites.isNull()) favorites.clear();
+    favorite = JsonArray();
+
     settings.clear();
     settings.shrinkToFit();
-    favorite.clear();
-    esp_wifi_stop();
+
     SDM.end();
     options.clear();
 
