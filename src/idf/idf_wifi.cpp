@@ -185,6 +185,9 @@ bool launcherWifiStartSta() {
     esp_wifi_set_ps(WIFI_PS_NONE);
     err = esp_wifi_start();
     if (!okOrAlready(err)) return false;
+#ifdef LAUNCHER_WIFI_TX_POWER
+    esp_wifi_set_max_tx_power(LAUNCHER_WIFI_TX_POWER);
+#endif
     EventBits_t bits = xEventGroupWaitBits(
         wifiEvents, WIFI_STARTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(3000)
     );
