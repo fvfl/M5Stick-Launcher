@@ -135,6 +135,7 @@ std::vector<Option> options;
 #include "onlineLauncher.h"
 #include "partitioner.h"
 #include "sd_functions.h"
+#include "serial_console.h"
 #include "settings.h"
 #include "webInterface.h"
 
@@ -157,6 +158,7 @@ void _post_setup_gpio() {}
 **  Where the devices are started and variables set
 *********************************************************************/
 void setup() {
+    Serial.setRxBufferSize(8192);
     Serial.begin(115200);
     RAM_LOG("setup-start");
     nvs_flash_init();
@@ -270,6 +272,18 @@ void setup() {
 #else
     xHandle = nullptr;
 #endif
+
+    // Command interface over the Serial Monitor (nav/reboot/partitions/flash), always
+    // on so a host script can steer the Launcher before it auto-boots a queued OTA app.
+    static TaskHandle_t serialConsoleHandle;
+    xTaskCreate(
+        taskSerialConsole, // Task function
+        "SerialConsole",   // Task Name
+        4096,              // Stack size
+        NULL,              // Task parameters
+        1,                 // Task priority, below InputHandler/loopTask
+        &serialConsoleHandle
+    );
 
     // Start Bootscreen timer
     int i = launcherMillis();
@@ -568,17 +582,6 @@ void loop() {
             goto END;
         }
         checkReboot();
-#if defined(HAS_RESISTIVE_TOUCH)
-        if (Serial.available() > 0) {
-            String msg = Serial.readStringUntil('\n');
-            msg.trim();
-
-            if (msg == "calibrate") {
-                launcherConsolePrintln("Starting calibration..");
-                calibrateTouch();
-            }
-        }
-#endif
     }
 
 END:
