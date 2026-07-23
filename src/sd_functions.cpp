@@ -709,7 +709,6 @@ static bool installFromSdDynamic(
             bkInfo.partitions.push_back(part);
         }
         saveInstalledToConfig(bkInfo);
-        if (autoBackup && !bkInfo.partitions.empty() && !shouldRestore) { backupAllPartitionsForApp(appNum); }
     }
 
     success = true;

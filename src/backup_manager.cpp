@@ -220,9 +220,48 @@ String findAppNumByPartitionLabel(const String &partitionLabel) {
     return "";
 }
 
-int nextBackupIndex(const String &appNum, const char *type, const char *label) {
+// Keep folder names FAT-safe: only alphanumerics and a few separators survive.
+static String sanitizeForPath(const String &name) {
+    String out;
+    for (size_t i = 0; i < name.length(); i++) {
+        char c = name[i];
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.') out += c;
+        else if (c == ' ') out += '_';
+    }
+    if (out.length() > 24) out = out.substring(0, 24);
+    return out;
+}
+
+// Backup folders are named "/bkp/{appNum}-{appName}" so they're readable when
+// restoring by hand, but they are always *found* by the appNum prefix alone —
+// the app may have been renamed since the folder was created.
+String backupDirForApp(const String &appNum) {
+    if (appNum.isEmpty()) return "";
+    if (!setupSdCard()) return "/bkp/" + appNum;
+
+    File root = SDM.open("/bkp");
+    if (root && root.isDirectory()) {
+        for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+            String name = String(f.name());
+            bool isDir = f.isDirectory();
+            f.close();
+            int slash = name.lastIndexOf('/');
+            if (slash >= 0) name = name.substring(slash + 1);
+            if (isDir && name.startsWith(appNum)) {
+                root.close();
+                return "/bkp/" + name;
+            }
+        }
+    }
+    if (root) root.close();
+
+    String suffix = sanitizeForPath(loadInstalledFromConfig(appNum).appName);
+    if (suffix.isEmpty()) return "/bkp/" + appNum;
+    return "/bkp/" + appNum + "-" + suffix;
+}
+
+static int nextBackupIndexInDir(const String &dir, const char *type, const char *label) {
     int idx = 0;
-    String dir = "/bkp/" + appNum;
     File root = SDM.open(dir);
     if (!root || !root.isDirectory()) return 0;
 
@@ -235,6 +274,10 @@ int nextBackupIndex(const String &appNum, const char *type, const char *label) {
     }
     root.close();
     return idx;
+}
+
+int nextBackupIndex(const String &appNum, const char *type, const char *label) {
+    return nextBackupIndexInDir(backupDirForApp(appNum), type, label);
 }
 
 // Resolve a data partition's flash offset/size by label. Prefers the IDF
@@ -275,12 +318,14 @@ String backupPartition(const String &appNum, const char *partitionLabel, const c
     RAM_LOG("backupPartition-start");
     if (!setupSdCard()) return "";
 
-    int idx = nextBackupIndex(appNum, type, partitionLabel);
-    String dir = "/bkp/" + appNum;
+    String dir = backupDirForApp(appNum);
+    if (dir.isEmpty()) return backupFail(partitionLabel);
+    int idx = nextBackupIndexInDir(dir, type, partitionLabel);
     char fname[64];
     snprintf(fname, sizeof(fname), "%s.%s.%d.bin", type, partitionLabel, idx);
     String outPath = dir + "/" + fname;
 
+    SDM.mkdir("/bkp");
     SDM.mkdir(dir);
 
     uint32_t flashOffset = 0;
@@ -336,6 +381,27 @@ bool backupAllPartitionsForApp(const String &appNum) {
     for (const BackupPartitionInfo &part : info.partitions) {
         String path = backupPartition(appNum, part.label.c_str(), part.type.c_str());
         if (path.isEmpty()) ok = false;
+    }
+    return ok;
+}
+
+bool hasRestorableBackup(const BackupInstallInfo &info) {
+    if (info.partitions.empty()) return false;
+    if (!setupSdCard()) return false;
+    for (const BackupPartitionInfo &part : info.partitions) {
+        if (!part.lastBackupPath.isEmpty() && SDM.exists(part.lastBackupPath)) return true;
+    }
+    return false;
+}
+
+bool restoreLastBackupForApp(const String &appNum) {
+    BackupInstallInfo info = loadInstalledFromConfig(appNum);
+    if (!hasRestorableBackup(info)) return false;
+
+    bool ok = true;
+    for (const BackupPartitionInfo &part : info.partitions) {
+        if (part.lastBackupPath.isEmpty() || !SDM.exists(part.lastBackupPath)) continue;
+        if (!restorePartitionFromBackup(part.label.c_str(), part.lastBackupPath.c_str())) ok = false;
     }
     return ok;
 }

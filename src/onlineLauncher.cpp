@@ -1,6 +1,5 @@
 #include "onlineLauncher.h"
 #include "app_registry.h"
-#include "backup_manager.h"
 #include "display.h"
 #include "idf/idf_http_client.h"
 #include "idf/idf_update.h"
@@ -533,21 +532,9 @@ bool installFirmwareDynamic(
         launcherSaveInstalledAppMetadata(
             table, appEntry, file, installedName, fatLabels, registeredSpiffsLabel
         );
-
-        String appNum = generateAppNum(file);
-        BackupInstallInfo bkInfo;
-        bkInfo.appNum = appNum;
-        bkInfo.sdFilepath = file;
-        bkInfo.appName = installedName.isEmpty() ? String(appEntry.label) : installedName;
-        for (const auto &dp : dataPartitions) {
-            if (!dp.hasEntry) continue;
-            BackupPartitionInfo part;
-            part.label = dp.label;
-            part.type = dp.subtype == 0x81 ? "FAT" : dp.subtype == 0x83 ? "LittleFS" : "SPIFFS";
-            bkInfo.partitions.push_back(part);
-        }
-        saveInstalledToConfig(bkInfo);
-        if (autoBackup && !bkInfo.partitions.empty()) backupAllPartitionsForApp(appNum);
+        // OTA (http) installs are not registered in backupData.json and are not
+        // backed up: the source is a URL, not an SD file, so there is nothing to
+        // tie a backup to when reinstalling.
     }
 
     saveIntoNVS();
@@ -997,13 +984,31 @@ static bool reportDownloadOutcome(
 // Pads the merged file with 0xFF from the current write position up to `target`.
 static bool padMergedFile(File &file, size_t &pos, size_t target) {
     if (pos > target) return false; // components overlap: malformed manifest
+    constexpr size_t padProgressThreshold = 64 * 1024;
+    constexpr size_t padProgressStep = 32 * 1024; // redraw at most once per 32KB written
+    const size_t total = target - pos;
+    const bool report = total > padProgressThreshold;
+    if (report) {
+        progressHandler(0, total); // repaints the frame, so label it afterwards
+        displayRedStripe("Padding..");
+    }
+
     uint8_t ff[256];
     memset(ff, 0xFF, sizeof(ff));
+    size_t done = 0, lastReported = 0;
     while (pos < target) {
         const size_t chunk = min(sizeof(ff), target - pos);
         if (file.write(ff, chunk) != chunk) return false;
         pos += chunk;
+        done += chunk;
+        if (report && done - lastReported >= padProgressStep) {
+            lastReported = done;
+            file.flush();
+            progressHandler(done, total);
+            wakeUpScreen();
+        }
     }
+    if (report) file.flush();
     return true;
 }
 
@@ -1205,8 +1210,10 @@ void downloadFirmware(
         if (getInfo(infoUrl, detail)) {
             JsonObject install = detail["version"]["install"].as<JsonObject>();
             JsonObject sources = install["sources"].as<JsonObject>();
-            bool hasBootAndParts = !sources["bootloader"].isNull() && !sources["partitions"].isNull();
-            bool hasSeparateData = !sources["data"].isNull();
+
+            bool hasBootAndParts = !jsonOptString(sources["bootloader"]).isEmpty() &&
+                                   !jsonOptString(sources["partitions"]).isEmpty();
+            bool hasSeparateData = !jsonOptString(sources["data"]).isEmpty();
             if (!sources.isNull() && (hasBootAndParts || hasSeparateData)) {
                 downloadSplitFirmware(fid, install, filePath, folder, version, autoAdvance);
                 wakeUpScreen();

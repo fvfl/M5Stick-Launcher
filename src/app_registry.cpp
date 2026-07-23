@@ -548,6 +548,22 @@ static void showAppBackupMenu(const String &appNum) {
     loopOptions(opts);
 }
 
+// Restores every data partition of the app from the last backup registered in
+// backupData.json. Destructive (the partition is erased first), so it asks first.
+static void restoreLastDataForApp(const String &appNum) {
+    int choice = -1;
+    std::vector<Option> opts = {
+        {"Restore", [&]() { choice = 0; }},
+        {"Cancel",  [&]() { choice = 1; }},
+    };
+    displayRedStripe("Overwrite current data?");
+    loopOptions(opts);
+    if (choice != 0) return;
+
+    if (!restoreLastBackupForApp(appNum)) displayError("Restore failed");
+    else displayMsg("Data restored");
+}
+
 void launcherShowAppActions(const char *label) {
     if (!label || !label[0]) {
         displayError("App not found");
@@ -567,6 +583,9 @@ void launcherShowAppActions(const char *label) {
         BackupInstallInfo backup = loadInstalledFromConfig(appNum);
         if (!backup.partitions.empty()) {
             appOptions.push_back({"Backup Data", [appNum]() { showAppBackupMenu(appNum); }});
+            if (hasRestorableBackup(backup)) {
+                appOptions.push_back({"Restore Last Data", [appNum]() { restoreLastDataForApp(appNum); }});
+            }
         }
     }
 
