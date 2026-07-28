@@ -164,6 +164,16 @@ function readPartitionLabel(bytes, offset) {
 function alignUp(value, alignment) {
     return Math.ceil(value / alignment) * alignment;
 }
+function isSourceDataEmpty(data, offset, len = 16) {
+    const end = Math.min(offset + len, data.length);
+    if (end <= offset) return true;
+    let allFF = true, allZero = true;
+    for (let i = offset; i < end; i++) {
+        if (data[i] !== 0xFF) allFF = false;
+        if (data[i] !== 0x00) allZero = false;
+    }
+    return allFF || allZero;
+}
 function measureEspImageSize(data, imageOffset) {
     if (imageOffset + 24 > data.length) return 0;
     const magic = data[imageOffset];
@@ -280,7 +290,11 @@ function analyzeFile() {
                 if (type === 0x01 && [0x81, 0x82, 0x83].includes(subtype) && offset < data.length) {
                     let size = declaredSize;
                     if (data.length < (offset + size)) size = data.length - offset;
-                    if (size > 0) {
+                    const isSpiffsLike = subtype === 0x82 || subtype === 0x83;
+                    // an empty (formatted, no payload) SPIFFS/LittleFS partition still needs to be
+                    // reported so the device can create it at minimum size, just with nothing to copy
+                    if (isSpiffsLike && isSourceDataEmpty(data, offset)) size = 0;
+                    if (size > 0 || (isSpiffsLike && declaredSize > 0)) {
                         partitions.push({
                             kind: 'data',
                             subtype,

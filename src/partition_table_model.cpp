@@ -192,13 +192,18 @@ void launcherPartitionInitDefaultSizes() {
     if (flashSize <= 0x400000) {
         LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x20000;
         LAUNCHER_DEFAULT_FAT_SIZE = 0x50000;
-    } else if (flashSize <= 0x800000) {
+    } else {
         LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x70000;
         LAUNCHER_DEFAULT_FAT_SIZE = 0x70000;
-    } else {
-        LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x100000;
-        LAUNCHER_DEFAULT_FAT_SIZE = 0x100000;
     }
+
+    // if (flashSize <= 0x800000) {
+    //     LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x70000;
+    //     LAUNCHER_DEFAULT_FAT_SIZE = 0x70000;
+    // } else {
+    //     LAUNCHER_DEFAULT_SPIFFS_SIZE = 0x100000;
+    //     LAUNCHER_DEFAULT_FAT_SIZE = 0x100000;
+    // }
 }
 
 bool LauncherPartitionEntry::isApp() const { return type == kTypeApp; }

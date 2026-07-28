@@ -159,12 +159,11 @@ bool prepareWebDataPartition(
             table, subtype, label.c_str(), payload.partitionSize, entry, error
         );
     }
-
     LauncherPartitionEntry *existing = launcherPartitionFindByLabel(table, label.c_str());
-    // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
+    // Use the full declared size for partitions labeled different from "spiffs"
     bool useRemaining;
     uint32_t requestedSize;
-    if (label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+    if (label != "spiffs" && label.length() > 0 && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
         useRemaining = false;
         requestedSize = declaredSize;
     } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
@@ -300,7 +299,11 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
         uint32_t sourceOffset = part["sourceOffset"] | 0;
         uint32_t copySize = part["copySize"] | 0;
         uint32_t declaredSize = part["declaredSize"] | copySize;
-        if (copySize == 0) continue;
+        const uint8_t subtype = static_cast<uint8_t>(part["subtype"] | 0xFF);
+        const bool isSpiffsLike = subtype == 0x82 || subtype == 0x83;
+        // the browser reports copySize 0 for a SPIFFS/LittleFS partition it found empty
+        // (formatted, no payload); still let it through so we create it at minimum size
+        if (copySize == 0 && !(isSpiffsLike && declaredSize > 0)) continue;
         if (sourceOffset > uploadSize || copySize > uploadSize - sourceOffset) {
             error = "Manifest range exceeds file";
             return false;
@@ -314,7 +317,6 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
             continue;
         }
 
-        const uint8_t subtype = static_cast<uint8_t>(part["subtype"] | 0xFF);
         String label = part["label"].as<String>();
         if (label.isEmpty()) label = launcherInstallDefaultDataLabel(subtype);
         LauncherInstallDataPartition dp;
@@ -327,9 +329,13 @@ bool parseWebInstallManifest(const String &manifestJson, size_t uploadSize, Stri
                 launcherPartitionFatPayloadPlan(label.c_str(), declaredSize, copySize);
             dp.partitionSize = payload.partitionSize;
             dp.copySize = payload.copySize;
-        } else if (subtype == 0x82 || subtype == 0x83) {
-            // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
-            if (label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+        } else if (isSpiffsLike) {
+            const bool partitionEmpty = copySize == 0;
+            // accept data partitions as they are if not "spiffs", unless there's no actual
+            // payload to justify the declared size
+            if (partitionEmpty && declaredSize <= LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+            } else if (label != "spiffs" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
                 dp.partitionSize = declaredSize;
             } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
                 dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;

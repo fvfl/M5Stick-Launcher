@@ -736,7 +736,8 @@ void installFirmwareFromManifest(const String &fid, const String &version, Strin
             dp.sourceUrl = resolveDataPartitionSource(part, sources);
             dp.label = part["label"].as<String>();
             if (dp.label.isEmpty()) dp.label = "spiffs";
-            if (dp.label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+            // accept data partitions as they are
+            if (dp.label != "label" && dp.copySize > 0 && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
                 dp.partitionSize = declaredSize;
             } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
                 dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;

@@ -514,6 +514,22 @@ boundedSdPartitionPayload(File &file, uint32_t offset, uint32_t declaredSize, ui
     return launcherPartitionBoundedPayloadSize(declaredSize, 0, maxSize, availableSize);
 }
 
+// A partition table entry can be present without actually carrying payload (e.g. the
+// image was built with an empty/erased data partition). Treat it as empty when its
+// first bytes are all-0xFF or all-0x00, so callers don't size/copy for data that isn't there.
+static bool sdPartitionIsEmpty(File &file, uint32_t offset) {
+    if (offset == 0 || file.size() <= offset) return true;
+    uint8_t buffer[16];
+    uint32_t len = std::min<uint32_t>(sizeof(buffer), file.size() - offset);
+    if (!readSdBytes(file, offset, buffer, len)) return true;
+    bool allFF = true, allZero = true;
+    for (uint32_t i = 0; i < len; ++i) {
+        if (buffer[i] != 0xFF) allFF = false;
+        if (buffer[i] != 0x00) allZero = false;
+    }
+    return allFF || allZero;
+}
+
 static bool measureSdEspImage(File &file, uint32_t imageOffset, uint32_t &imageSize) {
     esp_image_header_t header;
     if (!readSdBytes(file, imageOffset, &header, sizeof(header))) return false;
@@ -779,15 +795,19 @@ void updateFromSD(const String &path) {
                 const uint32_t declaredSize = readLe32(partitionEntry + 0x08);
                 String declaredLabel = readPartitionLabel(partitionEntry);
                 dp.label = declaredLabel.isEmpty() ? "spiffs" : declaredLabel;
-                // Use the full declared size for "assets" partitions (e.g. xiaozhi-esp32)
-                if (dp.label == "assets" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
+                const bool partitionEmpty = sdPartitionIsEmpty(file, dp.sourceOffset);
+                // accept data partitions as they are if not "spiffs", unless there's no actual
+                // payload to justify the declared size
+                if (partitionEmpty && declaredSize <= LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
+                    dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
+                } else if (dp.label != "spiffs" && declaredSize > LAUNCHER_DEFAULT_SPIFFS_SIZE) {
                     dp.partitionSize = declaredSize;
                 } else if (declaredSize > LAUNCHER_DEFAULT_SPIFFS_THRESHOLD) {
                     dp.partitionSize = LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE;
                 } else {
                     dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
                 }
-                dp.copySize = boundedSdPartitionPayload(
+                dp.copySize = partitionEmpty ? 0 : boundedSdPartitionPayload(
                     file,
                     dp.sourceOffset,
                     declaredSize,
@@ -798,6 +818,13 @@ void updateFromSD(const String &path) {
                     dp.copySize = 0;
                     launcherConsolePrintf(
                         "Found SPIFFS table entry without payload: create 0x%06X, copy 0\n", dp.partitionSize
+                    );
+                } else if (partitionEmpty) {
+                    launcherConsolePrintf(
+                        "Found empty %s partition at 0x%06X: create 0x%06X, copy 0\n",
+                        dp.label.c_str(),
+                        dp.sourceOffset,
+                        dp.partitionSize
                     );
                 }
                 dataPartitions.push_back(dp);

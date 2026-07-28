@@ -257,7 +257,7 @@ void MassStorage::setup() {
     displayMessage("Mounting...");
 
     setShouldStop(false);
-    SDM.end(); // Forces SDCard mounting again.
+
     if (!setupSdCard()) {
         displayError("SD card not found.");
         return;
@@ -265,7 +265,7 @@ void MassStorage::setup() {
 
     beginUsb();
 
-    vTaskDelay(pdTICKS_TO_MS(500));
+    vTaskDelay(pdTICKS_TO_MS(100));
     return loop();
 }
 
