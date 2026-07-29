@@ -1388,7 +1388,7 @@ void installFirmware(
     {
         auto spiffsIt = std::find_if(
             dataPartitions.begin(), dataPartitions.end(), [](const LauncherInstallDataPartition &d) {
-                return d.subtype != 0x81;
+                return d.subtype != 0x81 && d.label == "spiffs";
             }
         );
         if (spiffsIt != dataPartitions.end()) {
