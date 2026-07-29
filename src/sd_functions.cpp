@@ -463,10 +463,30 @@ static bool flashRawFromSd(
         size_t toRead = min(bufferSize, imageSize - written);
         int bytesRead = file.readBytes(reinterpret_cast<char *>(buf.get()), toRead);
         if (bytesRead <= 0) {
+            launcherDelayMs(20);
+            if (!file.seek(sourceOffset + written)) {
+                launcherConsolePrintf(
+                    "SD read failed at offset 0x%08X (re-seek failed)\n", (unsigned)(sourceOffset + written)
+                );
+                launcherRawUpdateEnd();
+                return false;
+            }
+            bytesRead = file.readBytes(reinterpret_cast<char *>(buf.get()), toRead);
+        }
+        if (bytesRead <= 0) {
+            launcherConsolePrintf("SD read failed at offset 0x%08X\n", (unsigned)(sourceOffset + written));
             launcherRawUpdateEnd();
             return false;
         }
-        if (launcherRawUpdateWrite(buf.get(), bytesRead) != static_cast<size_t>(bytesRead)) return false;
+        if (launcherRawUpdateWrite(buf.get(), bytesRead) != static_cast<size_t>(bytesRead)) {
+            launcherConsolePrintf(
+                "Flash write failed at partition offset 0x%08X (%s)\n",
+                (unsigned)written,
+                launcherUpdateLastErrorName()
+            );
+            launcherRawUpdateEnd();
+            return false;
+        }
         written += bytesRead;
         progressHandler(written, imageSize);
         launcherDelayMs(1);
@@ -807,13 +827,16 @@ void updateFromSD(const String &path) {
                 } else {
                     dp.partitionSize = LAUNCHER_DEFAULT_SPIFFS_SIZE;
                 }
-                dp.copySize = partitionEmpty ? 0 : boundedSdPartitionPayload(
-                    file,
-                    dp.sourceOffset,
-                    declaredSize,
-                    dp.partitionSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE ? declaredSize
-                                                                                   : dp.partitionSize
-                );
+                dp.copySize = partitionEmpty
+                                  ? 0
+                                  : boundedSdPartitionPayload(
+                                        file,
+                                        dp.sourceOffset,
+                                        declaredSize,
+                                        dp.partitionSize == LAUNCHER_INSTALL_USE_REMAINING_SPIFFS_SIZE
+                                            ? declaredSize
+                                            : dp.partitionSize
+                                    );
                 if (file.size() < dp.sourceOffset) {
                     dp.copySize = 0;
                     launcherConsolePrintf(

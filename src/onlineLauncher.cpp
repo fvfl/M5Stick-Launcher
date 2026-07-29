@@ -315,7 +315,20 @@ bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
     while (totalWrote < len) {
         const size_t part = min(sdWriteChunk, len - totalWrote);
         size_t wrote = download->file->write(data + totalWrote, part);
-        if (wrote != part) return false;
+        if (wrote != part) {
+            download->file->flush();
+            vTaskDelay(pdMS_TO_TICKS(20));
+            wrote = download->file->write(data + totalWrote, part);
+        }
+        if (wrote != part) {
+            launcherConsolePrintf(
+                "Download: SD write failed at pos 0x%06X (%u/%u bytes)\n",
+                (unsigned)(download->downloaded + totalWrote),
+                (unsigned)wrote,
+                (unsigned)part
+            );
+            return false;
+        }
         totalWrote += wrote;
     }
     download->downloaded += totalWrote;
@@ -928,7 +941,22 @@ static bool mergedDownloadCb(const uint8_t *data, size_t len, void *ctx) {
     constexpr size_t sdWriteChunk = 512;
     while (totalWrote < len) {
         const size_t part = min(sdWriteChunk, len - totalWrote);
-        if (d->file->write(data + totalWrote, part) != part) return false;
+
+        size_t written = d->file->write(data + totalWrote, part);
+        if (written != part) {
+            d->file->flush();
+            vTaskDelay(pdMS_TO_TICKS(20));
+            written = d->file->write(data + totalWrote, part);
+        }
+        if (written != part) {
+            launcherConsolePrintf(
+                "Merge: SD write failed at pos 0x%06X (%u/%u bytes)\n",
+                (unsigned)(*d->pos + totalWrote),
+                (unsigned)written,
+                (unsigned)part
+            );
+            return false;
+        }
         totalWrote += part;
     }
     d->sourceWritten += totalWrote;
@@ -984,28 +1012,48 @@ static bool reportDownloadOutcome(
 
 // Pads the merged file with 0xFF from the current write position up to `target`.
 static bool padMergedFile(File &file, size_t &pos, size_t target) {
-    if (pos > target) return false; // components overlap: malformed manifest
-    constexpr size_t padProgressThreshold = 64 * 1024;
-    constexpr size_t padProgressStep = 32 * 1024; // redraw at most once per 32KB written
+    if (pos > target) {
+        launcherConsolePrintf(
+            "Merge: overlap while placing source at 0x%06X (pos 0x%06X)\n", (unsigned)target, (unsigned)pos
+        );
+        return false; // components overlap: malformed manifest
+    }
+    constexpr size_t padProgressThreshold = 128 * 1024;
+    constexpr size_t padProgressStep = 64 * 1024; // redraw at most once per 32KB written
     const size_t total = target - pos;
     const bool report = total > padProgressThreshold;
     if (report) {
         progressHandler(0, total); // repaints the frame, so label it afterwards
         displayRedStripe("Padding..");
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    uint8_t ff[256];
+    uint8_t ff[4096];
     memset(ff, 0xFF, sizeof(ff));
     size_t done = 0, lastReported = 0;
     while (pos < target) {
+        vTaskDelay(pdMS_TO_TICKS(2));
         const size_t chunk = min(sizeof(ff), target - pos);
-        if (file.write(ff, chunk) != chunk) return false;
+        size_t written = file.write(ff, chunk);
+        if (written != chunk) {
+            file.flush();
+            vTaskDelay(pdMS_TO_TICKS(20));
+            written = file.write(ff, chunk);
+        }
+        if (written != chunk) {
+            launcherConsolePrintf(
+                "Merge: SD write failed while padding to 0x%06X (pos 0x%06X)\n",
+                (unsigned)target,
+                (unsigned)pos
+            );
+            return false;
+        }
         pos += chunk;
         done += chunk;
-        if (report && done - lastReported >= padProgressStep) {
+        if (done - lastReported >= padProgressStep) {
             lastReported = done;
             file.flush();
-            progressHandler(done, total);
+            if (report) progressHandler(done, total);
             wakeUpScreen();
         }
     }
@@ -1030,21 +1078,14 @@ static bool mergeSourceIntoFile(
     uint8_t *captureBuf = nullptr, size_t captureStart = 0, size_t captureLen = 0
 ) {
     if (sourceUrl.isEmpty()) return false;
-    if (!padMergedFile(file, pos, offset)) {
-        launcherConsolePrintf(
-            "Merge: overlap while placing source at 0x%06X (pos 0x%06X)\n", (unsigned)offset, (unsigned)pos
-        );
-        return false;
-    }
+    if (!padMergedFile(file, pos, offset)) return false;
     String url = buildSourceUrl(fid, sourceUrl, useProxy);
 
     LauncherHttpResponse resp;
     MergedDownloadContext ctx = {&file, &pos, 0, 0, 0, &resp, captureBuf, captureStart, captureLen};
-    pauseInputHandlerTask();
     bool ok =
         launcherHttpGetStream(url.c_str(), mergedDownloadCb, &ctx, &resp, "HWID", launcherWifiMac().c_str());
     file.flush();
-    resumeInputHandlerTask();
 
     if (!ok || resp.status != 200) return false;
     if (resp.content_length > 0 && ctx.sourceWritten != (size_t)resp.content_length) return false;
@@ -1119,7 +1160,7 @@ static bool __attribute__((noinline)) downloadSplitFirmware(
 
     size_t pos = 0;
     bool ok = true;
-
+    pauseInputHandlerTask();
     if (mergedFirmware) {
         // Factory image goes to 0x0. Snapshot the embedded partition table (0x8000) as
         // it streams by so we can locate the data partition afterwards.
@@ -1167,7 +1208,7 @@ static bool __attribute__((noinline)) downloadSplitFirmware(
     }
     file.flush();
     file.close();
-
+    resumeInputHandlerTask();
     return reportDownloadOutcome(
         ok, filePath, folder, fid, version, autoAdvance, "Merged firmware assembled.."
     );

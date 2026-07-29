@@ -203,7 +203,7 @@ bool ensureM5StackUiFlowNVSDefaults() {
             launcherConsolePrintf("ensureM5StackUiFlowNVSDefaults: commit failed: %d", err);
             return false;
         }
-        launcherConsolePrint("ensureM5StackUiFlowNVSDefaults: default UiFlow keys created");
+        launcherConsolePrintln("ensureM5StackUiFlowNVSDefaults: default UiFlow keys created");
     }
 
     return true;
@@ -559,11 +559,11 @@ bool saveIntoNVS() {
     if (err != ESP_OK) {
         launcherConsolePrintf("Failed to store settings in NVS: %d", err);
     } else {
-        launcherConsolePrint("Settings stored in NVS successfully");
+        launcherConsolePrintln("Settings stored in NVS successfully");
     }
 
     nvsHandle->commit();
-    if (!saveWifiIntoNVS()) { launcherConsolePrint("saveIntoNVS: failed to store WiFi list"); }
+    if (!saveWifiIntoNVS()) { launcherConsolePrintln("saveIntoNVS: failed to store WiFi list"); }
     return true;
 }
 
