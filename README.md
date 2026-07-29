@@ -101,6 +101,7 @@ Things that need to be done in future updates
 ## Latest Changelog
 * 2.8.0:
      * [x] Port to Xueersi-XiaoMiao
+     * [x] **Added Serial interface**: type "help" on serial to check available commands, you can configure Wifi from there, useful for devices like StickCPlus2 and others without keyboard or touchscreen: e.g. "wifi connect MyNetworkSSID MyN37w0rkPWD".
      * [x] **Downloaded firmware update list**. Now launcher can check the firmware you downloaded, stored at `{dwn_path}/downloaded.json` and check if there are new versions of these firmwares, and it can download all new files directly to your SDCard if you hit `[Update All]`.
      * [x] **Multi-part binary download**: Firmware composed by multiple files (bootloader.bin, partitions.bin, firmware.bin and data.bin) available on LauncherHub are now downloaded and merged at runtime. It fetches data, one by one, and saves them into on single file to be flashed from the SDCard.
      * [x] **New Data partition Backup system**: Now it saves the relationship between backup and binary on `/bkp/backupData.json` and restores it when reinstalling. App icon will display backup data, and PMan too. Needs SD Card to use this feature.

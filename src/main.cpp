@@ -375,6 +375,7 @@ void loop() {
     int pass_by = 0;
     bool first_loop = true;
     getBrightness();
+    printHelp();
     if (!sdcardMounted) index = 1; // if SD card is not present, paint SD square grey and auto select OTA
     std::vector<MenuOptions> menuItems = {
         {
@@ -694,6 +695,8 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
     if (launcherWifiIsConnected()) mode_ap = false;
 
     startWebUi("", 0, mode_ap);
+
+    printHelp();
 
     // sorfware will keep trapped in startWebUi loop..
 }

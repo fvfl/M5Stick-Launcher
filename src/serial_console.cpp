@@ -631,7 +631,7 @@ static void handleSerialCommand(const String &line) {
         calibrateTouch();
 #endif
     } else {
-        launcherConsolePrintln("ERR unknown command");
+        launcherConsolePrintln("ERR unknown command, type 'help' for command list");
     }
 }
 
