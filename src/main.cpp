@@ -375,7 +375,7 @@ void loop() {
     int pass_by = 0;
     bool first_loop = true;
     getBrightness();
-    printHelp();
+    launcherConsolePrintln("Type 'help' for Serial commands.");
     if (!sdcardMounted) index = 1; // if SD card is not present, paint SD square grey and auto select OTA
     std::vector<MenuOptions> menuItems = {
         {
@@ -696,7 +696,7 @@ void loop() { // Start SD card, If there's no SD Card installed, see if there's 
 
     startWebUi("", 0, mode_ap);
 
-    printHelp();
+    launcherConsolePrintln("Type 'help' for Serial commands.");
 
     // sorfware will keep trapped in startWebUi loop..
 }

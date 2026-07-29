@@ -7,5 +7,4 @@
 // for the command grammar.
 void taskSerialConsole(void *parameter);
 
-void printHelp();
 #endif
