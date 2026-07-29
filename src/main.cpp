@@ -158,6 +158,9 @@ void _post_setup_gpio() {}
 *********************************************************************/
 void setup() {
     Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT
+    Serial.setTxTimeoutMs(0);
+#endif
     RAM_LOG("setup-start");
     nvs_flash_init();
     launcherPartitionInitDefaultSizes();
