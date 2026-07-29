@@ -258,6 +258,7 @@ void initDisplay(bool doAll) {
 
     String selectedAppName = launcherSelectedBootAppName();
     if (!selectedAppName.isEmpty()) {
+        selectedAppName = selectedAppName.substring(0, tftWidth / (FM * LW) - 4);
         tft->setTextSize(FM);
         tft->setTextColor(FGCOLOR, BGCOLOR);
         int appTextY = tftHeight - (1.5 * (FM * LH) + 10);
