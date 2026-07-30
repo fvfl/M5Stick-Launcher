@@ -285,10 +285,23 @@ bool parseContentRangeTotal(const char *contentRange, size_t &total) {
 }
 
 bool getRemoteFileSize(const String &url, size_t &size, const char *hwid = nullptr) {
-    LauncherHttpResponse response;
-    if (!launcherHttpGetRange(url.c_str(), 0, 1, discardHttpCb, nullptr, &response, hwid)) return false;
-    if (response.status != 206) return false;
-    return parseContentRangeTotal(response.content_range, size);
+    String activeUrl = url;
+    for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+        LauncherHttpResponse response;
+        bool ok = launcherHttpGetRange(activeUrl.c_str(), 0, 1, discardHttpCb, nullptr, &response, hwid);
+        if (ok && response.status == 206) return parseContentRangeTotal(response.content_range, size);
+        // A redirect the device can't follow is api.launcherhub.net's answer, not a
+        // hiccup on the CDN side; fall back to /proxy (server-side fetch) once
+        // instead of failing the whole install before it even starts.
+        const bool unfollowedRedirect = response.status >= 300 && response.status < 400;
+        if (attempt == 0 && unfollowedRedirect && activeUrl.indexOf("/download?") >= 0) {
+            activeUrl.replace("/download?", "/proxy?");
+            launcherConsolePrintf("Redirect not followed, falling back to /proxy for size probe\n");
+            continue;
+        }
+        return false;
+    }
+    return false;
 }
 
 struct FileDownloadContext {
@@ -387,6 +400,10 @@ bool flashRawRangeFromHttp(
     RawHttpUpdateContext update = {target.offset, target.size, imageSize, 0, appImage, false};
     bool httpOk = false;
     LauncherHttpResponse response;
+    String activeUrl = url;
+    bool triedProxyFallback = false;
+    uint8_t redirectFailStreak = 0;
+    constexpr uint8_t kProxyFallbackThreshold = 2;
     constexpr uint8_t maxAttempts = 24;
     for (uint8_t attempt = 0; update.written < imageSize && attempt < maxAttempts; ++attempt) {
         size_t before = update.written;
@@ -395,7 +412,7 @@ bool flashRawRangeFromHttp(
         response = LauncherHttpResponse();
         RAM_LOG("flashRawRangeFromHttp-attempt");
         httpOk = launcherHttpGetRange(
-            url.c_str(), requestOffset, remaining, launcherRawUpdateHttpCb, &update, &response, hwid
+            activeUrl.c_str(), requestOffset, remaining, launcherRawUpdateHttpCb, &update, &response, hwid
         );
         if (!httpOk) {
             launcherConsolePrintf(
@@ -409,12 +426,36 @@ bool flashRawRangeFromHttp(
             );
         }
         if (httpOk && update.written == imageSize) break;
-        // Any non-2xx that produced no data is the server's answer, not a hiccup:
-        // repeating the request cannot change it. That includes redirects we
-        // failed to follow (3xx with a transport error), which previously fell
-        // through this check and burned all 24 attempts — several minutes of a
-        // motionless progress bar before the error finally surfaced.
-        if (update.written == before && response.status >= 300) break;
+        if (update.written == before) {
+            const bool unfollowedRedirect = response.status >= 300 && response.status < 400;
+            if (unfollowedRedirect) {
+                ++redirectFailStreak;
+                // A redirect the device can't follow is api.launcherhub.net's answer,
+                // not a transient hiccup on the CDN side — the /download endpoint always
+                // sends the same Location. After a couple of tries, fall back to /proxy,
+                // where api.launcherhub.net fetches the CDN itself and streams the bytes
+                // back, so the device never has to open that second connection.
+                if (!triedProxyFallback && redirectFailStreak >= kProxyFallbackThreshold &&
+                    activeUrl.indexOf("/download?") >= 0) {
+                    activeUrl.replace("/download?", "/proxy?");
+                    triedProxyFallback = true;
+                    redirectFailStreak = 0;
+                    launcherConsolePrintf(
+                        "Redirect not followed after %u attempts, falling back to /proxy\n",
+                        kProxyFallbackThreshold
+                    );
+                } else {
+                    break;
+                }
+            } else {
+                // Any other non-2xx that produced no data is a definitive answer
+                // (repeating it cannot change it), whether from /download or /proxy.
+                if (response.status >= 400) break;
+                redirectFailStreak = 0;
+            }
+        } else {
+            redirectFailStreak = 0;
+        }
         launcherDelayMs(500);
     }
     bool complete = update.written == imageSize;
@@ -1086,17 +1127,36 @@ static bool mergeSourceIntoFile(
 ) {
     if (sourceUrl.isEmpty()) return false;
     if (!padMergedFile(file, pos, offset)) return false;
-    String url = buildSourceUrl(fid, sourceUrl, useProxy);
+    String activeUrl = buildSourceUrl(fid, sourceUrl, useProxy);
 
-    LauncherHttpResponse resp;
-    MergedDownloadContext ctx = {&file, &pos, 0, 0, 0, &resp, captureBuf, captureStart, captureLen};
-    bool ok =
-        launcherHttpGetStream(url.c_str(), mergedDownloadCb, &ctx, &resp, "HWID", launcherWifiMac().c_str());
-    file.flush();
+    for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+        LauncherHttpResponse resp;
+        MergedDownloadContext ctx = {&file, &pos, 0, 0, 0, &resp, captureBuf, captureStart, captureLen};
+        bool ok = launcherHttpGetStream(
+            activeUrl.c_str(), mergedDownloadCb, &ctx, &resp, "HWID", launcherWifiMac().c_str()
+        );
+        file.flush();
 
-    if (!ok || resp.status != 200) return false;
-    if (resp.content_length > 0 && ctx.sourceWritten != (size_t)resp.content_length) return false;
-    return true;
+        if (ok && resp.status == 200) {
+            if (resp.content_length > 0 && ctx.sourceWritten != (size_t)resp.content_length) return false;
+            return true;
+        }
+
+        // Nothing was written for this source yet (a redirect that failed to
+        // connect never reaches the data callback), so pos/file are untouched and
+        // it's safe to retry in place after falling back to /proxy. A genuine
+        // mid-stream drop (some bytes already written) is not retried here, to
+        // avoid writing this source's bytes twice.
+        const bool unfollowedRedirect = resp.status >= 300 && resp.status < 400;
+        if (attempt == 0 && ctx.sourceWritten == 0 && unfollowedRedirect &&
+            activeUrl.indexOf("/download?") >= 0) {
+            activeUrl.replace("/download?", "/proxy?");
+            launcherConsolePrintf("Redirect not followed, falling back to /proxy for source download\n");
+            continue;
+        }
+        return false;
+    }
+    return false;
 }
 
 // Scans a raw partition table blob and returns the flash offset of the first data
@@ -1297,6 +1357,13 @@ retry:
     if ((!ok || sdSize <= bufSize) && tries < 1) {
         tries++;
         SDM.remove(filePath);
+        // A redirect the device can't follow is api.launcherhub.net's answer, not a
+        // hiccup on the CDN side; use the single retry we already have to fall back
+        // to /proxy instead of just repeating the doomed request.
+        if (response.status >= 300 && response.status < 400 && fileAddr.indexOf("/download?") >= 0) {
+            fileAddr.replace("/download?", "/proxy?");
+            launcherConsolePrintf("Redirect not followed, falling back to /proxy for SD download\n");
+        }
         goto retry;
     }
     ok = ok && !(response.content_length > 0 && sdSize != (size_t)response.content_length);
