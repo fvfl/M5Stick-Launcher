@@ -1,6 +1,7 @@
 #include "backup_manager.h"
 #include "display.h"
 #include "idf/launcher_platform.h"
+#include "littlefs_patch.h"
 #include "partition_table_model.h"
 #include "ram_profile.h"
 #include "sd_functions.h"
@@ -426,10 +427,9 @@ bool restorePartitionFromBackup(const char *partitionLabel, const char *backupFi
         log_w("restorePartitionFromBackup: partition '%s' not found on device, skipping", partitionLabel);
         return true;
     }
-    if (fileSize > part->size) {
-        inFile.close();
-        return restoreFail(partitionLabel);
-    }
+
+    const bool truncated = fileSize > part->size;
+    if (truncated) fileSize = part->size;
 
     esp_err_t err = esp_partition_erase_range(part, 0, part->size);
     if (err != ESP_OK) {
@@ -463,7 +463,18 @@ bool restorePartitionFromBackup(const char *partitionLabel, const char *backupFi
         progressHandler(written, fileSize);
     }
     inFile.close();
-    displayMsg("Data restored");
+
+    if (truncated) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(part->address, part->size, &patchError)) {
+            launcherConsolePrintf(
+                "Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str()
+            );
+        }
+        displayMsg("Backup > Partition, data can be lost");
+    } else {
+        displayMsg("Data restored");
+    }
     RAM_LOG("restorePartition-end");
     return true;
 }
@@ -478,10 +489,13 @@ bool restorePartitionFromBackupDirect(
     if (!inFile) return restoreFail(partitionLabel);
 
     size_t fileSize = inFile.size();
-    if (fileSize == 0 || fileSize > flashSize) {
+    if (fileSize == 0) {
         inFile.close();
         return restoreFail(partitionLabel);
     }
+
+    const bool truncated = fileSize > flashSize;
+    if (truncated) fileSize = flashSize;
 
     HeapBuffer buf = makeInternalBuffer(kBackupBufferSize);
     if (!buf) {
@@ -522,7 +536,18 @@ bool restorePartitionFromBackupDirect(
         progressHandler(written, fileSize);
     }
     inFile.close();
-    displayMsg("Data restored");
+
+    if (truncated) {
+        String patchError;
+        if (!launcherPatchReducedLittlefsSuperblocks(flashOffset, flashSize, &patchError)) {
+            launcherConsolePrintf(
+                "Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str()
+            );
+        }
+        displayMsg("Backup > Partition, data can be lost");
+    } else {
+        displayMsg("Data restored");
+    }
     RAM_LOG("restorePartitionDirect-end");
     return true;
 }

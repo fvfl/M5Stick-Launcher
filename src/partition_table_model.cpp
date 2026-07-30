@@ -396,7 +396,13 @@ bool launcherPartitionMigrateMovedData(
     for (const LauncherPartitionEntry &target : targetTable.entries) {
         const LauncherPartitionEntry *source = findSourcePartition(currentTable, target);
         if (!source) continue;
-        if (source->offset == target.offset) continue;
+        if (source->offset == target.offset) {
+            if (!launcherPatchReducedLittlefsSuperblocks(target, error)) {
+                if (error && error->length() == 0) *error = "Could not patch reduced LittleFS partition";
+                return false;
+            }
+            continue;
+        }
 
         const uint32_t copySize = std::min(source->size, target.size);
         if (copySize == 0) continue;
