@@ -95,6 +95,7 @@ bool deleteFromSd(const String &path) {
         } else {
             success &= SDM.remove(fullPath.c_str());
         }
+        yield(); // large folders can take long enough to trip the task watchdog
         fullPath = dir.getNextFileName(&isDir);
     }
 

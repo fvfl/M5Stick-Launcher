@@ -40,6 +40,15 @@
 //   wifi scan                                     scan and list nearby networks
 //   wifi connect <SSID> [PWD]                     connect (PWD optional if SSID is known)
 //   wifi disconnect                                disconnect and stop the WiFi radio
+//   wifi add <SSID> <PWD>                          save a network without connecting to it
+//   wifi del <SSID>                                remove one saved network
+//   wifi clear                                     remove all saved networks
+//   calibrate                                     run the interactive touch calibration wizard
+//   calibrate set <Xmax> <Xmin> <Ymax> <Ymin> <rot>
+//                                                  write raw calibration values straight to NVS
+//   calibrate show                                print the calibration currently saved in NVS
+//   calibrate mirror <X/Y>                        flip the given axis and persist it
+//   calibrate swapXY                              toggle swapped X/Y and persist it
 // This lets a host script recover a device stuck auto-booting a queued OTA
 // firmware: send "nav SelPress" while the "Press the button to enter the
 // Launcher!" banner is printed (src/main.cpp bootscreen loop) to force the
@@ -573,6 +582,41 @@ static void handleWifiDisconnectCommand() {
     launcherConsolePrintln("OK disconnected");
 }
 
+static void handleWifiAddCommand(const std::vector<String> &tokens) {
+    if (tokens.size() < 4) {
+        launcherConsolePrintln("Usage: wifi add <SSID> <PWD>");
+        return;
+    }
+    const String &targetSsid = tokens[2];
+    const String &password = tokens[3];
+    if (!setWifiCredential(targetSsid, password, true)) {
+        launcherConsolePrintln("ERR failed to save network");
+        return;
+    }
+    launcherConsolePrintf("OK saved %s\n", targetSsid.c_str());
+}
+
+static void handleWifiDelCommand(const std::vector<String> &tokens) {
+    if (tokens.size() < 3) {
+        launcherConsolePrintln("Usage: wifi del <SSID>");
+        return;
+    }
+    const String &targetSsid = tokens[2];
+    if (!removeWifiCredential(targetSsid)) {
+        launcherConsolePrintln("ERR SSID not found");
+        return;
+    }
+    launcherConsolePrintf("OK removed %s\n", targetSsid.c_str());
+}
+
+static void handleWifiClearCommand() {
+    if (!clearWifiCredentials()) {
+        launcherConsolePrintln("ERR failed to clear networks");
+        return;
+    }
+    launcherConsolePrintln("OK cleared all networks");
+}
+
 static void handleWifiCommand(const std::vector<String> &tokens) {
     const String &sub = tokens[1];
     if (sub.equalsIgnoreCase("auto")) {
@@ -583,14 +627,142 @@ static void handleWifiCommand(const std::vector<String> &tokens) {
         handleWifiConnectCommand(tokens);
     } else if (sub.equalsIgnoreCase("disconnect")) {
         handleWifiDisconnectCommand();
+    } else if (sub.equalsIgnoreCase("add")) {
+        handleWifiAddCommand(tokens);
+    } else if (sub.equalsIgnoreCase("del")) {
+        handleWifiDelCommand(tokens);
+    } else if (sub.equalsIgnoreCase("clear")) {
+        handleWifiClearCommand();
     } else {
         launcherConsolePrintln("ERR unknown wifi subcommand");
     }
 }
 
+#if defined(HAS_RESISTIVE_TOUCH)
+static void printTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, uint8_t rot) {
+    // rot packs (see settings.cpp calibrateTouch()): bit0 = !swapXY, bit1 = invertY,
+    // bit2 = !invertX — the bits are inverted from their plain meaning for legacy
+    // compatibility, so decode them back to plain booleans for display.
+    const bool swapXY = !(rot & 0x01);
+    const bool mirrorX = !(rot & 0x04);
+    const bool mirrorY = (rot & 0x02) != 0;
+    launcherConsolePrintf(
+        "x0:%u x1:%u y0:%u y1:%u rot:0x%02X (swapXY:%u mirrorX:%u mirrorY:%u)\n",
+        x0,
+        x1,
+        y0,
+        y1,
+        rot,
+        swapXY,
+        mirrorX,
+        mirrorY
+    );
+}
+
+static void handleCalibrateShowCommand() {
+    uint16_t x0, x1, y0, y1;
+    uint8_t rot;
+    if (!getTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("ERR no calibration saved");
+        return;
+    }
+    printTouchCalibration(x0, x1, y0, y1, rot);
+}
+
+static void handleCalibrateSetCommand(const std::vector<String> &tokens) {
+    if (tokens.size() < 7) {
+        launcherConsolePrintln("ERR usage: calibrate set <Xmax> <Xmin> <Ymax> <Ymin> <rot>");
+        return;
+    }
+    const uint16_t xMax = static_cast<uint16_t>(parseNumber(tokens[2]));
+    const uint16_t xMin = static_cast<uint16_t>(parseNumber(tokens[3]));
+    const uint16_t yMax = static_cast<uint16_t>(parseNumber(tokens[4]));
+    const uint16_t yMin = static_cast<uint16_t>(parseNumber(tokens[5]));
+    const uint8_t rot = static_cast<uint8_t>(parseNumber(tokens[6]));
+    if (!saveTouchCalibration(xMin, xMax, yMin, yMax, rot)) {
+        launcherConsolePrintln("ERR invalid calibration values");
+        return;
+    }
+    loadTouchCalibration();
+    launcherConsolePrintln("OK calibration saved");
+}
+
+static void handleCalibrateMirrorCommand(const std::vector<String> &tokens) {
+    if (tokens.size() < 3) {
+        launcherConsolePrintln("ERR usage: calibrate mirror <X/Y>");
+        return;
+    }
+    uint16_t x0, x1, y0, y1;
+    uint8_t rot;
+    if (!getTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("ERR no calibration saved");
+        return;
+    }
+    if (tokens[2].equalsIgnoreCase("X")) {
+        rot ^= 0x04;
+    } else if (tokens[2].equalsIgnoreCase("Y")) {
+        rot ^= 0x02;
+    } else {
+        launcherConsolePrintln("ERR axis must be X or Y");
+        return;
+    }
+    if (!saveTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("ERR failed to save calibration");
+        return;
+    }
+    loadTouchCalibration();
+    printTouchCalibration(x0, x1, y0, y1, rot);
+}
+
+static void handleCalibrateSwapCommand() {
+    uint16_t x0, x1, y0, y1;
+    uint8_t rot;
+    if (!getTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("ERR no calibration saved");
+        return;
+    }
+    rot ^= 0x01;
+    if (!saveTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("ERR failed to save calibration");
+        return;
+    }
+    loadTouchCalibration();
+    printTouchCalibration(x0, x1, y0, y1, rot);
+}
+
+static void handleCalibrateCommand(const std::vector<String> &tokens) {
+    if (tokens.size() < 2) {
+        launcherConsolePrintln("Starting calibration..");
+        calibrateTouch();
+        return;
+    }
+    const String &sub = tokens[1];
+    if (sub.equalsIgnoreCase("set")) {
+        handleCalibrateSetCommand(tokens);
+    } else if (sub.equalsIgnoreCase("show")) {
+        handleCalibrateShowCommand();
+    } else if (sub.equalsIgnoreCase("mirror")) {
+        handleCalibrateMirrorCommand(tokens);
+    } else if (sub.equalsIgnoreCase("swapXY")) {
+        handleCalibrateSwapCommand();
+    } else {
+        launcherConsolePrintln("ERR unknown calibrate subcommand");
+    }
+}
+#endif
+
+static void printVersion() { launcherConsolePrintln("Launcher " LAUNCHER); }
+
 static void printHelp() {
     launcherConsolePrintln("Commands:");
     launcherConsolePrintln("  nav <NextPress|PrevPress|SelPress|EscPress>");
+#if defined(HAS_RESISTIVE_TOUCH)
+    launcherConsolePrintln("  calibrate");
+    launcherConsolePrintln("  calibrate set <Xmax> <Xmin> <Ymax> <Ymin> <rot>");
+    launcherConsolePrintln("  calibrate show");
+    launcherConsolePrintln("  calibrate mirror <X/Y>");
+    launcherConsolePrintln("  calibrate swapXY");
+#endif
     launcherConsolePrintln("  reboot");
     launcherConsolePrintln("  partitions");
     launcherConsolePrintln("  partition delete <label>");
@@ -602,6 +774,9 @@ static void printHelp() {
     launcherConsolePrintln("  wifi scan");
     launcherConsolePrintln("  wifi connect <SSID> [PWD]");
     launcherConsolePrintln("  wifi disconnect");
+    launcherConsolePrintln("  wifi add <SSID> <PWD>");
+    launcherConsolePrintln("  wifi del <SSID>");
+    launcherConsolePrintln("  wifi clear");
 }
 
 static void handleSerialCommand(const String &line) {
@@ -627,9 +802,10 @@ static void handleSerialCommand(const String &line) {
         printHelp();
 #if defined(HAS_RESISTIVE_TOUCH)
     } else if (cmd.equalsIgnoreCase("calibrate")) {
-        launcherConsolePrintln("Starting calibration..");
-        calibrateTouch();
+        handleCalibrateCommand(tokens);
 #endif
+    } else if (cmd.equalsIgnoreCase("version")) {
+        printVersion();
     } else {
         launcherConsolePrintln("ERR unknown command, type 'help' for command list");
     }

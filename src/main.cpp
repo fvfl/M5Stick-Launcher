@@ -338,6 +338,7 @@ void setup() {
             launcherBootInstalledAppOrShowMenu();
             goto Launcher;
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); // time to inputTask
     }
     // If nothing is done and there's something installed, launch it
     if (launcherBootCurrentApp()) {

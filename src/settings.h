@@ -47,6 +47,8 @@ bool getWifiFromNVS();
 bool ensureM5StackUiFlowNVSDefaults();
 bool getWifiCredential(const String &ssid, String &password);
 bool setWifiCredential(const String &ssid, const String &password, bool persist = false);
+bool removeWifiCredential(const String &ssid);
+bool clearWifiCredentials();
 void setdimmerSet();
 void setUiColor();
 void chargeMode();
@@ -57,6 +59,7 @@ String loadSessionToken();
 #if defined(HAS_RESISTIVE_TOUCH)
 bool loadTouchCalibration();
 bool saveTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, uint8_t rot);
+bool getTouchCalibration(uint16_t &x0, uint16_t &x1, uint16_t &y0, uint16_t &y1, uint8_t &rot);
 void calibrateTouch();
 #endif
 

@@ -467,9 +467,7 @@ bool restorePartitionFromBackup(const char *partitionLabel, const char *backupFi
     if (truncated) {
         String patchError;
         if (!launcherPatchReducedLittlefsSuperblocks(part->address, part->size, &patchError)) {
-            launcherConsolePrintf(
-                "Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str()
-            );
+            launcherConsolePrintf("Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str());
         }
         displayMsg("Backup > Partition, data can be lost");
     } else {
@@ -540,9 +538,7 @@ bool restorePartitionFromBackupDirect(
     if (truncated) {
         String patchError;
         if (!launcherPatchReducedLittlefsSuperblocks(flashOffset, flashSize, &patchError)) {
-            launcherConsolePrintf(
-                "Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str()
-            );
+            launcherConsolePrintf("Restore patch failed label=%s: %s\n", partitionLabel, patchError.c_str());
         }
         displayMsg("Backup > Partition, data can be lost");
     } else {

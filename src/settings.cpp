@@ -236,6 +236,29 @@ bool setWifiCredential(const String &ssidValue, const String &passwordValue, boo
     return true;
 }
 
+bool removeWifiCredential(const String &ssidValue) {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+
+    for (size_t i = 0; i < wifiList.size(); i++) {
+        if (wifiList[i]["ssid"].as<String>() == ssidValue) {
+            wifiList.remove(i);
+            saveConfigs();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool clearWifiCredentials() {
+    JsonArray wifiList = ensureWifiListInternal();
+    if (wifiList.isNull()) return false;
+
+    while (wifiList.size() > 0) wifiList.remove(0);
+    saveConfigs();
+    return true;
+}
+
 void settings_menu() {
     int idx = 0;
     returnToMenu = false;
@@ -1131,6 +1154,29 @@ esp_err_t readTouchCalibrationItems(
 }
 } // namespace
 
+// Reads the raw calibration values from NVS namespace "touch_cal" without
+// applying them to the live touch driver. Used by loadTouchCalibration() and by
+// the "calibrate show/mirror/swapXY" serial commands, which need to inspect or
+// tweak what's persisted without necessarily re-running the wizard.
+bool getTouchCalibration(uint16_t &x0, uint16_t &x1, uint16_t &y0, uint16_t &y1, uint8_t &rot) {
+    x0 = 0;
+    x1 = 0;
+    y0 = 0;
+    y1 = 0;
+    rot = 0;
+
+    esp_err_t err = ESP_OK;
+    auto nvsHandle = openNamespace(TOUCH_CAL_NAMESPACE, NVS_READONLY, err);
+    if (!nvsHandle) {
+        log_i("getTouchCalibration: no %s namespace found", TOUCH_CAL_NAMESPACE);
+        return false;
+    }
+
+    err = readTouchCalibrationItems(*nvsHandle, x0, x1, y0, y1, rot);
+    rot &= 0x07;
+    return err == ESP_OK && validTouchCalibration(x0, x1, y0, y1);
+}
+
 // Load touch calibration from NVS namespace "touch_cal"
 // Returns true if calibration data is found, provides data via parameters
 bool loadTouchCalibration() {
@@ -1139,36 +1185,19 @@ bool loadTouchCalibration() {
     uint16_t y0;
     uint16_t y1;
     uint8_t rot;
-    esp_err_t err = ESP_OK;
-    auto nvsHandle = openNamespace(TOUCH_CAL_NAMESPACE, NVS_READONLY, err);
-    if (!nvsHandle) {
-        log_i("loadTouchCalibration: no %s namespace found", TOUCH_CAL_NAMESPACE);
+
+    if (!getTouchCalibration(x0, x1, y0, y1, rot)) {
+        launcherConsolePrintln("loadTouchCalibration: Failed to load valid calibration data");
         return false;
     }
 
-    x0 = 0;
-    x1 = 0;
-    y0 = 0;
-    y1 = 0;
-    rot = 0;
-
-    err = readTouchCalibrationItems(*nvsHandle, x0, x1, y0, y1, rot);
-    rot &= 0x07;
-
-    if (err == ESP_OK && validTouchCalibration(x0, x1, y0, y1)) {
-        uint16_t parameters[5] = {x0, x1, y0, y1, rot};
-        extern CYD28_TouchR touch;
-        touch.setTouch(parameters);
-        launcherConsolePrintf(
-            "loadTouchCalibration: Loaded calibration - x0:%u x1:%u y0:%u y1:%u rot:%u\n", x0, x1, y0, y1, rot
-        );
-        return true;
-    }
-
+    uint16_t parameters[5] = {x0, x1, y0, y1, rot};
+    extern CYD28_TouchR touch;
+    touch.setTouch(parameters);
     launcherConsolePrintf(
-        "loadTouchCalibration: Failed to load valid calibration data: %s\n", esp_err_to_name(err)
+        "loadTouchCalibration: Loaded calibration - x0:%u x1:%u y0:%u y1:%u rot:%u\n", x0, x1, y0, y1, rot
     );
-    return false;
+    return true;
 }
 
 // Save touch calibration to NVS namespace "touch_cal"

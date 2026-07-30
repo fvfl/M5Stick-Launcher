@@ -770,9 +770,20 @@ bool writeUploadData(File &file, const uint8_t *data, size_t len, size_t written
 
 bool beginUploadTarget(File &file, const String &filename) {
     if (uploadFolder == "/") uploadFolder = "";
+
+    String effectiveFilename = filename;
+    int firstSlash = effectiveFilename.indexOf('/');
+    if (firstSlash > 0) {
+        String topSegment = effectiveFilename.substring(0, firstSlash);
+        String destTop = uploadFolder.substring(uploadFolder.lastIndexOf('/') + 1);
+        if (!destTop.isEmpty() && destTop == topSegment) {
+            effectiveFilename = effectiveFilename.substring(firstSlash + 1);
+        }
+    }
+
     if (!update) {
-        launcherConsolePrintf("File: %s/%s\n", uploadFolder.c_str(), filename.c_str());
-        String fullPath = uploadFolder + "/" + filename;
+        launcherConsolePrintf("File: %s/%s\n", uploadFolder.c_str(), effectiveFilename.c_str());
+        String fullPath = uploadFolder + "/" + effectiveFilename;
         String dirPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
         if (dirPath.length() > 0) createDirRecursive(dirPath);
         file = SDM.open(fullPath, "w");
