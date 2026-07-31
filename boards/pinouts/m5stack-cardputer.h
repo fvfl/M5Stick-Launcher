@@ -10,7 +10,7 @@
 #define HAS_KEYBOARD    //has keyboard to use
 #define HAS_KEYBOARD_HID //has keyboard to use
 #define KB_HID_EXIT_MSG "fn + esc to exit"
-#define RESERVED_NAV_KEYS ",`/.;"
+
 static const uint8_t TX = 43;
 static const uint8_t RX = 44;
 
