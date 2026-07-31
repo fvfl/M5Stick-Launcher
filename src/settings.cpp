@@ -66,6 +66,16 @@ JsonArray ensureWifiListInternal() {
     return wifiList;
 }
 
+JsonObject ensureKeyBindingObjectInternal() {
+    JsonObject setting = ensureSettingsRoot();
+    if (setting.isNull()) return JsonObject();
+
+    JsonObject bindings = setting["key_binding"].as<JsonObject>();
+    if (bindings.isNull()) { bindings = setting.createNestedObject("key_binding"); }
+    if (bindings.isNull()) { log_e("ensureKeyBindingObject: failed to create key_binding object"); }
+    return bindings;
+}
+
 bool ensureStringKey(nvs::NVSHandle &handle, const char *key, const char *value) {
     char buffer[64] = {0};
     esp_err_t err = handle.get_string(key, buffer, sizeof(buffer));
@@ -259,6 +269,60 @@ bool clearWifiCredentials() {
     return true;
 }
 
+bool getKeyBinding(const String &key, String &outPath) {
+    JsonObject bindings = ensureKeyBindingObjectInternal();
+    if (bindings.isNull()) return false;
+    if (!bindings[key].is<String>()) return false;
+    outPath = bindings[key].as<String>();
+    return true;
+}
+
+bool setKeyBinding(const String &key, const String &path, bool persist) {
+    JsonObject bindings = ensureKeyBindingObjectInternal();
+    if (bindings.isNull()) return false;
+
+    bindings[key] = path;
+    if (persist) saveConfigs();
+    return true;
+}
+
+bool removeKeyBinding(const String &key, bool persist) {
+    JsonObject bindings = ensureKeyBindingObjectInternal();
+    if (bindings.isNull()) return false;
+    if (!bindings[key].is<String>()) return false;
+
+    bindings.remove(key);
+    if (persist) saveConfigs();
+    return true;
+}
+
+bool clearKeyBindings() {
+    JsonObject setting = ensureSettingsRoot();
+    if (setting.isNull()) return false;
+
+    setting.remove("key_binding");
+    saveConfigs();
+    return true;
+}
+
+#if defined(HAS_KEYBOARD)
+static void manageKeyBindings() {
+    int idx = 0;
+    returnToMenu = false;
+    while (idx >= 0 && !returnToMenu) {
+        JsonObject bindings = ensureKeyBindingObjectInternal();
+        std::vector<Option> opts;
+        for (JsonPair kv : bindings) {
+            String key = kv.key().c_str();
+            opts.push_back({String("'") + key + "': Remove", [key]() { removeKeyBinding(key); }});
+        }
+        opts.push_back({"Reset All", [=]() { clearKeyBindings(); }});
+        opts.push_back({"Back to Menu", [&]() { returnToMenu = true; }});
+        idx = loopOptions(opts);
+    }
+}
+#endif
+
 void settings_menu() {
     int idx = 0;
     returnToMenu = false;
@@ -320,6 +384,9 @@ void settings_menu() {
                                saveConfigs();
                            }});
         options.push_back({"Partition Manager", [=]() { partList(); }});
+#if defined(HAS_KEYBOARD)
+        options.push_back({"Manage shortcuts", [=]() { manageKeyBindings(); }});
+#endif
 
         if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
         if (dev_mode) options.push_back({"Deactivate Dev", [=]() { dev_mode = false; }});

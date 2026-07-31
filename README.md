@@ -101,6 +101,8 @@ Things that need to be done in future updates
 ## Latest Changelog
 * 2.8.0:
      * [x] Port to Xueersi-XiaoMiao
+     * [x] **Shortcut system for Keyboard devices**: Devices with Keyboard can bind a binary to a key, and install it with the press of one key from Main menu
+     * [x] **Fastboot for Keyboard and Touchscreen devices**: On bootscreen you can press a key or touch the screen to fast boot into an installed firmware
      * [x] **Added Serial interface**: type "help" on serial to check available commands, you can configure Wifi from there, useful for devices like StickCPlus2 and others without keyboard or touchscreen: e.g. "wifi add MyNetworkSSID MyN37w0rkPWD", calibrate touchscreen, mirror X/Y axis or swap XY axis.
      * [x] **Downloaded firmware update list**. Now launcher can check the firmware you downloaded, stored at `{dwn_path}/downloaded.json` and check if there are new versions of these firmwares, and it can download all new files directly to your SDCard if you hit `[Update All]`.
      * [x] **Multi-part binary download**: Firmware composed by multiple files (bootloader.bin, partitions.bin, firmware.bin and data.bin) available on LauncherHub are now downloaded and merged at runtime. It fetches data, one by one, and saves them into on single file to be flashed from the SDCard.

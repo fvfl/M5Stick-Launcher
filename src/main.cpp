@@ -294,9 +294,6 @@ void setup() {
     LongPress = true;
     RAM_LOG("before-bootscreen");
 
-// Installed apps, used by the keyboard digit shortcuts (1..9,0). The touch shortcut
-// cards themselves are built/cached and drawn by initDisplay() -> drawBootAppShortcuts();
-// launcherBootAppShortcuts() below reuses that same cache for touch hit-testing.
 #if defined(HAS_KEYBOARD) || defined(USE_CARDKB2)
     std::vector<LauncherAppMetadata> bootApps = launcherListInstalledApps();
 #endif
@@ -620,6 +617,34 @@ void loop() {
             redraw = true;
             goto END;
         }
+
+#if defined(HAS_KEYBOARD)
+        // Boot a file bound to a keyboard shortcut (Settings -> Manage shortcuts / SD "Bind to key")
+        {
+            keyStroke key = _getKeyPress();
+            if (key.pressed && !key.enter && !key.exit_key && !key.word.empty()) {
+                char pressedChar = key.word[0];
+                if (pressedChar >= 'A' && pressedChar <= 'Z') pressedChar += ('a' - 'A');
+                String pressedKey = String(pressedChar);
+                String boundPath;
+                if (sdcardMounted && getKeyBinding(pressedKey, boundPath)) {
+                    if (SDM.exists(boundPath)) {
+                        updateFromSD(boundPath); // reboots on success; only returns on failure
+                    } else {
+                        displayError("File not found");
+                        removeKeyBinding(pressedKey);
+                        displayMsg(String("'") + pressedKey + "' removed");
+                    }
+                    tft->drawPixel(0, 0, 0);
+                    tft->fillScreen(BGCOLOR);
+                    pass_by = 0;
+                    returnToMenu = false;
+                    redraw = true;
+                    goto END;
+                }
+            }
+        }
+#endif
         checkReboot();
     }
 

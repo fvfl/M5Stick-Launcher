@@ -56,6 +56,11 @@ JsonObject ensureSettingsRoot();
 bool saveSessionToken(const String &token);
 String loadSessionToken();
 
+bool getKeyBinding(const String &key, String &outPath);
+bool setKeyBinding(const String &key, const String &path, bool persist = true);
+bool removeKeyBinding(const String &key, bool persist = true);
+bool clearKeyBindings();
+
 #if defined(HAS_RESISTIVE_TOUCH)
 bool loadTouchCalibration();
 bool saveTouchCalibration(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, uint8_t rot);

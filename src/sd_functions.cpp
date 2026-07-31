@@ -282,6 +282,47 @@ void readFs(String &folder, std::vector<Option> &opt) {
     std::sort(opt.begin(), opt.end(), sortList);
     opt.push_back({"> Back", [&]() { fileToUse = ""; }, ALCOLOR});
 }
+#if defined(HAS_KEYBOARD)
+#ifndef RESERVED_NAV_KEYS
+#define RESERVED_NAV_KEYS ""
+#endif
+static bool isReservedBindKey(char c) {
+    for (const char *p = RESERVED_NAV_KEYS; *p; ++p) {
+        if (*p == c) return true;
+    }
+    return false;
+}
+
+static bool captureBindKey(char &outKey) {
+    displayRedStripe("Press a key to bind...");
+    while (true) {
+        keyStroke key = _getKeyPress();
+        if (key.pressed) {
+            if (key.exit_key) return false;
+            if (!key.enter && !key.word.empty()) {
+                char candidate = key.word[0];
+                if (candidate >= 'A' && candidate <= 'Z') candidate += ('a' - 'A');
+                if (isReservedBindKey(candidate)) {
+                    displayRedStripe("Key reserved for navigation");
+                    continue;
+                }
+                outKey = candidate;
+                return true;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+static void bindFileToKeyMenu(const String &path) {
+    char keyChar = 0;
+    if (!captureBindKey(keyChar)) return;
+    String key = String(keyChar);
+    setKeyBinding(key, path);
+    displayMsg(String("'") + key + "' bound");
+}
+#endif
+
 /*********************************************************************
 **  Function: loopSD
 **  Where you choose what to do wuth your SD Files
@@ -430,6 +471,15 @@ RESTART:
             {"Rename",     [=]() { renameFile(fileToUse, options[index].label); }},
             {"Copy",       [=]() { copyFile(fileToUse); }                        },
         };
+#if defined(HAS_KEYBOARD)
+        {
+            String upperFile = fileToUse;
+            upperFile.toUpperCase();
+            if (upperFile.endsWith(".BIN")) {
+                opt.insert(opt.begin() + 1, {"Bind to key", [=]() { bindFileToKeyMenu(fileToUse); }});
+            }
+        }
+#endif
         if (fileToCopy != "") opt.push_back({"Paste", [=]() { pasteFile(Folder); }});
         opt.push_back({"Delete", [=]() { deleteFromSd(fileToUse); }});
         opt.push_back({"Main Menu", [=]() { returnToMenu = true; }});
