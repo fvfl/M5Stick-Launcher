@@ -293,6 +293,14 @@ void setup() {
     int j = 0;
     LongPress = true;
     RAM_LOG("before-bootscreen");
+
+// Installed apps, used by the keyboard digit shortcuts (1..9,0). The touch shortcut
+// cards themselves are built/cached and drawn by initDisplay() -> drawBootAppShortcuts();
+// launcherBootAppShortcuts() below reuses that same cache for touch hit-testing.
+#if defined(HAS_KEYBOARD) || defined(USE_CARDKB2)
+    std::vector<LauncherAppMetadata> bootApps = launcherListInstalledApps();
+#endif
+
     while (launcherMillis() < i + (2000 + bootToApp * 3000)) { // increased from 2500 to 5000
         initDisplay();                                         // Inicia o display
 
@@ -301,9 +309,22 @@ void setup() {
             j++;
         }
 #if defined(HAS_TOUCH)
-        // Enable touch the center of the screen to get into Launcher
         if (touchPoint.pressed) {
             LTouchPoint *t = &touchPoint;
+
+            // Tap on one of the app shortcut cards: boot that app directly
+            bool shortcutHit = false;
+            for (MenuOptions &shortcut : launcherBootAppShortcuts()) {
+                if (shortcut.contain(t->x, t->y)) {
+                    touchPoint.pressed = false;
+                    shortcut.action();
+                    shortcutHit = true;
+                    break;
+                }
+            }
+            if (shortcutHit) continue;
+
+            // Enable touch the center of the screen to get into Launcher
             int third_x = tftWidth / 3;
             int third_y = tftHeight / 3;
             if (t->x > third_x * 1 && t->x < third_x * 2 && ((t->y > third_y && t->y < third_y * 2))) {
@@ -324,17 +345,30 @@ void setup() {
             goto Launcher;
         }
 
-#if defined(HAS_KEYBOARD)
+#if defined(HAS_KEYBOARD) || defined(USE_CARDKB2)
         keyStroke key = _getKeyPress();
-        if (key.pressed && !key.enter)
+        bool anyKeyTriggered = key.pressed && !key.enter;
 #elif defined(HAS_1_BUTTON)
-        if (check(EscPress))
+        bool anyKeyTriggered = check(EscPress);
 #elif defined(STICK_C_PLUS2) || defined(STICK_C_PLUS)
-        if (check(NextPress))
+        bool anyKeyTriggered = check(NextPress);
 #else
-        if (check(AnyKeyPress))
+        bool anyKeyTriggered = check(AnyKeyPress);
 #endif
-        {
+        if (anyKeyTriggered) {
+#if defined(HAS_KEYBOARD) || defined(USE_CARDKB2)
+            // Digit shortcut: 1..9,0 boots straight into that slot's installed app.
+            int appIndex = -1;
+            if (!key.word.empty()) {
+                char digit = key.word[0];
+                if (digit >= '1' && digit <= '9') appIndex = digit - '1';
+                else if (digit == '0') appIndex = 9;
+            }
+            if (appIndex >= 0 && appIndex < static_cast<int>(bootApps.size())) {
+                launcherBootAppByLabel(bootApps[appIndex].label.c_str());
+                goto Launcher;
+            }
+#endif
             launcherBootInstalledAppOrShowMenu();
             goto Launcher;
         }

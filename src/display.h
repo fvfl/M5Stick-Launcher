@@ -82,6 +82,16 @@ void drawWifiStatus(bool hasBattery = false);
 
 void drawMainMenu(std::vector<MenuOptions> &opt, int index);
 
+// Draws the installed-app shortcut cards at the top of the bootscreen (touch tap or
+// keyboard digit boots that app directly) and returns the total height, in pixels,
+// occupied by the cards, so callers can use it as a top margin for content below.
+int drawBootAppShortcuts(std::vector<MenuOptions> &opt);
+
+// Lazily-built, cached list of the shortcut cards (label = app icon text, action =
+// boot into that app). Shared between initDisplay (which draws them) and the
+// bootscreen input loop (which hit-tests touches against the same coordinates).
+std::vector<MenuOptions> &launcherBootAppShortcuts();
+
 void TouchFooter(uint16_t color = FGCOLOR);
 
 void TouchFooter2(uint16_t color = FGCOLOR);
