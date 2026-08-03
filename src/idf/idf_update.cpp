@@ -23,9 +23,8 @@ struct LauncherRequiredBootPartition {
 };
 
 constexpr LauncherRequiredBootPartition kRequiredBootPartitions[] = {
-    {"nvs",      0x01, 0x02, 0x9000, 0x4000},
-    {"otadata",  0x01, 0x00, 0xD000, 0x2000},
-    {"phy_init", 0x01, 0x01, 0xF000, 0x1000},
+    {"nvs",     0x01, 0x02, 0x9000, 0x5000},
+    {"otadata", 0x01, 0x00, 0xE000, 0x2000},
 };
 
 struct LauncherUpdateContext {

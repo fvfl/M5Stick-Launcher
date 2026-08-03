@@ -99,6 +99,9 @@ Things that need to be done in future updates
 * [ ] Optimize Storage functions to save Flash
 
 ## Latest Changelog
+* 2.8.1:
+     * [x] Removed `phy_init` partition and increased NVS to 0x5000
+
 * 2.8.0:
      * [x] Port to Xueersi-XiaoMiao
      * [x] Lilygo T-Watch-Ultra now has OTA installing
