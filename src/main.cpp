@@ -9,7 +9,7 @@
 #include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
 #include "nvs_flash.h"
-#if CONFIG_IDF_TARGET_ESP32P4
+#if ARDUINO_M5STACK_TAB5
 #include "nvs.h"
 #include "nvs_handle.hpp"
 #endif
@@ -169,7 +169,7 @@ void setup() {
     ensureM5StackUiFlowNVSDefaults();
     RAM_LOG("after-nvs-partition-defaults");
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if ARDUINO_M5STACK_TAB5
     esp_err_t nve;
     std::unique_ptr<nvs::NVSHandle> nvsHandle = nvs::open_nvs_handle("launcher", NVS_READWRITE, &nve);
     bool init = false;
