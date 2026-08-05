@@ -31,12 +31,11 @@ static inline void resumeSdInstallInput() {
 }
 
 bool setupSdCard() {
-#if !defined(SDM_SD) // fot Lilygo T-Display S3 with lilygo shield
+#if !defined(SDM_SD)        // fot Lilygo T-Display S3 with lilygo shield
+    bool OnebitMode = true; // default to one bit mode
 #if defined(USE_SD_MMC) && defined(PIN_SD_CLK) && defined(PIN_SD_CMD) && defined(PIN_SD_D0)
     SD_MMC.end();
     vTaskDelay(pdTICKS_TO_MS(20));
-    bool OnebitMode = true; // default to one bit mode
-
 // Opt-in per board: some boards define PIN_SD_D1..D3 for documentation while
 // deliberately staying on the 1-bit bus, so 4-bit has to be requested
 // explicitly rather than inferred from the pins being defined.
