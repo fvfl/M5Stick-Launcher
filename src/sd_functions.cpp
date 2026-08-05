@@ -35,11 +35,21 @@ bool setupSdCard() {
 #if defined(USE_SD_MMC) && defined(PIN_SD_CLK) && defined(PIN_SD_CMD) && defined(PIN_SD_D0)
     SD_MMC.end();
     vTaskDelay(pdTICKS_TO_MS(20));
+    bool OnebitMode = true; // default to one bit mode
+
+// Opt-in per board: some boards define PIN_SD_D1..D3 for documentation while
+// deliberately staying on the 1-bit bus, so 4-bit has to be requested
+// explicitly rather than inferred from the pins being defined.
+#if defined(SD_MMC_4BIT) && defined(PIN_SD_D1) && defined(PIN_SD_D2) && defined(PIN_SD_D3)
+    SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0, PIN_SD_D1, PIN_SD_D2, PIN_SD_D3);
+    OnebitMode = false;
+#else
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
+#endif
     vTaskDelay(pdTICKS_TO_MS(10));
 #else
 #endif
-    if (!SD_MMC.begin("/sdcard", true, false)) // One bit mode, don't auto-format
+    if (!SD_MMC.begin("/sdcard", OnebitMode, false)) // One bit mode, don't auto-format
 #elif (TFT_MOSI == SDCARD_MOSI)
     if (!SDM.begin(_cs)) // https://github.com/Bodmer/TFT_eSPI/discussions/2420
 #elif defined(HEADLESS)

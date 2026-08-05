@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "display.h"
 #include "esp_mac.h"
+#include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
 #include "mykeyboard.h"
 #include "nvs.h"
@@ -396,6 +397,14 @@ void settings_menu() {
 #if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
         options.push_back({"Start CardKb", [=]() { cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL); }});
 #endif
+        // Only worth offering when the co-processor was latched off: clearing the
+        // guard re-arms the bring-up, which only runs at boot, so reboot with it.
+        if (!hostedWifiAvailable) {
+            options.push_back({"Retry WiFi Module", [=]() {
+                                   launcherWifiHostedResetGuard();
+                                   releaseHeapObjectsAndReboot();
+                               }});
+        }
         if (dev_mode) options.push_back({"Reset Configs/Wifi", factoryReset});
         options.push_back({"Restart", [=]() { return (void)releaseHeapObjectsAndReboot(); }});
 #if !defined(CARDPUTER)

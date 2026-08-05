@@ -986,7 +986,7 @@ String keyboard(String current_text, int max_size, const String &textbox_title) 
 // }
 
 /* Turns off device */
-void powerOff() {
+void __attribute__((weak)) powerOff() {
 #if defined(SOC_PM_SUPPORT_EXT0_WAKEUP)
     esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, LOW);
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -998,12 +998,12 @@ void powerOff() {
 void __attribute__((weak)) reboot() { ESP.restart(); }
 
 /* Verifies if the appropriate btn was pressed to turn off device */
-void checkReboot() {}
+void __attribute__((weak)) checkReboot() {}
 /***************************************************************************************
 ** Function name: getBattery()
 ** Description:   Delivers the battery value from 0-100
 ***************************************************************************************/
-int getBattery() {
+int __attribute__((weak)) getBattery() {
 #ifdef ANALOG_BAT_PIN
 #ifndef ANALOG_BAT_MULTIPLIER
 #define ANALOG_BAT_MULTIPLIER 2.0f
