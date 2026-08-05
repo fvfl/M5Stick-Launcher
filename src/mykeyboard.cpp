@@ -123,11 +123,28 @@ struct box_t {
 
 // Retrieves the current keyStroke from InputHandler, resets it after use.
 // This function is used in loopTask to get the latest key press.
+static SemaphoreHandle_t inputLock = nullptr;
+static StaticSemaphore_t inputLockStorage;
+
+void launcherInputLockInit() {
+    if (inputLock == nullptr) inputLock = xSemaphoreCreateRecursiveMutexStatic(&inputLockStorage);
+}
+
+void launcherInputLock() {
+    if (inputLock != nullptr) xSemaphoreTakeRecursive(inputLock, portMAX_DELAY);
+}
+
+void launcherInputUnlock() {
+    if (inputLock != nullptr) xSemaphoreGiveRecursive(inputLock);
+}
+
 keyStroke _getKeyPress() {
-    if (xHandle != nullptr) vTaskSuspend(xHandle);
+    // Waiting on the mutex instead of suspending the input task: the writer finishes its
+    // update and releases, so neither side is ever frozen mid-allocation. See mykeyboard.h.
+    launcherInputLock();
     keyStroke key = KeyStroke;
     KeyStroke.Clear();
-    if (xHandle != nullptr) vTaskResume(xHandle);
+    launcherInputUnlock();
     return key;
 } // Returns a keyStroke that the keyboards won't recognize by default
 

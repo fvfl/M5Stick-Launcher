@@ -74,11 +74,21 @@ volatile uint16_t tftHeight = TFT_WIDTH;
 #endif
 volatile uint16_t tftWidth = TFT_HEIGHT;
 TaskHandle_t xHandle;
+// Defined in mykeyboard.cpp; declared here because this task is compiled before that header
+// is included below.
+void launcherInputLockInit();
+void launcherInputLock();
+void launcherInputUnlock();
+
 void __attribute__((weak)) taskInputHandler(void *parameter) {
     auto timer = launcherMillis();
     while (true) {
         checkPowerSaveTime();
         if (!AnyKeyPress || launcherMillis() - timer > 75) {
+            // Held across the whole update so _getKeyPress() can never observe (or copy) a
+            // half-written KeyStroke. It replaces the old vTaskSuspend() scheme, which could
+            // freeze this task inside the allocator and deadlock loopTask - see mykeyboard.h.
+            launcherInputLock();
             resetGlobals();
 #ifndef DONT_USE_INPUT_TASK
             InputHandler();
@@ -86,6 +96,7 @@ void __attribute__((weak)) taskInputHandler(void *parameter) {
             cardkb2_poll();
 #endif
 #endif
+            launcherInputUnlock();
             timer = launcherMillis();
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -263,6 +274,9 @@ void setup() {
 
     // Some boards need input polling to stay on the main loop thread because
     // display/touch drivers are not safe to service from a helper task.
+    // Must exist before either side can take it; setup() is still single threaded here.
+    // Created unconditionally: _getKeyPress() is reachable even in DONT_USE_INPUT_TASK builds.
+    launcherInputLockInit();
 #ifndef DONT_USE_INPUT_TASK
     xTaskCreate(
         taskInputHandler, // Task function
