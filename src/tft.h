@@ -444,8 +444,12 @@ public:
 #include <M5GFX.h>
 #include <M5Unified.h>
 #if defined(E_PAPER_DISPLAY)
+#if defined(ARDUINO_M5STACK_PAPER)
+#define drv M5.Display
+#else
 extern M5Canvas sprite;
 #define drv sprite
+#endif
 #else
 #define drv M5.Display
 #endif
@@ -462,16 +466,25 @@ public:
     };
     inline void begin() {
 #if defined(E_PAPER_DISPLAY)
+#if defined(ARDUINO_M5STACK_PAPER)
+        // Draw directly into the IT8951 panel memory and present complete frames
+        // explicitly. Repeated full-screen M5Canvas pushes leave this hardware on
+        // its first frame with current M5GFX.
+        M5.Display.setAutoDisplay(false);
+#else
         sprite.createSprite(M5.Display.width(), M5.Display.height());
+#endif
 #endif
     };
 // E-Paper finctions
 #if defined(E_PAPER_DISPLAY)
     void display(bool a = false) {
-        sprite.pushSprite(0, 0);
 #if defined(ARDUINO_M5STACK_PAPER)
-        sprite.deleteSprite();
-        sprite.createSprite(M5.Display.width(), M5.Display.height());
+        M5.Display.waitDisplay();
+        M5.Display.display();
+        M5.Display.waitDisplay();
+#else
+        sprite.pushSprite(0, 0);
 #endif
     };
 #else
