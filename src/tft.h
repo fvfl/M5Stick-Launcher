@@ -555,9 +555,13 @@ public:
 #else
 
 #include <Arduino_GFX_Library.h>
-
 #ifdef RGB_PANEL
 #define TFT_BUS_TYPE Arduino_ESP32RGBPanel
+#elif TFT_DSI_PANEL
+#include <databus/Arduino_ESP32DSIPanel.h>
+
+#include "tft_inits.h"
+#define TFT_BUS_TYPE Arduino_ESP32DSIPanel
 #else
 #define TFT_BUS_TYPE Arduino_DataBus
 #endif
@@ -598,6 +602,10 @@ public:
 #define _TFT_DRVF(a, b, c, d, e, f, g, h, i, j)                                                              \
     Arduino_RM67162(a, b, c, d, rm67162_spi_init_operations, sizeof(rm67162_spi_init_operations))
 #endif
+#elif TFT_DSI_PANEL
+#define _TFT_DRV Arduino_DSI_Display
+#define _TFT_DRVF(a, b, c, d, e, f, g, h, i, j)                                                              \
+    Arduino_DSI_Display(e, f, a, c, true, b, TFT_DSI_INIT, sizeof(TFT_DSI_INIT) / sizeof(lcd_init_cmd_t))
 #else
 // CYD Default to not shoot errors on screen
 #define _TFT_DRV Arduino_ILI9341
