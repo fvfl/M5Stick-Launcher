@@ -204,8 +204,8 @@ static char _kbShiftDigit(char c) {
     }
 }
 
-static bool kbReady = false;             // TCA8418 answered and is configured
-static volatile bool kbIrq = false;      // set by the GPIO48 ISR
+static bool kbReady = false;        // TCA8418 answered and is configured
+static volatile bool kbIrq = false; // set by the GPIO48 ISR
 static bool kbShift = false, kbCaps = false, kbFn = false, kbCtrl = false, kbAlt = false;
 static bool kbClearHeld = false; // drop stale "held" keys after a (re)connect
 // Auto-repeat state.
@@ -241,8 +241,11 @@ static bool _kbConfigXl9555() {
     // Outputs first, so the pins take their level the moment the direction flips.
     // LEDs are active LOW (the vendor writes 1 to turn them off) and kTMixRfEn is
     // written 1 exactly as ConfigXl9555() does before touching the RF add-on.
-    ok &= _kbWrite8(KB_XL9555_ADDR, 0x02, (1 << KBX_LED1) | (1 << KBX_LED2) | (1 << KBX_LED3) |
-                                              (1 << KBX_TMIX_RF_EN) | (1 << KBX_TCA8418_RST));
+    ok &= _kbWrite8(
+        KB_XL9555_ADDR,
+        0x02,
+        (1 << KBX_LED1) | (1 << KBX_LED2) | (1 << KBX_LED3) | (1 << KBX_TMIX_RF_EN) | (1 << KBX_TCA8418_RST)
+    );
     ok &= _kbWrite8(KB_XL9555_ADDR, 0x06, 0x80); // IO0..IO6 output, IO7 input
     ok &= _kbWrite8(KB_XL9555_ADDR, 0x07, 0xFF); // port 1 unused -> input
     if (!ok) return false;
@@ -363,9 +366,7 @@ static bool _kbPoll() {
         // landing mid-drain: the write would wipe a flag belonging to an event still sitting
         // in the FIFO, and that event would never be fetched again. Clearing first means such
         // an event simply re-raises INT.
-        _kbWrite8(
-            KB_TCA8418_ADDR, TCA_REG_INT_STAT, intStat & (TCA_INT_KEY_EVENTS | TCA_INT_OVERFLOW)
-        );
+        _kbWrite8(KB_TCA8418_ADDR, TCA_REG_INT_STAT, intStat & (TCA_INT_KEY_EVENTS | TCA_INT_OVERFLOW));
 
         // The FIFO is only 10 deep and overwrites its oldest entry when full, so an overflow
         // means events were destroyed inside the chip - quite possibly the release of a key we
@@ -733,16 +734,16 @@ void InputHandler(void) {
             break;
     }
 
-    Serial.printf(
-        "Touch rot=%d native(%d,%d) -> screen(%d,%d) [%dx%d]\n",
-        rotation,
-        nx,
-        ny,
-        sx,
-        sy,
-        (rotation & 1) ? TFT_HEIGHT : TFT_WIDTH,
-        (rotation & 1) ? TFT_WIDTH : TFT_HEIGHT
-    );
+    // Serial.printf(
+    //     "Touch rot=%d native(%d,%d) -> screen(%d,%d) [%dx%d]\n",
+    //     rotation,
+    //     nx,
+    //     ny,
+    //     sx,
+    //     sy,
+    //     (rotation & 1) ? TFT_HEIGHT : TFT_WIDTH,
+    //     (rotation & 1) ? TFT_WIDTH : TFT_HEIGHT
+    // );
 
     touchPoint.x = sx;
     touchPoint.y = sy;
