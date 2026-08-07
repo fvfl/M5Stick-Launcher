@@ -327,6 +327,8 @@ bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
     FileDownloadContext *download = static_cast<FileDownloadContext *>(ctx);
     if (!download || !download->file) return false;
 
+    if (download->downloaded == 0) RAM_LOG("fileDownloadCb-first-chunk");
+
     // On the first chunk, content_length is already populated by fetch_headers.
     // Use it to initialize the progress bar with the real file size.
     if (download->expected == 0 && download->response && download->response->content_length > 0) {
@@ -362,6 +364,7 @@ bool fileDownloadCb(const uint8_t *data, size_t len, void *ctx) {
             download->file->flush();
             vTaskDelay(pdMS_TO_TICKS(2));
             progressHandler(download->downloaded, download->expected);
+            RAM_LOG("fileDownloadCb-progress");
             vTaskDelay(pdMS_TO_TICKS(2));
             download->progressTick = 0;
         } else {
@@ -1287,6 +1290,7 @@ void downloadFirmware(
     bool autoAdvance
 ) {
     displayRedStripe("Preparing..");
+    RAM_LOG("downloadFirmware-start");
     String fileAddr = buildSourceUrl(fid, file_url, true);
     int tries = 0;
     fileName = replaceChars(fileName);
@@ -1343,9 +1347,18 @@ retry:
     LauncherHttpResponse response;
     prog_handler = 2;
     pauseInputHandlerTask();
+    RAM_LOG("downloadFirmware-before-httpGetStream");
     FileDownloadContext download = {&file, 0, 0, 0, &response};
     bool ok = launcherHttpGetStream(
         fileAddr.c_str(), fileDownloadCb, &download, &response, "HWID", launcherWifiMac().c_str()
+    );
+    launcherConsolePrintf(
+        "downloadFirmware: ok=%d status=%d transport_error=%d content_length=%lld downloaded=%u\n",
+        (int)ok,
+        response.status,
+        response.transport_error,
+        (long long)response.content_length,
+        (unsigned)download.downloaded
     );
     file.flush();
     file.close();

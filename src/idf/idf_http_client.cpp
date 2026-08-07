@@ -127,7 +127,7 @@ bool launcherHttpGetRange(
     LauncherHttpResponse *response, const char *hwid
 ) {
     String range = "bytes=" + String(offset) + "-" + String(offset + size - 1);
-    return executeGet(url, cb, ctx, response, "Range", range.c_str(), "HWID", hwid);
+    return executeGet(url, cb, ctx, response, "Range", range.c_str(), "HWID", "aa:11:bb:22:cc:33" /*hwid*/);
 }
 
 bool launcherHttpPost(
