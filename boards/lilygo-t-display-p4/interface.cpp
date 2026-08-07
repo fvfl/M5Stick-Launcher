@@ -9,6 +9,10 @@
 #include <interface.h>
 
 #include <Wire.h>
+#include <cstring>
+#include <driver/sdmmc_host.h>
+#include <sd_pwr_ctrl_by_on_chip_ldo.h>
+#include <sdmmc_cmd.h>
 
 IoExpanderXL9555 io;
 GaugeBQ27220 gauge;
@@ -543,10 +547,28 @@ static void _kbHandle() {
 
 static void _gauge_task(void *); // defined next to getBattery()
 
+// The SDMMC-slot-0 pins (SDIO_1_*, shared by both the SD_MMC and the SPI-mode SD
+// path below) sit in an IO domain fed by an on-chip LDO on the P4
+// (SOC_SDMMC_IO_POWER_EXTERNAL) - without powering it, the pins have no proper
+// drive and a card never responds, even though SPI-level init reports success.
+// SD_MMC.begin() normally does this itself via BOARD_SDMMC_POWER_CHANNEL, but
+// the plain SD/SPIClass path used here knows nothing about it, so it has to be
+// powered by hand, once, before anything touches those pins.
+static void _powerSdCardIoLdo() {
+    sd_pwr_ctrl_ldo_config_t ldoConfig = {.ldo_chan_id = BOARD_SDMMC_POWER_CHANNEL};
+    sd_pwr_ctrl_handle_t handle = nullptr;
+    if (sd_pwr_ctrl_new_on_chip_ldo(&ldoConfig, &handle) != ESP_OK) {
+        Serial.println("SD card IO LDO: failed to acquire channel");
+        return;
+    }
+    if (sd_pwr_ctrl_set_io_voltage(handle, 3300) != ESP_OK) {
+        Serial.println("SD card IO LDO: failed to set 3.3V");
+    }
+}
+
 void _setup_gpio() {
     Serial.println("Start GPIO");
-    // Inicializar SDMMC pins
-    SD_MMC.setPins(SDIO_1_CLK, SDIO_1_CMD, SDIO_1_D0, SDIO_1_D1, SDIO_1_D2, SDIO_1_D3);
+    _powerSdCardIoLdo();
     // Inicializar GPIO
     pinMode(SENSOR_IRQ, INPUT_PULLUP);
     pinMode(35, INPUT);
@@ -668,23 +690,28 @@ void _post_setup_gpio() {
     }
 }
 
-#if defined(BACKLIGHT)
-void _setBrightness(uint8_t brightval) { analogWrite(BACKLIGHT, (brightval * 255) / 100); }
-#else
-// The AMOLED has no backlight rail: brightness is the RM69A10's DCS 0x51
-// (WRDISBV), which rm69a10_lcd_init_cmd sets to full at init. Driving it at
-// runtime needs writeCommand(), which upstream Arduino_ESP32DSIPanel does not
-// expose - support_files/patch_dsi_writecommand.py adds it at build time.
-extern Arduino_ESP32DSIPanel *bus; // defined in display.cpp
-
 void _setBrightness(uint8_t brightval) {
+    if (brightval > 100) brightval = 100;
+#if defined(BACKLIGHT)
+    // Gama correction
+    float linear = (float)brightval / 100.0;
+    uint8_t value = round(pow(linear, 2.2) * 255.0);
+    analogWrite(BACKLIGHT, value);
+#else
+    // The AMOLED has no backlight rail: brightness is the RM69A10's DCS 0x51
+    // (WRDISBV), which rm69a10_lcd_init_cmd sets to full at init. Driving it at
+    // runtime needs writeCommand(), which upstream Arduino_ESP32DSIPanel does not
+    // expose - support_files/patch_dsi_writecommand.py adds it at build time.
+    // defined in display.cpp
+    extern Arduino_ESP32DSIPanel *bus;
     if (bus == nullptr) return;
     // WRDISBV takes a single byte, 0x00..0xFF. The init sequence uses 0xFE for
     // "full", so the usual 0-100 scale maps straight onto 0-255.
     const uint8_t level = (uint8_t)((brightval * 255) / 100);
     bus->writeCommand(0x51, &level, 1);
-}
 #endif
+    if (kbReady) { analogWrite(KB_BL_PIN, (brightval * 255) / 100); }
+}
 
 void InputHandler(void) {
     _kbHandle();
@@ -792,7 +819,7 @@ static void _peripherals_power_down() {
     analogWrite(BACKLIGHT, 0);
 #endif
     if (!ioOk) return;
-    io.digitalWrite(XL_SCREEN_RST, LOW);
+    // io.digitalWrite(XL_SCREEN_RST, LOW);
     io.digitalWrite(XL_TOUCH_RST, LOW);
     io.digitalWrite(XL_ESP32C6_EN, LOW);
     io.digitalWrite(XL_ETHERNET_RST, LOW);
