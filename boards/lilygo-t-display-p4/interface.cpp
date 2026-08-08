@@ -562,13 +562,13 @@ static void _powerSdCardIoLdo() {
         Serial.println("SD card IO LDO: failed to set 3.3V");
     }
 }
-extern "C" void launcherWifiResetSdioCoprocessor() {
-    if (!ioOk) return;
-    io.digitalWrite(XL_ESP32C6_EN, LOW);
-    delay(50);
-    io.digitalWrite(XL_ESP32C6_EN, HIGH);
-    delay(1000);
-}
+// extern "C" void launcherWifiResetSdioCoprocessor() {
+//     if (!ioOk) return;
+//     io.digitalWrite(XL_ESP32C6_EN, LOW);
+//     delay(50);
+//     io.digitalWrite(XL_ESP32C6_EN, HIGH);
+//     delay(1000);
+// }
 void _setup_gpio() {
     Serial.println("Start GPIO");
     _powerSdCardIoLdo();
