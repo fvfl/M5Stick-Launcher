@@ -75,7 +75,7 @@ static void _config_xl9535() {
     io.digitalWrite(XL_POWER_EN_3V3, LOW);
     delay(10);
     io.digitalWrite(XL_POWER_EN_3V3, HIGH);
-    delay(200);
+    delay(500);
     io.digitalWrite(XL_POWER_EN_3V3, LOW);
     delay(10);
 
@@ -678,7 +678,7 @@ void _post_setup_gpio() {
             "Battery: %d%% (%u mV, %d mA)\n", getBattery(), gauge.getVoltage(), gauge.getCurrent()
         );
     }
-
+    delay(500);
     launcherConsolePrintln("Starting WIFI");
     if (!launcherWifiInitSdioAuto(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST)) {
         launcherConsolePrintln("WIFI unavailable");
