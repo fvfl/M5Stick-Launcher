@@ -378,8 +378,7 @@ LauncherWifiConnectState
 launcherWifiConnectStatus(const char *ssid, const char *password, uint32_t timeout_ms) {
 #if defined(ENABLE_ESP_AT_INTERFACE)
     if (activeBackend == LauncherWifiBackend::EspAt) {
-        return launcherWifiAtConnect(ssid, password, timeout_ms) ? LauncherWifiConnectState::Connected
-                                                                 : LauncherWifiConnectState::Failed;
+        return launcherWifiAtConnectStatus(ssid, password, timeout_ms);
     }
 #endif
     if (!launcherWifiStartSta()) return LauncherWifiConnectState::Failed;

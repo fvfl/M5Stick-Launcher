@@ -288,6 +288,12 @@ bool sendCommand(const std::string &cmd, std::string &response, uint32_t timeout
     return waitForToken("\r\nOK\r\n", "\r\nERROR\r\n", timeoutMs, response);
 }
 
+int parseCwjapError(const std::string &response) {
+    const size_t pos = response.find("+CWJAP:");
+    if (pos == std::string::npos) return 0;
+    return atoi(response.c_str() + pos + 7);
+}
+
 int transportTypeForUrl(const char *url) {
     return (url && strncmp(url, "https://", 8) == 0) ? 2 : 1;
 }
@@ -806,14 +812,24 @@ bool launcherWifiAtInit(int8_t clk, int8_t cmd, int8_t d0, int8_t d1, int8_t d2,
     return true;
 }
 
-bool launcherWifiAtConnect(const char *ssid, const char *password, uint32_t timeout_ms) {
-    if (!g_busUp || !ssid) return false;
+LauncherWifiConnectState launcherWifiAtConnectStatus(const char *ssid, const char *password, uint32_t timeout_ms) {
+    if (!g_busUp || !ssid) return LauncherWifiConnectState::Failed;
     std::string cmd = "AT+CWJAP=\"" + atEscape(ssid) + "\",\"" + atEscape(password ? password : "") + "\"";
     std::string response;
     const uint32_t joinTimeoutMs = std::max<uint32_t>(timeout_ms, 30000);
     g_connected = sendCommand(cmd, response, joinTimeoutMs);
     if (!g_connected) printf("[wifi-at] CWJAP failed, response: %s\n", response.c_str());
     else printf("[wifi-at] CWJAP connected\n");
+    if (g_connected) return LauncherWifiConnectState::Connected;
+
+    // ESP-AT reports join failures as +CWJAP:<code>; 2 is password/auth failure.
+    if (parseCwjapError(response) == 2) return LauncherWifiConnectState::WrongPassword;
+    return LauncherWifiConnectState::Failed;
+}
+
+bool launcherWifiAtConnect(const char *ssid, const char *password, uint32_t timeout_ms) {
+    LauncherWifiConnectState state = launcherWifiAtConnectStatus(ssid, password, timeout_ms);
+    g_connected = state == LauncherWifiConnectState::Connected;
     return g_connected;
 }
 

@@ -379,7 +379,6 @@ void settings_menu() {
             options.push_back({autoBackup ? "[x] Auto Backup" : "[ ] Auto Backup", [=]() {
                                    autoBackup = !autoBackup;
                                    saveConfigs();
-                                   saveIntoNVS();
                                }});
         }
 
@@ -397,7 +396,11 @@ void settings_menu() {
 #endif
 
         if (dev_mode) options.push_back({"Boot Animation", [=]() { initDisplayLoop(); }});
-        if (dev_mode) options.push_back({"Deactivate Dev", [=]() { dev_mode = false; }});
+        if (dev_mode)
+            options.push_back({"Deactivate Dev", [=]() {
+                                   dev_mode = false;
+                                   saveConfigs();
+                               }});
 #if defined(HAS_RESISTIVE_TOUCH)
         options.push_back({"Calibrate Touch", calibrateTouch});
 #endif

@@ -127,6 +127,12 @@ void displayScrollingText(const String &text, Opt_Coord &coord) {
     }
 }
 
+static inline void drawOptionsErase(const Opt_Coord &coord) {
+    if (coord.boxW == 0 || coord.boxH == 0) return;
+    tft->fillRect(coord.boxX, coord.boxY, coord.boxW, coord.boxH, coord.bgcolor);
+    tft->display(false);
+}
+
 /***************************************************************************************
 ** Function name: resetTftDisplay
 ** Description:   set cursor to 0,0, screen and text to default color
@@ -689,6 +695,10 @@ Opt_Coord drawOptions(
         boxY = 2;
         contentHeight = tftHeight - 4;
     }
+    coord.boxX = boxX;
+    coord.boxY = boxY;
+    coord.boxW = contentWidth;
+    coord.boxH = contentHeight;
 
     bool firstItemSelected = (optionCount > 0 && index == start);
     tft->setTextSize(FM);
@@ -1196,19 +1206,12 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
 
         /* Select and run function */
         if (check(SelPress)) {
+            drawOptionsErase(coord);
             options[index].operation();
             break;
         }
 
 #if defined(HAS_TOUCH)
-        // Full-screen list menus (border == false) draw their own explicit
-        // [ESC] label as the back target. The global top-left heat-map ESC zone
-        // (utils.cpp touchHeatMap: x < tftWidth/3 && y < 50) overlaps the first
-        // list rows on tall screens, and because check(EscPress) both polls the
-        // touch controller and consumes the flag, honouring it here makes the
-        // first couple of items impossible to select (they exit to the menu).
-        // So ignore the heat-map ESC for these menus; the [ESC] label still
-        // exits. Bordered pop-ups (no [ESC] label) keep the corner gesture.
         if (border == false) {
             if (escRequested || returnToMenu || exit) return -1;
             EscPress = false; // swallow any stray heat-map ESC over the list rows
@@ -1219,7 +1222,7 @@ int loopOptions(std::vector<Option> &options, bool bright, uint16_t al, uint16_t
         if (check(EscPress) || returnToMenu || exit) return -1;
 #endif
     }
-    if (border) tft->fillScreen(BGCOLOR);
+    // if (border) tft->fillScreen(BGCOLOR);
 #if defined(HAS_TOUCH)
     TouchFooter(FGCOLOR);
 #endif

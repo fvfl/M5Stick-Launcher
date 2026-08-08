@@ -526,6 +526,7 @@ void loop() {
             if (!dev_mode && pass_by == 5) {
                 displayMsg("Dev mode Activated");
                 dev_mode = true;
+                saveConfigs();
             }
             drawMainMenu(menuItems, index);
 #if defined(HAS_TOUCH)
