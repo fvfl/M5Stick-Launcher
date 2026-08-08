@@ -1037,20 +1037,20 @@ void drawWifiStatus(bool hasBattery) {
     int cx = batteryLeft - gap - 3 * u;
     int by = 7 + (FP * LH + 9) / 2 + u;
     int dot = u < 2 ? 2 : u;
-    tft->fillRect(cx - 3 * u - 1, by - 4 * u - 1, 6 * u + 3, 4 * u + dot + 2, BGCOLOR);
     if (!launcherWifiIsConnected()) return;
+    tft->fillRect(cx - 3 * u - 1, 6, 6 * u + 3, 4 * u + dot + 2, BGCOLOR);
     int thick = size / 8;
     if (thick < 1) thick = 1;
     for (int k = 1; k <= 3; ++k) {
         int hw = k * u;
-        int apexY = by - k * u - u;
+        int apexY = by - k * u - u + 2;
         int drop = u;
         for (int t = 0; t < thick; ++t) {
             tft->drawLine(cx - hw, apexY + drop + t, cx, apexY + t, FGCOLOR);
             tft->drawLine(cx, apexY + t, cx + hw, apexY + drop + t, FGCOLOR);
         }
     }
-    tft->fillRect(cx - dot / 2, by - dot / 2, dot, dot, FGCOLOR);
+    tft->fillRect(cx - dot / 2, by - dot / 2 + 2, dot, dot, FGCOLOR);
 }
 
 void drawBatteryStatus(uint8_t bat) {

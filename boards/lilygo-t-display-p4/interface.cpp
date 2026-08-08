@@ -9,10 +9,7 @@
 #include <interface.h>
 
 #include <Wire.h>
-#include <cstring>
-#include <driver/sdmmc_host.h>
 #include <sd_pwr_ctrl_by_on_chip_ldo.h>
-#include <sdmmc_cmd.h>
 
 IoExpanderXL9555 io;
 GaugeBQ27220 gauge;
@@ -78,7 +75,7 @@ static void _config_xl9535() {
     io.digitalWrite(XL_POWER_EN_3V3, LOW);
     delay(10);
     io.digitalWrite(XL_POWER_EN_3V3, HIGH);
-    delay(500);
+    delay(200);
     io.digitalWrite(XL_POWER_EN_3V3, LOW);
     delay(10);
 
@@ -565,7 +562,15 @@ static void _powerSdCardIoLdo() {
         Serial.println("SD card IO LDO: failed to set 3.3V");
     }
 }
-
+/*
+extern "C" void launcherWifiResetSdioCoprocessor() {
+    if (!ioOk) return;
+    io.digitalWrite(XL_ESP32C6_EN, LOW);
+    delay(50);
+    io.digitalWrite(XL_ESP32C6_EN, HIGH);
+    delay(1000);
+}
+*/
 void _setup_gpio() {
     Serial.println("Start GPIO");
     _powerSdCardIoLdo();
@@ -588,7 +593,7 @@ void _setup_gpio() {
         _config_xl9535();
         Serial.println("XL9535 configured (rails on, C6 out of reset)");
         const uint16_t port = io.digitalReadPort();
-        Serial.printf(
+        launcherConsolePrintf(
             "XL9535 port=0x%04X | 3v3En=%d(exp0) 5v0En=%d(exp1) SdPwrEn=%d(exp0) C6En=%d(exp1) "
             "ScrRst=%d(exp1) TouchRst=%d(exp1)\n",
             port,
@@ -607,21 +612,6 @@ void _setup_gpio() {
     // Polled off the UI thread on purpose - see the note above getBattery(). Lowest priority
     // and a small stack: it does one I2C read every 5 s and nothing else depends on it.
     if (gaugeOk) xTaskCreate(_gauge_task, "gauge", 3072, nullptr, 1, nullptr);
-
-    delay(300);
-    // A C6 still running LilyGO's factory firmware answers on SDIO but not with
-    // the ESP-Hosted protocol, which makes the stack spin for ~20 s and then
-    // panic - a boot loop. The guarded call notices that happened on the
-    // previous boot and skips, leaving hostedWifiAvailable false so OTA/WebUI
-    // can say so instead of hanging. After flashing the esp_hosted co-processor
-    // firmware (see "Flashing the Coprocessor Network-Adapter Firmware" in the
-    // T-Display-P4 README), 'wifi hosted retry' on the serial console re-arms it.
-    Serial.println("Starting WIFI Hosted");
-    if (!launcherWifiInitHostedSdioGuarded(
-            SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST
-        )) {
-        Serial.println("WIFI Hosted unavailable");
-    }
 
     // Last, so nothing started above can take the radio CS lines back off HIGH.
     _kbSetup();
@@ -683,10 +673,17 @@ void _post_setup_gpio() {
     // HI8561 already reports in panel coordinates - this only sets the clamp.
     touch.setMaxCoordinates(TFT_WIDTH, TFT_HEIGHT);
 #endif
-    Serial.printf("Touch started: %s (chip ID 0x%X)\n", touch.getModelName(), touch.getChipID());
+    launcherConsolePrintf("Touch started: %s (chip ID 0x%X)\n", touch.getModelName(), touch.getChipID());
 
     if (gaugeOk && gauge.refresh()) {
-        Serial.printf("Battery: %d%% (%u mV, %d mA)\n", getBattery(), gauge.getVoltage(), gauge.getCurrent());
+        launcherConsolePrintf(
+            "Battery: %d%% (%u mV, %d mA)\n", getBattery(), gauge.getVoltage(), gauge.getCurrent()
+        );
+    }
+
+    launcherConsolePrintln("Starting WIFI");
+    if (!launcherWifiInitSdioAuto(SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST)) {
+        launcherConsolePrintln("WIFI unavailable");
     }
 }
 
@@ -761,7 +758,7 @@ void InputHandler(void) {
             break;
     }
 
-    // Serial.printf(
+    // launcherConsolePrintf(
     //     "Touch rot=%d native(%d,%d) -> screen(%d,%d) [%dx%d]\n",
     //     rotation,
     //     nx,

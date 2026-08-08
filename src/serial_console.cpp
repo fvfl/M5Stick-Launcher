@@ -57,13 +57,25 @@
 
 static std::vector<String> splitTokens(const String &line) {
     std::vector<String> tokens;
+    String clean;
+    clean.reserve(line.length());
+    for (size_t i = 0; i < line.length(); ++i) {
+        const char c = line[i];
+        if (c == '\t') {
+            clean += ' ';
+        } else if (c >= 0x20 && c != 0x7f) {
+            clean += c;
+        }
+    }
+    clean.trim();
+
     int start = 0;
-    int len = static_cast<int>(line.length());
+    int len = static_cast<int>(clean.length());
     while (start < len) {
-        while (start < len && line[start] == ' ') start++;
+        while (start < len && clean[start] == ' ') start++;
         int end = start;
-        while (end < len && line[end] != ' ') end++;
-        if (end > start) tokens.push_back(line.substring(start, end));
+        while (end < len && clean[end] != ' ') end++;
+        if (end > start) tokens.push_back(clean.substring(start, end));
         start = end;
     }
     return tokens;

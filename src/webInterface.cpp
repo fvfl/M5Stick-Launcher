@@ -2061,6 +2061,13 @@ void stopWebServerAndWifi() {
 void startWebUi(const String &ssid, int encryptation, bool mode_ap) {
     RAM_LOG(mode_ap ? "startWebUi-ap-start" : "startWebUi-sta-start");
     file_size = 0;
+#if defined(ENABLE_ESP_AT_INTERFACE)
+    if (launcherWifiActiveBackend() == LauncherWifiBackend::EspAt) {
+        launcherConsolePrintln("WebUI unavailable: ESP-AT backend has no local TCP/IP stack");
+        displayError("WebUI unavailable with ESP-AT WiFi");
+        return;
+    }
+#endif
 #ifndef HEADLESS
     getConfigs();
 #endif
