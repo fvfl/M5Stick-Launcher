@@ -255,10 +255,6 @@ void setup() {
     partitionCrawler();
     RAM_LOG("after-partitionCrawler");
 
-#if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
-    cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL);
-#endif
-
     // Init post setup GPIO before SD Card initializes
     _post_setup_gpio();
 
@@ -310,6 +306,12 @@ void setup() {
 
 #if defined(HAS_KEYBOARD) || defined(USE_CARDKB2)
     std::vector<LauncherAppMetadata> bootApps = launcherListInstalledApps();
+#endif
+
+#if defined(USE_CARDKB2) && defined(CARDKB2_SDA) && defined(CARDKB2_SCL)
+    if (sdcardMounted) launcherDelayMs(300);
+    else launcherDelayMs(100);
+    cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL);
 #endif
 
     while (launcherMillis() < i + (2000 + bootToApp * 3000)) { // increased from 2500 to 5000

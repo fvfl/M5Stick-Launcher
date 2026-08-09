@@ -23,6 +23,21 @@ namespace kb = m5::unit::tab5_keyboard;
 static constexpr int8_t TAB5_KB_SDA = 0;
 static constexpr int8_t TAB5_KB_SCL = 1;
 static constexpr gpio_num_t TAB5_KB_INT = GPIO_NUM_50;
+static constexpr uint8_t TAB5_HID_ENTER = 0x28;
+static constexpr uint8_t TAB5_HID_ESC = 0x29;
+static constexpr uint8_t TAB5_HID_BACKSPACE = 0x2A;
+static constexpr uint8_t TAB5_HID_TAB = 0x2B;
+static constexpr uint8_t TAB5_HID_DELETE = 0x4C;
+static constexpr uint8_t TAB5_HID_RIGHT = 0x4F;
+static constexpr uint8_t TAB5_HID_LEFT = 0x50;
+static constexpr uint8_t TAB5_HID_DOWN = 0x51;
+static constexpr uint8_t TAB5_HID_UP = 0x52;
+static constexpr uint8_t TAB5_HID_MOD_LCTRL = 0x01;
+static constexpr uint8_t TAB5_HID_MOD_LSHIFT = 0x02;
+static constexpr uint8_t TAB5_HID_MOD_LALT = 0x04;
+static constexpr uint8_t TAB5_KEY_LEFT_CTRL = 0x80;
+static constexpr uint8_t TAB5_KEY_LEFT_SHIFT = 0x81;
+static constexpr uint8_t TAB5_KEY_LEFT_ALT = 0x82;
 
 static m5::unit::UnitUnified tab5KbUnits;
 static m5::unit::UnitTab5Keyboard tab5Kb;
@@ -93,22 +108,69 @@ static void tab5KbPoll() {
         return;
     }
 
+    keyStroke pendingKey;
+    bool keyPulse = false;
+    const bool sym = tab5Kb.isSym();
+    const bool aa = tab5Kb.isAa();
+    const bool ctrl = tab5Kb.isCtrl();
+    const bool alt = tab5Kb.isAlt();
+
     for (uint8_t kidx = 0; kidx < kb::KEY_COUNT; ++kidx) {
         if (!tab5Kb.wasPressed(kidx)) continue;
         const uint8_t row = static_cast<uint8_t>(kidx / kb::KEY_COL_COUNT);
         const uint8_t col = static_cast<uint8_t>(kidx % kb::KEY_COL_COUNT);
-        const kb::HidMapping map =
-            tab5Kb.isSym() ? kb::keyMatrixToHidSym(row, col) : kb::keyMatrixToHidBase(row, col);
+        const kb::HidMapping map = sym ? kb::keyMatrixToHidSym(row, col) : kb::keyMatrixToHidBase(row, col);
+
+        if (map.keycode != 0) {
+            pendingKey.hid_keys.emplace_back(map.keycode);
+            pendingKey.modifiers |= map.modifier;
+            const char ch = tab5Kb.keyMatrixToChar(kidx);
+            if (ch != 0 && ch != '\n' && ch != '\b' && ch != '\t') pendingKey.word.emplace_back(ch);
+        }
+
         switch (map.keycode) {
-            case 0x50: PrevPress = true; break; // Left  arrow
-            case 0x4F: NextPress = true; break; // Right arrow
-            case 0x52: UpPress = true; break;   // Up    arrow
-            case 0x51: DownPress = true; break; // Down  arrow
-            case 0x28: SelPress = true; break;  // Return / Enter
-            case 0x29: EscPress = true; break;  // Esc
+            case TAB5_HID_LEFT: PrevPress = true; break;
+            case TAB5_HID_RIGHT: NextPress = true; break;
+            case TAB5_HID_UP: UpPress = true; break;
+            case TAB5_HID_DOWN: DownPress = true; break;
+            case TAB5_HID_ENTER:
+                pendingKey.enter = true;
+                SelPress = true;
+                break;
+            case TAB5_HID_ESC:
+                pendingKey.exit_key = true;
+                pendingKey.fn = true; // Existing text UI cancels on fn+exit_key.
+                EscPress = true;
+                break;
+            case TAB5_HID_BACKSPACE:
+            case TAB5_HID_DELETE:
+                pendingKey.del = true;
+                break;
+            case TAB5_HID_TAB: pendingKey.word.emplace_back('\t'); break;
             default: break;
         }
+        keyPulse = true;
         AnyKeyPress = true;
+    }
+
+    if (keyPulse) {
+        if (aa) {
+            pendingKey.modifiers |= TAB5_HID_MOD_LSHIFT;
+            pendingKey.modifier_keys.emplace_back(TAB5_KEY_LEFT_SHIFT);
+        }
+        if (ctrl) {
+            pendingKey.modifiers |= TAB5_HID_MOD_LCTRL;
+            pendingKey.modifier_keys.emplace_back(TAB5_KEY_LEFT_CTRL);
+        }
+        if (alt) {
+            pendingKey.modifiers |= TAB5_HID_MOD_LALT;
+            pendingKey.modifier_keys.emplace_back(TAB5_KEY_LEFT_ALT);
+        }
+        if (sym) pendingKey.fn = true;
+        pendingKey.pressed = true;
+        KeyStroke = pendingKey;
+    } else {
+        KeyStroke.Clear();
     }
 }
 
