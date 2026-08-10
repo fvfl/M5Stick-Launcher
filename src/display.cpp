@@ -989,7 +989,7 @@ int drawBootAppShortcuts(std::vector<MenuOptions> &opt) {
 
     if (size < 1) return 0;
 
-#if defined(USE_CARDKB2)
+#if defined(USE_CARDKB2) && !defined(HAS_TOUCH)
     if (!CardKB2Installed) return 0;
 #endif
 
