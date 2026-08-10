@@ -1,3 +1,4 @@
+#include "cardkb2.h"
 #include "idf/idf_wifi.h"
 #include "idf/launcher_platform.h"
 #include "powerSave.h"
@@ -64,9 +65,9 @@ static bool tab5KbBegin() {
         cfg.irq_pin = TAB5_KB_INT;   // library drains events on this INT
         tab5Kb.config(cfg);
 
-        Wire1.end();
-        Wire1.begin(TAB5_KB_SDA, TAB5_KB_SCL, tab5Kb.component_config().clock);
-        if (!tab5KbUnits.add(tab5Kb, Wire1)) return false;
+        Wire.end(); // Closes Wire instance opened by CardKb
+        Wire.begin(TAB5_KB_SDA, TAB5_KB_SCL, tab5Kb.component_config().clock);
+        if (!tab5KbUnits.add(tab5Kb, Wire)) return false;
         tab5KbAdded = true;
     }
     return tab5KbUnits.begin();
@@ -143,9 +144,7 @@ static void tab5KbPoll() {
                 EscPress = true;
                 break;
             case TAB5_HID_BACKSPACE:
-            case TAB5_HID_DELETE:
-                pendingKey.del = true;
-                break;
+            case TAB5_HID_DELETE: pendingKey.del = true; break;
             case TAB5_HID_TAB: pendingKey.word.emplace_back('\t'); break;
             default: break;
         }
@@ -182,12 +181,17 @@ static void tab5KbPoll() {
 void _setup_gpio() {
 
     M5.begin();
+    M5.Power.setExtOutput(true);
     launcherWifiInitHostedSdioGuarded(
         SDIO2_CLK, SDIO2_CMD, SDIO2_D0, SDIO2_D1, SDIO2_D2, SDIO2_D3, SDIO2_RST
     );
-    tab5KbSetup();
 }
 
+void _late_setup_gpio() {
+    // Try to brig up tab5 keyboard after CardKB
+    // Need time to bring up the keyboard
+    if (!CardKB2Installed) tab5KbSetup();
+}
 /***************************************************************************************
 ** Function name: getBattery()
 ** location: display.cpp

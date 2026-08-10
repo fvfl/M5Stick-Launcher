@@ -165,6 +165,13 @@ void _post_setup_gpio() __attribute__((weak));
 void _post_setup_gpio() {}
 
 /*********************************************************************
+**  Function: _late_setup_gpio()
+**  Sets up a weak (empty) function to be replaced by /ports/* /interface.h
+*********************************************************************/
+void _late_setup_gpio() __attribute__((weak));
+void _late_setup_gpio() {}
+
+/*********************************************************************
 **  Function: setup
 **  Where the devices are started and variables set
 *********************************************************************/
@@ -313,6 +320,9 @@ void setup() {
     else launcherDelayMs(100);
     cardkb2_setup(CARDKB2_SDA, CARDKB2_SCL);
 #endif
+
+    // Init any device specific hardware after TFT+SD+CardKb
+    _late_setup_gpio();
 
     while (launcherMillis() < i + (2000 + bootToApp * 3000)) { // increased from 2500 to 5000
         initDisplay();                                         // Inicia o display
